@@ -1,6 +1,0 @@
-{
-    "user_id": "5",
-    "buddhist_year": 2568,
-    "month_number": 5,
-    "quarter": 2
-}
