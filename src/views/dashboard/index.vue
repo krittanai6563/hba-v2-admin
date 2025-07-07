@@ -54,7 +54,7 @@ const fetchRegionSummary = async () => {
     fetchErrorRegionSummary.value = '';  // Reset before fetching data
 
     try {
-        const res = await fetch('https://thhbaadmin.infinityfreeapp.com/backend/file.php', {
+        const res = await fetch('https://c44d-2405-9800-b861-96e-d38-cc71-74cd-d0c1.ngrok-free.app/package/backend/file.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
@@ -178,7 +178,7 @@ const fetchUserStatus = async () => {
       month_number: (currentMonth + 1).toString()  // เดือนปัจจุบัน
     };
 
-    const res = await fetch('http://localhost/package/backend/data_and_email.php', {
+    const res = await fetch('https://c44d-2405-9800-b861-96e-d38-cc71-74cd-d0c1.ngrok-free.app/package/backend/data_and_email.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),

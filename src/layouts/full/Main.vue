@@ -38,7 +38,7 @@ function loadUserData() {
                 if (/^https?:\/\//.test(pi)) {
                     profileImageUrl.value = pi;
                 } else {
-                    profileImageUrl.value = 'http://localhost/package/backend/' + pi;
+                    profileImageUrl.value = 'https://c44d-2405-9800-b861-96e-d38-cc71-74cd-d0c1.ngrok-free.app/package/backend/' + pi;
                 }
             } else {
                 profileImageUrl.value = defaultAvatar;
