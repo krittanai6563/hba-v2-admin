@@ -59,7 +59,24 @@ export function getSidebarItems(role: string): Menu[] {
           {
             title: 'สรุปรายงาน',
             icon: 'notebook-line-duotone',
-            to: '/ui/report',
+            to: '/ui/repost_admin',
+            external: false,
+          },
+        ]
+      : []),
+
+    ...(role === 'master'
+      ? [
+          {
+            title: 'ข้อมูลสมาชิก',
+            icon: 'shield-user-outline',
+            to: '/ui/report_user',
+            external: false,
+          },
+          {
+            title: 'สรุปรายงาน',
+            icon: ' ',
+            to: '/ui/repost_admin',
             external: false,
           },
         ]
