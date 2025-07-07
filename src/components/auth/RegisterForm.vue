@@ -15,7 +15,7 @@ async function register() {
 
   try {
 
-    const res = await fetch('https://thhbaadmin.infinityfreeapp.com/backend/register.php', {
+    const res = await fetch('https://c44d-2405-9800-b861-96e-d38-cc71-74cd-d0c1.ngrok-free.app/package/backend/register.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }, 
       body: JSON.stringify({ 

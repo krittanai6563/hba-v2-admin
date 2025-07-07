@@ -104,7 +104,7 @@ const fetchSummary = async (type: 'monthly' | 'quarterly') => {
     console.log('Sending data to backend:', data);
 
     try {
-        const res = await fetch('https://thhbaadmin.infinityfreeapp.com/backend/repost_admin.php', {
+        const res = await fetch('https://c44d-2405-9800-b861-96e-d38-cc71-74cd-d0c1.ngrok-free.app/package/backend/repost_admin.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
