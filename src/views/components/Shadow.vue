@@ -33,7 +33,7 @@ const getMaxQuarter = () => {
 const fetchSummary = async () => {
   if (!userId) return;
   try {
-    const res = await fetch(`https://c44d-2405-9800-b861-96e-d38-cc71-74cd-d0c1.ngrok-free.app/package/backend/quarter_summary.php`, {
+    const res = await fetch(`https://06da-1-47-223-210.ngrok-free.app/package/backend/quarter_summary.php`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, shallowRef, watch } from 'vue';
 
-import { getSidebarItems, type Menu } from './vertical-sidebar/sidebarItem';
+import { getSidebarItems, type Menu } from './vertical-sidebar/sidebarItem'; // ปรับ path ตามจริง
 import NavGroup from './vertical-sidebar/NavGroup/index.vue';
 import NavItem from './vertical-sidebar/NavItem/index.vue';
 import NavCollapse from './vertical-sidebar/NavCollapse/NavCollapse.vue';
@@ -18,60 +18,60 @@ const user = ref<{ fullname: string; role: string; profile_image?: string } | nu
 const profileImageUrl = ref<string>(defaultAvatar);
 const fullname = ref('Guest');
 const sidebarMenu = shallowRef<Menu[]>([]);
-
-// ใช้ useDisplay เพื่อเข้าถึง break point ของ Vuetify
-const { mdAndDown } = useDisplay();
-
-const sDrawer = ref(!mdAndDown.value);
+const sDrawer = ref(true);
 
 function loadUserData() {
-    try {
-        const userData = sessionStorage.getItem('user') || localStorage.getItem('user');
-        if (userData) {
-            const parsedUser = JSON.parse(userData);
-            user.value = parsedUser;
+  try {
+    const userData = sessionStorage.getItem('user') || localStorage.getItem('user');
+    if (userData) {
+      const parsedUser = JSON.parse(userData);
+      user.value = parsedUser;
 
-            fullname.value = parsedUser?.fullname || 'Guest';
+      fullname.value = parsedUser?.fullname || 'Guest';
 
-            if (parsedUser?.profile_image && parsedUser.profile_image.trim() !== '') {
-                const pi = decodeURIComponent(parsedUser.profile_image);
-                if (/^https?:\/\//.test(pi)) {
-                    profileImageUrl.value = pi;
-                } else {
-                    profileImageUrl.value = 'https://c44d-2405-9800-b861-96e-d38-cc71-74cd-d0c1.ngrok-free.app/package/backend/' + pi;
-                }
-            } else {
-                profileImageUrl.value = defaultAvatar;
-            }
-
-            sidebarMenu.value = getSidebarItems(parsedUser?.role || 'user');
+      if (parsedUser?.profile_image && parsedUser.profile_image.trim() !== '') {
+        const pi = decodeURIComponent(parsedUser.profile_image);
+        if (/^https?:\/\//.test(pi)) {
+          profileImageUrl.value = pi;
         } else {
-            user.value = null;
-            fullname.value = 'Guest';
-            profileImageUrl.value = defaultAvatar;
-            sidebarMenu.value = getSidebarItems('user');
+          profileImageUrl.value = 'http://localhost/package/backend/' + pi;
         }
-    } catch (error) {
-        console.error(error);
-        user.value = null;
-        fullname.value = 'Guest';
+      } else {
         profileImageUrl.value = defaultAvatar;
-        sidebarMenu.value = getSidebarItems('user');
+      }
+
+     
+      sidebarMenu.value = getSidebarItems(parsedUser?.role || 'user');
+    } else {
+      user.value = null;
+      fullname.value = 'Guest';
+      profileImageUrl.value = defaultAvatar;
+      sidebarMenu.value = getSidebarItems('user'); 
     }
+  } catch (error) {
+    console.error(error);
+    user.value = null;
+    fullname.value = 'Guest';
+    profileImageUrl.value = defaultAvatar;
+    sidebarMenu.value = getSidebarItems('user');
+  }
 }
 
 onMounted(() => {
-    loadUserData();
-    window.addEventListener('storage', loadUserData);
+  loadUserData();
+  window.addEventListener('storage', loadUserData);
 });
 
 onUnmounted(() => {
-    window.removeEventListener('storage', loadUserData);
+  window.removeEventListener('storage', loadUserData);
 });
 
+const { mdAndDown } = useDisplay();
+onMounted(() => {
+  sDrawer.value = !mdAndDown.value;
+});
 watch(mdAndDown, (val) => {
-    sDrawer.value = !val; 
-
+  sDrawer.value = !val;
 });
 </script>
 
@@ -94,39 +94,65 @@ watch(mdAndDown, (val) => {
   </v-app-bar>
 
   <v-main>
- <v-navigation-drawer 
-  left 
-  elevation="0" 
-  class="leftSidebar top-header" 
-  :width="300" 
-  v-model="sDrawer" 
-  :temporary="mdAndDown"  
-  :permanent="!mdAndDown" 
-  :app="true" 
->
-  <perfect-scrollbar class="scrollnavbar">
-    <div class="profile">
-      <div class="profile-img py-10 px-3 d-flex align-center">
-        <v-avatar size="50">
-          <img :src="profileImageUrl" width="50" alt="User Profile"  style="object-fit: contain; border-radius: 50%;" />
-        </v-avatar>
-      </div>
-      <div class="profile-name d-flex align-center px-3">
-        <SidebarProfile />
-      </div>
-    </div>
+    <!-- <v-navigation-drawer left elevation="0" app class="leftSidebar top-header" :width="300" v-model="sDrawer">
+      <perfect-scrollbar class="scrollnavbar">
+        <div class="profile">
+          <div class="profile-img py-10 px-3 d-flex align-center">
+            <v-avatar size="50">
+              <img :src="profileImageUrl" width="50" alt="User Profile"  style="object-fit: contain; border-radius: 50%;" />
+            </v-avatar>
+          </div>
+          <div class="profile-name d-flex align-center px-3">
+            <SidebarProfile />
+          </div>
+        </div>
 
-    <v-list class="px-4 py-2">
-      <template v-for="(item, i) in sidebarMenu" :key="i">
-        <NavGroup v-if="item.header" :item="item" :key="item.title" />
-        <NavCollapse v-else-if="item.children" class="leftPadding" :item="item" :level="0" />
-        <NavItem v-else class="leftPadding" :item="item" />
-      </template>
-    </v-list>
-  </perfect-scrollbar>
-</v-navigation-drawer>
+        <v-list class="px-4 py-2">
+          <template v-for="(item, i) in sidebarMenu" :key="i">
+            <NavGroup v-if="item.header" :item="item" :key="item.title" />
+            <NavCollapse v-else-if="item.children" class="leftPadding" :item="item" :level="0" />
+            <NavItem v-else class="leftPadding" :item="item" />
+          </template>
+        </v-list>
+      </perfect-scrollbar>
+    </v-navigation-drawer> -->
 
+     <v-navigation-drawer left elevation="0" app class="leftSidebar"  :width="270" v-model="sDrawer">
+                <!-- ---------------------------------------------- -->
+                <!---Navigation -->
+                <!-- ---------------------------------------------- -->
 
+                <perfect-scrollbar class="scrollnavbar">
+                    <div class="profile">
+                        <div class="profile-img py-10 px-3">
+                            <v-avatar size="50">
+                                <img src="@/assets/images/users/user-1.jpg" width="50" alt="Julia" />
+                            </v-avatar>
+                        </div>
+                        <div class="profile-name d-flex align-center px-3">
+                            <div class="profile-logout w-100">
+                                <SidebarProfile />
+                            </div>
+                        </div>
+                    </div>
+                    <v-list class="px-4 py-4">
+                        <!---Menu Loop -->
+                        <template v-for="(item, i) in sidebarMenu">
+                            <!---Item Sub Header -->
+                            <NavGroup :item="item" v-if="item.header" :key="item.title" />
+
+                            <NavCollapse class="leftPadding" :item="item" :level="0" v-else-if="item.children" />
+                            <!---Single Item-->
+                            <NavItem :item="item" v-else class="leftPadding" />
+                            <!---End Single Item-->
+                        </template>
+                    </v-list>
+<!-- 
+                    <div class="">
+                        <ExtraBox />
+                    </div> -->
+                </perfect-scrollbar>
+            </v-navigation-drawer>
 
     <v-container class="page-wrapper">
       <div class="maxWidth">
@@ -135,3 +161,10 @@ watch(mdAndDown, (val) => {
     </v-container>
   </v-main>
 </template>
+<style>
+
+.leftSidebar {
+  
+    top: 60px !important;
+}
+</style>

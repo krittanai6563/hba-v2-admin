@@ -59,30 +59,9 @@ export function getSidebarItems(role: string): Menu[] {
           {
             title: 'สรุปรายงาน',
             icon: 'notebook-line-duotone',
-            to: '/ui/repost_admin',
+            to: '/ui/report',
             external: false,
           },
-          
-        ]
-      : []),
-
-     ...(role === 'master'
-      ? [
-
-           {
-            title: 'ข้อมูลสมาชิก',
-            icon: 'shield-user-outline',
-            to: '/ui/report_user',
-            external: false,
-          },
-       
-          {
-            title: 'สรุปรายงาน',
-            icon: ' ',
-            to: '/ui/repost_admin',
-            external: false,
-          },
-         
         ]
       : []),
     {
@@ -93,16 +72,3 @@ export function getSidebarItems(role: string): Menu[] {
     },
   ];
 }
-
-
-    // // Conditionally include this menu item based on the role
-    // ...(role !== 'master'
-    //   ? [
-    //       {
-    //         title: 'ข้อมูลยอดเซ็นสัญญา',
-    //         icon: 'clipboard-list-linear',
-    //         to: '/ui/typography',
-    //         external: false,
-    //       },
-    //     ]
-    //   : []),

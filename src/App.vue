@@ -19,12 +19,12 @@ const resetTimer = () => {
   if (!isFormActive()) {
     logoutTimer = setTimeout(() => {
       autoLogout()
-    }, 3600000) // 1 ชั่วโมง
+    }, 18000000) // 1 ชั่วโมง
   }
 }
 
 const autoLogout = async () => {
-  await fetch('http://localhost/package/backend/logout.php', {
+  await fetch('https://06da-1-47-223-210.ngrok-free.app/package/backend/logout.php', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' }
   })

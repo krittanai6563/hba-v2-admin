@@ -50,7 +50,7 @@ async function register() {
             formData.append('profile_image', selectedFile.value);
         }
 
-        const res = await fetch('https://c44d-2405-9800-b861-96e-d38-cc71-74cd-d0c1.ngrok-free.app/package/backend/register.php', {
+        const res = await fetch('https://06da-1-47-223-210.ngrok-free.app/package/backend/register.php', {
             method: 'POST',
             body: formData
         });
@@ -128,7 +128,7 @@ const filteredMembers = computed(() => {
 
 const fetchMembers = async () => {
     try {
-        let url = 'https://c44d-2405-9800-b861-96e-d38-cc71-74cd-d0c1.ngrok-free.app/package/backend/get_members_master.php';
+        let url = 'https://06da-1-47-223-210.ngrok-free.app/package/backend/get_members_master.php';
 
 
         if (selectedYearFilter.value && selectedMonthFilter.value) {
@@ -144,7 +144,7 @@ const fetchMembers = async () => {
             const monthNumber = parseInt(month);
 
 
-            url = `https://c44d-2405-9800-b861-96e-d38-cc71-74cd-d0c1.ngrok-free.app/package/backend/get_members_master.php?buddhist_year=${buddhistYear}&month_number=${monthNumber}`;
+            url = `https://06da-1-47-223-210.ngrok-free.app/package/backend/get_members_master.php?buddhist_year=${buddhistYear}&month_number=${monthNumber}`;
         } else if (selectedYearFilter.value) {
             let buddhistYear = parseInt(selectedYearFilter.value);
             const isBuddhistYear = buddhistYear > 2500;
@@ -155,7 +155,7 @@ const fetchMembers = async () => {
             }
 
 
-            url = `https://c44d-2405-9800-b861-96e-d38-cc71-74cd-d0c1.ngrok-free.app/package/backend/get_members_master.php?buddhist_year=${buddhistYear}`;
+            url = `https://06da-1-47-223-210.ngrok-free.app/package/backend/get_members_master.php?buddhist_year=${buddhistYear}`;
         }
 
 
@@ -199,7 +199,7 @@ function getProfileImageUrl(path: string | null): string {
     if (!path || path.trim() === '') {
         return defaultAvatar;
     }
-    return `https://c44d-2405-9800-b861-96e-d38-cc71-74cd-d0c1.ngrok-free.app/package/backend/${path}`;
+    return `https://06da-1-47-223-210.ngrok-free.app/package/backend/${path}`;
 }
 
 function formatCurrency(value: number | string): string {
@@ -274,7 +274,7 @@ async function updateMember(isActive: { value: boolean }) {
             formData.append('profile_image', selectedFile.value);
         }
 
-        const res = await fetch('https://c44d-2405-9800-b861-96e-d38-cc71-74cd-d0c1.ngrok-free.app/package/backend/edit_profile.php', {
+        const res = await fetch('https://06da-1-47-223-210.ngrok-free.app/package/backend/edit_profile.php', {
             method: 'POST',
             body: formData
         });
