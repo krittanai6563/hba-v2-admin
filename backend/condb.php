@@ -5,11 +5,10 @@ header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization');
 header('Content-Type: application/json');
 
-
-$host = "localhost";
-$username = "root";
-$password = "";
-$dbname = "hba-sales";
+$host = "sql205.infinityfree.com";
+$username = "if0_39082146";
+$password = "D9TLlKWGmT";
+$dbname = "if0_39082146_hba_sales";
 
 try {
     $conn = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8", $username, $password);
@@ -18,4 +17,4 @@ try {
     http_response_code(500);
     echo json_encode(['error' => 'Database connection failed: ' . $e->getMessage()]);
     exit;
-} 
+}

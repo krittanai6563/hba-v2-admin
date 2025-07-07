@@ -1,0 +1,1 @@
+import{L as e}from"./logo-dark-vFYSVGr0.js";import{r as t,e as s,o as r,w as a,a as n,u as c}from"./index-DIUjx3mN.js";const _=["src"],f={__name:"DarkLogo",setup(l){return(m,p)=>{const o=t("RouterLink");return r(),s(o,{to:"/",class:"lh-0"},{default:a(()=>[n("img",{src:c(e),alt:"logo"},null,8,_)]),_:1})}}};export{f as _};
