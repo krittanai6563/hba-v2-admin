@@ -3,6 +3,11 @@ import defaultAvatar from '@/assets/images/users/img-logo_0.png';
 import { ref, onMounted, computed, watch } from 'vue';
 import { PyramidIcon } from 'vue-tabler-icons';
 import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
+import type { BorderStyle, Cell } from 'exceljs';
+
+
+
 
 // ฟอร์มสมัครสมาชิก
 const memberTypes = ref(['วิสามัญ', 'วิสามัญ ก', 'สมทบ']);
@@ -160,6 +165,14 @@ const filteredMembers = computed(() => {
 const fetchMembers = async () => {
     try {
         let url = 'https://6e9fdf451a56.ngrok-free.app/package/backend/get_members.php';
+        const requestOptions = {
+            method: 'POST', // Add this line
+            headers: {
+                'Content-Type': 'application/json' // Often good to include for POST requests
+            },
+            // You might also need a 'body' property here if you're sending data in the request body
+            // body: JSON.stringify({ key: 'value' })
+        };
 
         // ตรวจสอบว่ามีการเลือกปีและเดือนหรือไม่
         if (selectedYearFilter.value && selectedMonthFilter.value) {
@@ -168,11 +181,11 @@ const fetchMembers = async () => {
             const buddhistYear = parseInt(year) + 543;  // คำนวณปีพุทธศักราช
             const monthNumber = parseInt(month); // แปลงเดือนเป็นตัวเลข
 
-            url = 'https://6e9fdf451a56.ngrok-free.app/package/backend/get_members.php?buddhist_year=${buddhistYear}&month_number=${monthNumber}';
+            url = `https://6e9fdf451a56.ngrok-free.app/package/backend/get_members.php?buddhist_year=${buddhistYear}&month_number=${monthNumber}`;
         } else if (selectedYearFilter.value) {
             // หากเลือกแค่ปี, ให้ดึงข้อมูลสมาชิกตามปี
             const buddhistYear = parseInt(selectedYearFilter.value) + 543;
-            url = 'https://6e9fdf451a56.ngrok-free.app/package/backend/get_members.php?buddhist_year=${buddhistYear}';
+            url = `https://6e9fdf451a56.ngrok-free.app/package/backend/get_members.php?buddhist_year=${buddhistYear}`;
         }
 
         // เพิ่มการกรองประเภทสมาชิก (ถ้าเลือก)
@@ -187,7 +200,7 @@ const fetchMembers = async () => {
 
         console.log("Fetching URL: ", url); // ตรวจสอบ URL ที่ใช้ในการ fetch
 
-        const res = await fetch(url);
+        const res = await fetch(url, requestOptions); // Pass requestOptions here
         if (!res.ok) throw new Error('Failed to fetch members');
         const data = await res.json();
         members.value = data;
@@ -197,7 +210,6 @@ const fetchMembers = async () => {
         console.error(error);
     }
 };
-
 // เมื่อปีหรือเดือนถูกเลือก, ให้เรียก fetchMembers ใหม่
 watch([selectedYearFilter, selectedMonthFilter], () => {
     fetchMembers();
@@ -311,123 +323,313 @@ function closeMessageBox() {
 
 
 
-function exportToExcel() {
-    const headers = ['ลำดับ', 'ชื่อบริษัท', 'ปี/เดือน'];  // Column headers for the table
-    let totalMembers = 0;
-    let missingMembers = 0;
+// function exportToExcel() {
+//     const headers = ['ลำดับ', 'ชื่อบริษัท', 'ปี/เดือน'];  // Column headers for the table
+//     let totalMembers = 0;
+//     let missingMembers = 0;
+
+//     // Group members by "ประเภทสมาชิก" (member type)
+//     const groupedByType: { [key: string]: any[] } = {};
+//     members.value.forEach((member, index) => {
+//         // Create row for each member
+//         const row = [
+//             index + 1,  // ลำดับ (Index)
+//             member.fullname,  // ชื่อบริษัท (Company Name)
+//             member.status === 'กรอกข้อมูลเรียบร้อย' ? '✓' : '❌'  // ปี/เดือน (Year/Month) status
+//         ];
+
+//         // Group by member type
+//         if (!groupedByType[member.member_type]) {
+//             groupedByType[member.member_type] = [];
+//         }
+//         groupedByType[member.member_type].push(row);
+
+//         totalMembers++;
+//         if (member.status !== 'กรอกข้อมูลเรียบร้อย') {
+//             missingMembers++;
+//         }
+//     });
+
+//     // Create workbook
+//     const wb = XLSX.utils.book_new();
+
+//     // Add a sheet for each category (member type)
+//     Object.keys(groupedByType).forEach((memberType) => {
+//         const rows = [];
+
+//         // Add category header in the first row
+//         const categoryHeader = `${memberType} (หมวดหมู่)`;
+//         rows.push([categoryHeader, '', '']);  // Category header in the first row
+
+//         // Add an empty row before the column headers (to separate the category header from the table headers)
+//         rows.push([]);  // Empty row
+
+//         // **Move headers to the first row**
+//         rows.push(headers);
+
+//         // Initialize the worksheet at this point
+//         const ws = XLSX.utils.aoa_to_sheet(rows);  // Create worksheet after adding rows
+
+//         // Add rows for each member under this category
+//         groupedByType[memberType].forEach((row, rowIndex) => {
+//             rows.push(row);
+
+//             // Apply background color based on the 'ปี/เดือน' status
+//             const rowIdx = rowIndex + 2;  // Excel rows start from 2 (due to the header being row 2)
+//             const cellRef = XLSX.utils.encode_cell({ r: rowIdx, c: 2 }); // Check the 'ปี/เดือน' column (column 2)
+
+//             if (row[2] === '❌') {
+//                 // Red background for missing data
+//                 if (!ws[cellRef]) ws[cellRef] = {}; // Ensure row exists
+//                 ws[cellRef].s = {
+//                     fill: {
+//                         patternType: "solid",
+//                         fgColor: { rgb: "FF9999" }  // Red background
+//                     }
+//                 };
+//             } else if (row[2] === '✓') {
+//                 // White background for filled data
+//                 if (!ws[cellRef]) ws[cellRef] = {}; // Ensure row exists
+//                 ws[cellRef].s = {
+//                     fill: {
+//                         patternType: "solid",
+//                         fgColor: { rgb: "FFFFFF" }  // White background
+//                     }
+//                 };
+//             }
+//         });
+
+       
+//         rows.push([ 
+//             'รวม',  
+//             '',     
+//             totalMembers  
+//         ]);
+
+//         rows.push([ 
+//             'ยังไม่ได้กรอก',  // Merged cell in the first column
+//             '',               // Empty cell for the second column
+//             missingMembers    // Missing data in the third column
+//         ]);
+
+//         // Re-create the worksheet after rows are added
+//         const updatedWs = XLSX.utils.aoa_to_sheet(rows);  // Re-create worksheet with updated rows
+
+//         // Set column widths for better readability
+//         updatedWs['!cols'] = [
+//             { wch: 10 },  // Column for 'ลำดับ'
+//             { wch: 20 },  // Column for 'ชื่อบริษัท'
+//             { wch: 12 },  // Column for 'ปี/เดือน'
+//         ];
+
+//         // Merge category header cells
+//         updatedWs['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 2 } }];  // Merge the category header row (first row)
+
+//         // Merge the first two columns of the summary rows
+//         updatedWs['!merges'].push(
+//             { s: { r: rows.length - 2, c: 0 }, e: { r: rows.length - 2, c: 1 } },  // Merge cells for 'รวม'
+//             { s: { r: rows.length - 1, c: 0 }, e: { r: rows.length - 1, c: 1 } }   // Merge cells for 'ยังไม่ได้กรอก'
+//         );
+
+      
+//         XLSX.utils.book_append_sheet(wb, updatedWs, memberType);
+//     });
+
+   
+//     XLSX.writeFile(wb, 'members_data.xlsx');
+// }
+
+async function exportToExcel() {
+    const workbook = new ExcelJS.Workbook();
 
     // Group members by "ประเภทสมาชิก" (member type)
-    const groupedByType: { [key: string]: any[] } = {};
-    members.value.forEach((member, index) => {
-        // Create row for each member
-        const row = [
-            index + 1,  // ลำดับ (Index)
-            member.fullname,  // ชื่อบริษัท (Company Name)
-            member.status === 'กรอกข้อมูลเรียบร้อย' ? '✓' : '❌'  // ปี/เดือน (Year/Month) status
-        ];
-
-        // Group by member type
+    const groupedByType: { [key: string]: Member[] } = {};
+    members.value.forEach((member) => {
         if (!groupedByType[member.member_type]) {
             groupedByType[member.member_type] = [];
         }
-        groupedByType[member.member_type].push(row);
+        groupedByType[member.member_type].push(member);
+    });
 
-        totalMembers++;
-        if (member.status !== 'กรอกข้อมูลเรียบร้อย') {
-            missingMembers++;
+    // Calculate overall totals
+    let totalMembersOverall = members.value.length;
+    let filledMembersOverall = members.value.filter(m => m.status === 'กรอกข้อมูลเรียบร้อย').length;
+    let missingMembersOverall = members.value.filter(m => m.status !== 'กรอกข้อมูลเรียบร้อย').length;
+
+    // Determine the selected year and month for the headers
+    let headerYearDisplay = 'ไม่ระบุปี'; // Default if no year selected
+    let headerMonthDisplay = 'ไม่ระบุเดือน'; // Default if no month selected
+
+    if (selectedYearFilter.value) {
+        headerYearDisplay = `ปี ${selectedYearFilter.value}`; // selectedYearFilter should already be Buddhist year
+    } else {
+        // If no filter selected, use current Buddhist year
+        headerYearDisplay = `ปี ${new Date().getFullYear() + 543}`;
+    }
+
+    if (selectedMonthFilter.value) {
+        const [year, monthNum] = selectedMonthFilter.value.split('-');
+        const monthIndex = parseInt(monthNum) - 1;
+        headerMonthDisplay = `เดือน${monthNames[monthIndex]}`;
+    } else {
+        // If no filter selected, use current month name
+        headerMonthDisplay = `เดือน${monthNames[new Date().getMonth()]}`;
+    }
+
+    // Define the custom font
+    const angsanaNewFont = { name: 'Angsana New', family: 2, size: 12 }; // Family 2 for Swiss (sans-serif)
+    // Define a thin black border
+    const thinBlackBorder = {
+        top: { style: 'thin' as BorderStyle, color: { argb: 'FF000000' } },
+        bottom: { style: 'thin' as BorderStyle, color: { argb: 'FF000000' } },
+        left: { style: 'thin' as BorderStyle, color: { argb: 'FF000000' } },
+        right: { style: 'thin' as BorderStyle, color: { argb: 'FF000000' } }
+    };
+
+    // Add a sheet for each category (member type)
+    for (const memberType of Object.keys(groupedByType)) {
+        const worksheet = workbook.addWorksheet(memberType);
+
+        // Row 1: Category header (e.g., "สมาชิกสามัญ")
+        worksheet.addRow([memberType]);
+        worksheet.mergeCells('A1:C1'); // Merge across the 3 main content columns (A, B, C)
+        worksheet.getCell('A1').font = { ...angsanaNewFont, bold: true, size: 14 }; // Apply font and bold
+        worksheet.getCell('A1').alignment = { vertical: 'middle', horizontal: 'left' };
+
+        // Row 2: Empty row for separation
+        worksheet.addRow([]);
+
+        // Row 3: Main Headers - "ที่", "บริษัท", Dynamic Year Header
+        worksheet.addRow(['ที่', 'บริษัท', headerYearDisplay]);
+        const headerRow3 = worksheet.getRow(3);
+        headerRow3.font = { ...angsanaNewFont, bold: true }; // Apply font and bold
+        headerRow3.alignment = { vertical: 'middle', horizontal: 'center' };
+        headerRow3.eachCell({ includeEmpty: true }, (cell: Cell) => { // Explicitly type 'cell'
+            cell.border = thinBlackBorder; // Apply full borders to header row 3
+        });
+
+
+        // Row 4: Secondary Headers - "", "", Dynamic Month Header (under the Year)
+        worksheet.addRow(['', '', headerMonthDisplay]);
+        const headerRow4 = worksheet.getRow(4);
+        headerRow4.font = { ...angsanaNewFont, bold: true }; // Apply font and bold
+        headerRow4.alignment = { vertical: 'middle', horizontal: 'center' };
+        headerRow4.eachCell({ includeEmpty: true }, (cell: Cell) => { // Explicitly type 'cell'
+            cell.border = thinBlackBorder; // Apply full borders to header row 4
+        });
+
+        // Merge cells for headers spanning two rows to create vertical stacking
+        worksheet.mergeCells('A3:A4'); // Merge 'ที่' over two rows
+        worksheet.mergeCells('B3:B4'); // Merge 'บริษัท' over two rows
+        worksheet.mergeCells('C3:C4'); // Merge 'Year' and 'Month' over two rows in column C
+
+        let totalMembersInType = 0;
+        let missingMembersInType = 0;
+
+
+   groupedByType[memberType].forEach((member, index) => {
+    const statusIndicator = member.status === 'กรอกข้อมูลเรียบร้อย' ? '✓' : '';
+    const row = worksheet.addRow([index + 1, member.fullname, statusIndicator]);
+
+    // Apply background color, font, alignment, and full borders
+    row.eachCell({ includeEmpty: true }, (cell: Cell) => {
+        // Default alignment for all cells in data row
+        cell.alignment = { vertical: 'middle', horizontal: 'left' };
+        cell.font = angsanaNewFont;
+        cell.border = thinBlackBorder; // Apply full borders to data cells
+
+        // Conditional background color
+        if (member.status === 'ยังไม่กรอกข้อมูล') {
+            cell.fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'FFFF9999' } // Light Red color in ARGB
+            };
+        } else {
+            cell.fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'FFFFFFFF' } // White color
+            };
+        }
+
+        // Center align only the status column (Column C).
+        // cell.col returns the column letter (e.g., 'A', 'B', 'C').
+        if (cell.col === 'C') {
+            cell.alignment = { vertical: 'middle', horizontal: 'center' };
         }
     });
 
-    // Create workbook
-    const wb = XLSX.utils.book_new();
+    totalMembersInType++;
+    if (member.status !== 'กรอกข้อมูลเรียบร้อย') {
+        missingMembersInType++;
+    }
+});
 
-    // Add a sheet for each category (member type)
-    Object.keys(groupedByType).forEach((memberType) => {
-        const rows = [];
 
-        // Add category header in the first row
-        const categoryHeader = `${memberType} (หมวดหมู่)`;
-        rows.push([categoryHeader, '', '']);  // Category header in the first row
+        worksheet.addRow([]);
 
-        // Add an empty row before the column headers (to separate the category header from the table headers)
-        rows.push([]);  // Empty row
-
-        // **Move headers to the first row**
-        rows.push(headers);
-
-        // Initialize the worksheet at this point
-        const ws = XLSX.utils.aoa_to_sheet(rows);  // Create worksheet after adding rows
-
-        // Add rows for each member under this category
-        groupedByType[memberType].forEach((row, rowIndex) => {
-            rows.push(row);
-
-            // Apply background color based on the 'ปี/เดือน' status
-            const rowIdx = rowIndex + 2;  // Excel rows start from 2 (due to the header being row 2)
-            const cellRef = XLSX.utils.encode_cell({ r: rowIdx, c: 2 }); // Check the 'ปี/เดือน' column (column 2)
-
-            if (row[2] === '❌') {
-                // Red background for missing data
-                if (!ws[cellRef]) ws[cellRef] = {}; // Ensure row exists
-                ws[cellRef].s = {
-                    fill: {
-                        patternType: "solid",
-                        fgColor: { rgb: "FF9999" }  // Red background
-                    }
-                };
-            } else if (row[2] === '✓') {
-                // White background for filled data
-                if (!ws[cellRef]) ws[cellRef] = {}; // Ensure row exists
-                ws[cellRef].s = {
-                    fill: {
-                        patternType: "solid",
-                        fgColor: { rgb: "FFFFFF" }  // White background
-                    }
-                };
-            }
+        const totalRow = worksheet.addRow(['รวม', '', totalMembersInType]);
+        worksheet.mergeCells(totalRow.getCell(1).address + ':' + totalRow.getCell(2).address);
+        totalRow.font = { ...angsanaNewFont, bold: true };
+        totalRow.getCell(1).alignment = { horizontal: 'right' };
+        totalRow.getCell(3).alignment = { horizontal: 'center' };
+        totalRow.eachCell({ includeEmpty: true }, (cell: Cell) => { // Explicitly type 'cell'
+            cell.border = thinBlackBorder;
         });
 
-       
-        rows.push([ 
-            'รวม',  
-            '',     
-            totalMembers  
-        ]);
 
-        rows.push([ 
-            'ยังไม่ได้กรอก',  // Merged cell in the first column
-            '',               // Empty cell for the second column
-            missingMembers    // Missing data in the third column
-        ]);
+        const missingRow = worksheet.addRow(['ยังไม่กรอกข้อมูล', '', missingMembersInType]);
+        worksheet.mergeCells(missingRow.getCell(1).address + ':' + missingRow.getCell(2).address);
+        missingRow.font = { ...angsanaNewFont, bold: true };
+        missingRow.getCell(1).alignment = { horizontal: 'right' };
+        missingRow.getCell(3).alignment = { horizontal: 'center' };
+        missingRow.eachCell({ includeEmpty: true }, (cell: Cell) => { // Explicitly type 'cell'
+            cell.border = thinBlackBorder;
+        });
 
-        // Re-create the worksheet after rows are added
-        const updatedWs = XLSX.utils.aoa_to_sheet(rows);  // Re-create worksheet with updated rows
-
-        // Set column widths for better readability
-        updatedWs['!cols'] = [
-            { wch: 10 },  // Column for 'ลำดับ'
-            { wch: 20 },  // Column for 'ชื่อบริษัท'
-            { wch: 12 },  // Column for 'ปี/เดือน'
+        worksheet.columns = [
+            { key: 'ลำดับ', width: 10 },
+            { key: 'ชื่อบริษัท', width: 30 },
+            { key: 'สถานะเดือน', width: 25 }
         ];
 
-        // Merge category header cells
-        updatedWs['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 2 } }];  // Merge the category header row (first row)
+        const bufferRows = 5;
+        for (let i = 0; i < bufferRows; i++) {
+            worksheet.addRow([]);
+        }
 
-        // Merge the first two columns of the summary rows
-        updatedWs['!merges'].push(
-            { s: { r: rows.length - 2, c: 0 }, e: { r: rows.length - 2, c: 1 } },  // Merge cells for 'รวม'
-            { s: { r: rows.length - 1, c: 0 }, e: { r: rows.length - 1, c: 1 } }   // Merge cells for 'ยังไม่ได้กรอก'
-        );
+        // Overall summary labels at the bottom right
+        const filledLabelRow = worksheet.addRow(['', '', 'กรอกข้อมูลแล้ว', filledMembersOverall]);
+        // Note: These cells are outside the main 3-column table, so their column indices are different.
+        // C is 3, D is 4.
+        filledLabelRow.getCell(3).alignment = { horizontal: 'right' }; // Label in Column C
+        filledLabelRow.getCell(4).alignment = { horizontal: 'center' }; // Count in Column D
+        filledLabelRow.getCell(3).font = { ...angsanaNewFont, bold: true };
+        filledLabelRow.getCell(3).border = thinBlackBorder;
+        filledLabelRow.getCell(4).border = thinBlackBorder;
 
-      
-        XLSX.utils.book_append_sheet(wb, updatedWs, memberType);
-    });
+        const missingLabelRow = worksheet.addRow(['', '', 'ยังไม่กรอกข้อมูล', missingMembersOverall]);
+        missingLabelRow.getCell(3).alignment = { horizontal: 'right' }; // Label in Column C
+        missingLabelRow.getCell(4).alignment = { horizontal: 'center' }; // Count in Column D
+        missingLabelRow.getCell(3).font = { ...angsanaNewFont, bold: true };
+        missingLabelRow.getCell(3).border = thinBlackBorder;
+        missingLabelRow.getCell(4).border = thinBlackBorder;
 
-   
-    XLSX.writeFile(wb, 'members_data.xlsx');
+    } // End of for...of loop for memberType
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'members_report.xlsx';
+    a.click();
+    window.URL.revokeObjectURL(url);
 }
-
 </script>
+
+
 
 
 <template>

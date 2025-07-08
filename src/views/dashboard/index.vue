@@ -529,7 +529,7 @@ onMounted(fetchUserStatus);
 
         <v-col cols="12" sm="12" lg="12">
             <div class="v-row">
-                <div class="v-col-sm-0 v-col-lg-3 v-col-0 py-0 mb-0" revenuecard="[object Object]">
+                <div class="v-col-sm-6 v-col-lg-3 v-col-12 py-0 mb-3" revenuecard="[object Object]">
                     <div
                         class="v-card v-theme--BLUE_THEME v-card--density-default elevation-10 rounded-md v-card--variant-elevated">
                         <div class="v-card__loader">
