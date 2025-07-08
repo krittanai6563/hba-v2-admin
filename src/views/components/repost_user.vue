@@ -55,14 +55,13 @@ async function register() {
             body: formData
         });
 
-        const text = await res.text();  // Read response as text first
-        console.log("Response text:", text);  // Log the response text
+        const text = await res.text();
+        console.log(text);
 
-        // Check if response is a valid JSON (you can also check the Content-Type header)
         if (res.ok) {
             try {
-                const jsonResponse = JSON.parse(text);
-                message.value = jsonResponse.message || 'Registration successful!';
+                let data = JSON.parse(text);
+                message.value = data.message || 'Registration successful!';
             } catch (e) {
                 message.value = 'Error: Invalid JSON format';
             }
@@ -79,7 +78,6 @@ async function register() {
         showMessageBox.value = true;
     }
 }
-
 
 interface Member {
     id: number;
@@ -128,10 +126,40 @@ const filteredMembers = computed(() => {
     return filtered;
 });
 
+// const fetchMembers = async () => {
+//     try {
+//         let url = 'https://6e9fdf451a56.ngrok-free.app/package/backend/get_members_master.php';
+
+//         // URL parameters logic as you already have
+//         // Check for year and month parameters, then build the URL
+
+//         const res = await fetch(url, {
+//             method: 'POST',  // Ensure the request is a GET request
+//         });
+
+//         // Check if the response is JSON
+//         const contentType = res.headers.get("Content-Type");
+//         if (!contentType || !contentType.includes("application/json")) {
+//             // If content type isn't JSON, throw an error
+//             throw new Error(`Expected JSON response, but got ${contentType}`);
+//         }
+
+//         // If response is JSON, parse it
+//         const data = await res.json();
+//         members.value = data;  // Populate the members list with the data
+
+//         console.log('Members:', members.value);
+//     } catch (error) {
+//         console.error("Fetch error:", error);
+//         message.value = "An error occurred while fetching the members. Please try again later.";
+//     }
+// };
+
 const fetchMembers = async () => {
     try {
-        let url = 'http://localhost:80/package/backend/get_members_master.php';
+        let url = 'https://6e9fdf451a56.ngrok-free.app/package/backend/get_members_master.php';
 
+        // Append the filters to the URL
         if (selectedYearFilter.value && selectedMonthFilter.value) {
             const [year, month] = selectedMonthFilter.value.split('-');
             let buddhistYear = parseInt(year);
@@ -142,8 +170,7 @@ const fetchMembers = async () => {
             }
 
             const monthNumber = parseInt(month);
-
-            url = `http://localhost:80/package/backend/get_members_master.php?buddhist_year=${buddhistYear}&month_number=${monthNumber}`;
+            url = `${url}?buddhist_year=${buddhistYear}&month_number=${monthNumber}`;
         } else if (selectedYearFilter.value) {
             let buddhistYear = parseInt(selectedYearFilter.value);
             const isBuddhistYear = buddhistYear > 2500;
@@ -152,7 +179,7 @@ const fetchMembers = async () => {
                 buddhistYear += 543;
             }
 
-            url = `http://localhost:80/package/backend/get_members_master.php?buddhist_year=${buddhistYear}`;
+            url = `${url}?buddhist_year=${buddhistYear}`;
         }
 
         if (selectedMemberTypeFilter.value && selectedMemberTypeFilter.value !== 'ทั้งหมด') {
@@ -165,45 +192,45 @@ const fetchMembers = async () => {
 
         console.log("Fetching URL: ", url);
 
-        const res = await fetch(url);
+        const res = await fetch(url, {
+            method: 'POST',  // Ensure the request is a POST request
+        });
 
-        // Log the response status and text content to see what is being returned
-        const text = await res.text();
-        console.log("Response Status:", res.status);  // Log the HTTP status code
-        console.log("Response Text:", text);  // Log the raw response content
-
-        // Check if the response is not ok (e.g., 404 or 500 errors)
+        // Check if the response is valid
         if (!res.ok) {
-            throw new Error(`Failed to fetch members, status: ${res.status}`);
+            throw new Error('Failed to fetch members');
         }
 
-        // Attempt to parse the response as JSON
-        try {
-            const data = JSON.parse(text);
-            members.value = data;
-            console.log('Members:', members.value);
-        } catch (error) {
-            console.error('Failed to parse JSON:', error);
-            message.value = "Error parsing server response. Please check the server logs.";
-        }
+        // Parse the response data
+        const data = await res.json();
+        members.value = data;
 
+        console.log('Members:', members.value);
     } catch (error) {
         console.error("Fetch error:", error);
         message.value = "An error occurred while fetching the members. Please try again later.";
     }
 };
 
-
-
-
+// Refetch members whenever filters are updated
 watch([selectedYearFilter, selectedMonthFilter, selectedMemberTypeFilter, selectedStatusFilter], () => {
     fetchMembers();
 });
 
-
+// Call fetchMembers when component is mounted
 onMounted(() => {
     fetchMembers();
 });
+
+
+// watch([selectedYearFilter, selectedMonthFilter, selectedMemberTypeFilter, selectedStatusFilter], () => {
+//     fetchMembers();
+// });
+
+
+// onMounted(() => {
+//     fetchMembers();
+// });
 
 
 
@@ -244,7 +271,7 @@ for (let m = 1; m <= (yearToDisplay === currentYear.toString() ? currentMonth : 
     });
 }
 
-console.log('123'+months.value);
+console.log(months.value);
 
 const years = ref<string[]>([]);
 

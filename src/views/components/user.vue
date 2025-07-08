@@ -168,11 +168,11 @@ const fetchMembers = async () => {
             const buddhistYear = parseInt(year) + 543;  // คำนวณปีพุทธศักราช
             const monthNumber = parseInt(month); // แปลงเดือนเป็นตัวเลข
 
-            url = `https://6e9fdf451a56.ngrok-free.app/package/backend/get_members.php?buddhist_year=${buddhistYear}&month_number=${monthNumber}`;
+            url = 'https://6e9fdf451a56.ngrok-free.app/package/backend/get_members.php?buddhist_year=${buddhistYear}&month_number=${monthNumber}';
         } else if (selectedYearFilter.value) {
             // หากเลือกแค่ปี, ให้ดึงข้อมูลสมาชิกตามปี
             const buddhistYear = parseInt(selectedYearFilter.value) + 543;
-            url = `https://6e9fdf451a56.ngrok-free.app/package/backend/get_members.php?buddhist_year=${buddhistYear}`;
+            url = 'https://6e9fdf451a56.ngrok-free.app/package/backend/get_members.php?buddhist_year=${buddhistYear}';
         }
 
         // เพิ่มการกรองประเภทสมาชิก (ถ้าเลือก)
@@ -215,7 +215,7 @@ function getProfileImageUrl(path: string | null): string {
     if (!path || path.trim() === '') {
         return defaultAvatar;
     }
-    return `https://6e9fdf451a56.ngrok-free.app/package/backend/${path}`;
+    return 'https://6e9fdf451a56.ngrok-free.app/package/backend/${path}';
 }
 
 function formatCurrency(value: number | string): string {
