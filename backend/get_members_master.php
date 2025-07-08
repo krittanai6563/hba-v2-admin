@@ -42,7 +42,7 @@ try {
             AND cs.buddhist_year = :buddhist_year 
             AND cs.month_number = :month_number
         LEFT JOIN contract_detail cd ON cd.contract_submission_id = cs.id
-     WHERE u.role IN ('user', 'admin', 'master')
+     WHERE u.role IN ('user')
 
         GROUP BY u.id
         ORDER BY u.id

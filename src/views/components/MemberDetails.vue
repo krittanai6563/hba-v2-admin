@@ -40,7 +40,7 @@ const fetchMemberDetails = async () => {
   if (!memberId.value) return;
 
   try {
-    const response = await fetch(`https://6e9fdf451a56.ngrok-free.app/package/backend/get_members_master-D.php?id=${memberId.value}&buddhist_year=${buddhistYear.value}&month_number=${monthNumber.value}`);
+    const response = await fetch(`http://localhost:80/package/backend/get_members_master-D.php?id=${memberId.value}&buddhist_year=${buddhistYear.value}&month_number=${monthNumber.value}`);
     const result = await response.json();
 
     console.log(result);  // ตรวจสอบว่าได้ข้อมูลถูกต้อง

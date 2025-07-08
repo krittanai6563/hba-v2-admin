@@ -55,13 +55,14 @@ async function register() {
             body: formData
         });
 
-        const text = await res.text();
-        console.log(text);
+        const text = await res.text();  // Read response as text first
+        console.log("Response text:", text);  // Log the response text
 
+        // Check if response is a valid JSON (you can also check the Content-Type header)
         if (res.ok) {
             try {
-                let data = JSON.parse(text);
-                message.value = data.message || 'Registration successful!';
+                const jsonResponse = JSON.parse(text);
+                message.value = jsonResponse.message || 'Registration successful!';
             } catch (e) {
                 message.value = 'Error: Invalid JSON format';
             }
@@ -78,6 +79,7 @@ async function register() {
         showMessageBox.value = true;
     }
 }
+
 
 interface Member {
     id: number;
@@ -128,14 +130,12 @@ const filteredMembers = computed(() => {
 
 const fetchMembers = async () => {
     try {
-        let url = 'https://6e9fdf451a56.ngrok-free.app/package/backend/get_members_master.php';
-
+        let url = 'http://localhost:80/package/backend/get_members_master.php';
 
         if (selectedYearFilter.value && selectedMonthFilter.value) {
             const [year, month] = selectedMonthFilter.value.split('-');
             let buddhistYear = parseInt(year);
             const isBuddhistYear = buddhistYear > 2500;
-
 
             if (!isBuddhistYear) {
                 buddhistYear += 543;
@@ -143,26 +143,21 @@ const fetchMembers = async () => {
 
             const monthNumber = parseInt(month);
 
-
-            url = `https://6e9fdf451a56.ngrok-free.app/package/backend/get_members_master.php?buddhist_year=${buddhistYear}&month_number=${monthNumber}`;
+            url = `http://localhost:80/package/backend/get_members_master.php?buddhist_year=${buddhistYear}&month_number=${monthNumber}`;
         } else if (selectedYearFilter.value) {
             let buddhistYear = parseInt(selectedYearFilter.value);
             const isBuddhistYear = buddhistYear > 2500;
-
 
             if (!isBuddhistYear) {
                 buddhistYear += 543;
             }
 
-
-            url = `https://6e9fdf451a56.ngrok-free.app/package/backend/get_members_master.php?buddhist_year=${buddhistYear}`;
+            url = `http://localhost:80/package/backend/get_members_master.php?buddhist_year=${buddhistYear}`;
         }
-
 
         if (selectedMemberTypeFilter.value && selectedMemberTypeFilter.value !== 'ทั้งหมด') {
             url += `&member_type=${selectedMemberTypeFilter.value}`;
         }
-
 
         if (selectedStatusFilter.value && selectedStatusFilter.value !== 'ทั้งหมด') {
             url += `&status=${selectedStatusFilter.value}`;
@@ -171,15 +166,34 @@ const fetchMembers = async () => {
         console.log("Fetching URL: ", url);
 
         const res = await fetch(url);
-        if (!res.ok) throw new Error('Failed to fetch members');
-        const data = await res.json();
-        members.value = data;
 
-        console.log('Members:', members.value);
+        // Log the response status and text content to see what is being returned
+        const text = await res.text();
+        console.log("Response Status:", res.status);  // Log the HTTP status code
+        console.log("Response Text:", text);  // Log the raw response content
+
+        // Check if the response is not ok (e.g., 404 or 500 errors)
+        if (!res.ok) {
+            throw new Error(`Failed to fetch members, status: ${res.status}`);
+        }
+
+        // Attempt to parse the response as JSON
+        try {
+            const data = JSON.parse(text);
+            members.value = data;
+            console.log('Members:', members.value);
+        } catch (error) {
+            console.error('Failed to parse JSON:', error);
+            message.value = "Error parsing server response. Please check the server logs.";
+        }
+
     } catch (error) {
-        console.error(error);
+        console.error("Fetch error:", error);
+        message.value = "An error occurred while fetching the members. Please try again later.";
     }
 };
+
+
 
 
 watch([selectedYearFilter, selectedMonthFilter, selectedMemberTypeFilter, selectedStatusFilter], () => {
@@ -230,7 +244,7 @@ for (let m = 1; m <= (yearToDisplay === currentYear.toString() ? currentMonth : 
     });
 }
 
-console.log(months.value);
+console.log('123'+months.value);
 
 const years = ref<string[]>([]);
 

@@ -156,7 +156,7 @@ const months = [
   "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
 ];
 
-// คำนวณชื่อเดือนและปี
+
 const currentYear = new Date().getFullYear() + 543;  // ปีพุทธศักราช
 const currentMonth = new Date().getMonth();  // เดือนปัจจุบัน
 const currentMonthName = months[currentMonth];  // ชื่อเดือนที่ตรงกับตัวแปร currentMonth
@@ -209,7 +209,7 @@ onMounted(fetchUserStatus);
 <template>
   <v-row v-if="fetchErrorUserStatus && userRole === 'user'">
     
-    <v-alert density="compact" type="error" :text="errorMessage" title="กรุณากรอกข้อมูล"></v-alert>
+  <v-alert density="compact" type="error" :text="errorMessage" title="กรุณากรอกข้อมูล"></v-alert>
   </v-row>
 
   <v-row v-if="statusMessage && userRole === 'user'">
@@ -218,6 +218,8 @@ onMounted(fetchUserStatus);
 
     <v-row>
         <v-col cols="12" sm="12" lg="12">
+
+            
 
             <div class="mt-3 mb-6">
                 <div class="d-flex justify-space-between">
