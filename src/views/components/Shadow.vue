@@ -292,88 +292,23 @@ const getTotalYearTotal = (type: 'unit' | 'value' | 'area') => {
 
 
 
-
 const exportToExcel = () => {
-  const wb = XLSX.utils.book_new();
-  const ws_data: (string | number)[][] = [];
-  const merges: { s: { r: number, c: number }, e: { r: number, c: number } }[] = [];
-  const colStyles: { [key: string]: { wch?: number } } = {};
-  const cellStyles: { [key: string]: XLSX.CellObject } = {}; 
+  const wb = XLSX.utils.book_new();  
+  const headers = ['รายงานเปรียบเทียบยอดเซ็นสัญญา', ...visibleQuarters.value, 'รวม'];
+  const aoa: (string | number)[][] = [headers];
+  const merges: { s: { r: number, c: number }, e: { r: number, c: number } }[] = []; 
 
-  let currentRowIndex = 0;
+  let currentRow = 1;
 
-  ws_data.push([`รายงานเปรียบเทียบยอดเซ็นสัญญา ประจำปี ${selectedYear.value}`]);
-  merges.push({ s: { r: currentRowIndex, c: 0 }, e: { r: currentRowIndex, c: visibleQuarters.value.length + 1 } });
-  
-
-  const titleCellAddress = XLSX.utils.encode_cell({ r: currentRowIndex, c: 0 });
-  cellStyles[titleCellAddress] = {
-    v: ws_data[currentRowIndex][0], 
-    t: 's', 
-    s: {
-      fill: { fgColor: { rgb: 'FF008000' } }, 
-      font: { bold: true, color: { rgb: 'FFFFFFFF' }, name: 'Angsana New' },
-      alignment: { horizontal: 'center', vertical: 'center' }
-    }
-  };
-  currentRowIndex++;
-
- 
-  ws_data.push(['(หน่วย : ล้านบาท)', ...visibleQuarters.value, 'รวม']);
- 
-  const secondHeaderRowIndex = currentRowIndex;
-  ws_data[secondHeaderRowIndex].forEach((_, colIndex) => {
-    const cellAddress = XLSX.utils.encode_cell({ r: secondHeaderRowIndex, c: colIndex });
-    cellStyles[cellAddress] = {
-      v: ws_data[secondHeaderRowIndex][colIndex],
-      t: 's',
-      s: {
-        fill: { fgColor: { rgb: 'FFF0F0F0' } },
-        font: { bold: true, name: 'Angsana New' },
-        alignment: { horizontal: 'center', vertical: 'center' }
-      }
-    };
-  });
-  
-
-  for (let i = 1; i <= visibleQuarters.value.length; i++) {
-    const cellAddress = XLSX.utils.encode_cell({ r: secondHeaderRowIndex, c: i });
-    if (cellStyles[cellAddress]) {
-      cellStyles[cellAddress].s.border = { bottom: { style: 'thin', color: { rgb: 'FF00A6D4' } } }; // Blue border
-    } else {
-      cellStyles[cellAddress] = {
-        v: ws_data[secondHeaderRowIndex][i],
-        t: 's',
-        s: {
-          fill: { fgColor: { rgb: 'FFF0F0F0' } }, 
-          font: { bold: true, name: 'Angsana New' },
-          alignment: { horizontal: 'center', vertical: 'center' },
-          border: { bottom: { style: 'thin', color: { rgb: 'FF00A6D4' } } }
-        }
-      };
-    }
-  }
-  currentRowIndex++;
-
-  
   priceRanges.forEach((priceRange) => {
-    ws_data.push([priceRange, ...Array(visibleQuarters.value.length + 1).fill('')]);
+    
+    const emptyCols = Array(visibleQuarters.value.length + 1).fill('');
+    aoa.push([priceRange, ...emptyCols]);
     merges.push({
-      s: { r: currentRowIndex, c: 0 },
-      e: { r: currentRowIndex, c: visibleQuarters.value.length + 1 }
+      s: { r: currentRow, c: 0 },
+      e: { r: currentRow, c: visibleQuarters.value.length + 1 }
     });
-
-    const priceRangeCellAddress = XLSX.utils.encode_cell({ r: currentRowIndex, c: 0 });
-    cellStyles[priceRangeCellAddress] = {
-      v: ws_data[currentRowIndex][0],
-      t: 's',
-      s: {
-        fill: { fgColor: { rgb: 'FFFCF8FF' } },
-        font: { bold: true, color: { rgb: 'FF725AF2' }, name: 'Angsana New' },
-        alignment: { horizontal: 'left' }
-      }
-    };
-    currentRowIndex++;
+    currentRow++;
 
     dataTypes.forEach((type) => {
       const row: (string | number)[] = [type];
@@ -384,124 +319,51 @@ const exportToExcel = () => {
         const val = summaryData.value[quarter]?.[priceRange]?.[typeMap[type]] || 0;
         total += val;
 
-        row.push(val);
+        const formattedVal = type === 'ราคาเฉลี่ย/ตร.ม.'
+          ? val.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+          : val.toLocaleString('th-TH');
+
+        row.push(formattedVal);
       });
 
-      row.push(total);
-      ws_data.push(row);
+      const formattedTotal = type === 'ราคาเฉลี่ย/ตร.ม.'
+        ? total.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        : total.toLocaleString('th-TH');
 
-      const dataRowIndex = currentRowIndex;
-      const typeLabelCellAddress = XLSX.utils.encode_cell({ r: dataRowIndex, c: 0 });
-      cellStyles[typeLabelCellAddress] = {
-        v: ws_data[dataRowIndex][0],
-        t: 's',
-        s: { font: { name: 'Angsana New' } }
-      };
-
-
-      ws_data[dataRowIndex].forEach((cellValue, colIndex) => {
-        if (colIndex > 0) { 
-          const cellAddress = XLSX.utils.encode_cell({ r: dataRowIndex, c: colIndex });
-          const isTotalColumn = colIndex === ws_data[dataRowIndex].length - 1; 
-
-          const val = cellValue as number;
-          const formattedVal = type === 'ราคาเฉลี่ย/ตร.ม.'
-            ? val.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-            : val.toLocaleString('th-TH');
-
-          cellStyles[cellAddress] = {
-            v: formattedVal,
-            t: 's', 
-            s: {
-              font: { name: 'Angsana New' },
-              alignment: { horizontal: 'right' },
-              fill: isTotalColumn ? { fgColor: { rgb: 'FFFFF3E0' } } : undefined
-            }
-          };
-        }
-      });
-      currentRowIndex++;
+      row.push(formattedTotal);
+      aoa.push(row);
+      currentRow++;
     });
-    ws_data.push([]); 
-    currentRowIndex++;
+
+    aoa.push([]);
+    currentRow++;
   });
 
+  const sheet = XLSX.utils.aoa_to_sheet(aoa);
 
-  const totalSummaryRowStyles: XLSX.Style = {
-    fill: { fgColor: { rgb: 'FFFCF8FF' } }, // Light purple
-    font: { bold: true, color: { rgb: 'FFF8285A' }, name: 'Angsana New' }, 
-    alignment: { horizontal: 'left' }
-  };
-
-  const totalValueCellStyles: XLSX.Style = {
-    font: { bold: true, color: { rgb: 'FFF8285A' }, name: 'Angsana New' }, 
-    alignment: { horizontal: 'right' },
-    fill: { fgColor: { rgb: 'FFFFF3E0' } } 
-  };
-
-
-  ['unit', 'value', 'area'].forEach(typeKey => {
-    const totalRowLabel = dataTypes.find(key => typeMap[key] === typeKey) + ' (รวม)';
-    const row: (string | number)[] = [totalRowLabel];
-    let yearTotal = 0;
-
-    visibleQuarters.value.forEach((q) => {
-      const quarter = q.split(' ')[0];
-      const quarterTotal = priceRanges.reduce((sum, price) => {
-        return sum + (summaryData.value[quarter]?.[price]?.[typeKey as 'unit' | 'value' | 'area'] || 0);
-      }, 0);
-      row.push(quarterTotal); // Push raw number for calculations
-      yearTotal += quarterTotal;
-    });
-    row.push(yearTotal); // Overall year total
-
-    ws_data.push(row);
-
-    // Apply styles to the total row
-    const totalRowIndex = currentRowIndex;
-    // Label cell style
-    const labelCellAddress = XLSX.utils.encode_cell({ r: totalRowIndex, c: 0 });
-    cellStyles[labelCellAddress] = {
-      v: ws_data[totalRowIndex][0],
-      t: 's',
-      s: totalSummaryRowStyles
-    };
-
-    // Quarter totals and year total cells style
-    for (let i = 1; i < row.length; i++) {
-      const cellAddress = XLSX.utils.encode_cell({ r: totalRowIndex, c: i });
-      const val = ws_data[totalRowIndex][i] as number;
-      const formattedVal = formatNumber(val); // Format numbers
-      cellStyles[cellAddress] = {
-        v: formattedVal,
-        t: 's',
-        s: totalValueCellStyles // Apply the light orange fill and red bold font
-      };
-    }
-    currentRowIndex++;
-  });
-
-
-  const sheet = XLSX.utils.aoa_to_sheet(ws_data);
-
-  // Apply all collected cell styles to the sheet
-  for (const cellAddress in cellStyles) {
-    sheet[cellAddress] = cellStyles[cellAddress];
-  }
-
-  // Set column widths
   sheet['!cols'] = [
-    { wch: 35 }, // Column A (labels)
-    ...visibleQuarters.value.map(() => ({ wch: 15 })), // Quarter columns
-    { wch: 15 }, // Total column
+    { wch: 35 },
+    ...visibleQuarters.value.map(() => ({ wch: 15 })),
+    { wch: 15 },
   ];
 
-  
   sheet['!merges'] = merges;
+
+  aoa.forEach((row, rowIndex) => {
+    if (rowIndex > 0 && rowIndex <= dataTypes.length) {
+      for (let colIndex = 0; colIndex < row.length; colIndex++) {
+        const cell = sheet[XLSX.utils.encode_cell({ r: rowIndex, c: colIndex })];
+        if (cell) {
+          cell.s = { fill: { fgColor: { rgb: 'FFFF00' } } };
+        }
+      }
+    }
+  });
 
   XLSX.utils.book_append_sheet(wb, sheet, 'ตารางรายงาน');
   XLSX.writeFile(wb, `รายงานแบ่งตามไตรมาส_${selectedYear.value}.xlsx`);
 };
+
 </script>
 
 
