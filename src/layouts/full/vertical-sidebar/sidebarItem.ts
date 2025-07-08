@@ -75,7 +75,7 @@ export function getSidebarItems(role: string): Menu[] {
           },
           {
             title: 'สรุปรายงาน',
-            icon: ' ',
+            icon: 'notebook-line-duotone',
             to: '/ui/repost_admin',
             external: false,
           },
