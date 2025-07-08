@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
-import { toRaw } from 'vue';  // นำเข้า toRaw
+import { toRaw } from 'vue';  
 import logo from '@/assets/images/logos/logo-dark.svg';
 import { useRouter } from 'vue-router';
 import * as XLSX from 'xlsx';
@@ -21,20 +21,21 @@ const props = defineProps<{
 const userId = localStorage.getItem('user_id')
 const userRole = localStorage.getItem('user_role') || 'user'
 
-// ดึงข้อมูลจาก URL query
+
 const memberId = ref<number | null>(null);
 const buddhistYear = ref<string | null>(null);
 const monthNumber = ref<string | null>(null);
-const memberDetails = ref<any>(null); // ข้อมูลสมาชิก
-const data = ref<Record<string, any>>({}); // กำหนดชนิดให้เป็น Record
+const memberDetails = ref<any>(null); 
+const data = ref<Record<string, any>>({}); 
+
 
 onMounted(() => {
-  // รับ memberId, buddhist_year, month_number จาก URL query
+  
   memberId.value = parseInt(route.query.memberId1 as string);
   buddhistYear.value = route.query.buddhist_year as string;
   monthNumber.value = route.query.month_number as string;
 
-  // เรียก API เพื่อดึงข้อมูลสมาชิก
+  
   fetchMemberDetails();
 });
 
@@ -42,31 +43,31 @@ const fetchMemberDetails = async () => {
   if (!memberId.value) return;
 
   try {
-    const response = await fetch(`https://6e9fdf451a56.ngrok-free.app/package/backend/get_members_master-D.php?id=${memberId.value}&buddhist_year=${buddhistYear.value}&month_number=${monthNumber.value}`, {
-      method: 'POST',  // Explicitly set the method to POST
+const response = await fetch(`https://6e9fdf451a56.ngrok-free.app/package/backend/get_members_master-D.php?id=${memberId.value}&buddhist_year=${buddhistYear.value}&month_number=${monthNumber.value}`, {
+      method: 'POST',  
     });
 
     const result = await response.json();
 
-    console.log(result);  // ตรวจสอบว่าได้ข้อมูลถูกต้อง
+    console.log(result);  
 
-    memberDetails.value = result.user_info;  // ข้อมูลสมาชิก
-    data.value = result.data;  // ข้อมูลที่คำนวณแล้ว
-    console.log('data.value:', data.value);  // ตรวจสอบว่า data.value ถูกตั้งค่าแล้วหรือไม่
+    memberDetails.value = result.user_info;  
+    data.value = result.data;  
+    console.log('data.value:', data.value);  
 
-    // ตรวจสอบว่า data.value ถูกต้องก่อน
+    
     if (data.value && Object.keys(data.value).length > 0) {
       const trimmedData: ContractData = {}
       for (const region in data.value) {
         const r = region.trim();
         trimmedData[r] = {}
         for (const type in data.value[region]) {
-          // ใช้ toRaw เพื่อดึงค่าจาก Proxy
+          
           trimmedData[r][type.trim()] = toRaw(data.value[region][type])
         }
       }
 
-      contractData.value = trimmedData; // กำหนดค่า contractData.value
+      contractData.value = trimmedData; 
       console.log(contractData.value);
     } else {
       console.error("No data available in the response.");
@@ -122,13 +123,13 @@ function extractBuddhistYear(monthLabel: string): number {
   return year ? year : new Date().getFullYear() + 543
 }
 
-// เพิ่มฟังก์ชัน getMonthName
+
 const getMonthName = (monthNumber: string | null): string => {
   const monthNames = [
     'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
     'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
   ];
-  const monthIndex = parseInt(monthNumber as string) - 1; // เนื่องจาก array เริ่มต้นที่ 0
+  const monthIndex = parseInt(monthNumber as string) - 1; 
   return monthNames[monthIndex] || '';
 };
 
@@ -195,13 +196,13 @@ const exportToExcel = async () => {
     const headerFont: Partial<ExcelJS.Font> = {
         bold: true,
         color: { argb: 'FFFFFFFF' },
-        name: 'Angsana New' // Added font name
+        name: 'Angsana New' 
     };
 
     const redFont: Partial<ExcelJS.Font> = {
         bold: true,
-        color: { argb: 'FFFF0000' }, // Red color (ARGB: Alpha, Red, Green, Blue)
-        name: 'Angsana New' // Added font name
+        color: { argb: 'FFFF0000' }, 
+        name: 'Angsana New' 
     };
 
     worksheet.addRow(['รายละเอียดของสมาชิก']).font = headerFont;
@@ -222,7 +223,7 @@ const exportToExcel = async () => {
     contractTypes.forEach((label) => {
         worksheet.addRow([label]);
         worksheet.getRow(worksheet.rowCount).eachCell((cell) => {
-            cell.font = { bold: true, name: 'Angsana New' }; // Added font name
+            cell.font = { bold: true, name: 'Angsana New' }; 
         });
 
         const unitsRow = ['จำนวนหลัง', ...regions.map((region: string) => getCell(region, label, 'total_units'))];
@@ -245,20 +246,20 @@ const exportToExcel = async () => {
     worksheet.addRow(['สรุปข้อมูลยอดเซ็นสัญญา']).font = headerFont;
 
     const rowUnits = worksheet.addRow(['จำนวนหลัง', formatCurrency(totalUnits)]);
-    rowUnits.getCell(1).font = { bold: true, name: 'Angsana New' }; // Label
-    rowUnits.getCell(2).font = redFont; // Number
+    rowUnits.getCell(1).font = { bold: true, name: 'Angsana New' }; 
+    rowUnits.getCell(2).font = redFont; 
 
     const rowValue = worksheet.addRow(['มูลค่ารวม', formatCurrency(totalValue)]);
-    rowValue.getCell(1).font = { bold: true, name: 'Angsana New' }; // Label
-    rowValue.getCell(2).font = redFont; // Number
+    rowValue.getCell(1).font = { bold: true, name: 'Angsana New' }; 
+    rowValue.getCell(2).font = redFont; 
 
     const rowArea = worksheet.addRow(['พื้นที่ใช้สอย', formatCurrency(totalArea)]);
-    rowArea.getCell(1).font = { bold: true, name: 'Angsana New' }; // Label
-    rowArea.getCell(2).font = redFont; // Number
+    rowArea.getCell(1).font = { bold: true, name: 'Angsana New' }; 
+    rowArea.getCell(2).font = redFont; 
 
     const rowAvgPrice = worksheet.addRow(['ราคาเฉลี่ย ตร.ม', avgPrice.toFixed(2)]);
-    rowAvgPrice.getCell(1).font = { bold: true, name: 'Angsana New' }; // Label
-    rowAvgPrice.getCell(2).font = redFont; // Number
+    rowAvgPrice.getCell(1).font = { bold: true, name: 'Angsana New' }; 
+    rowAvgPrice.getCell(2).font = redFont; 
 
     worksheet.columns.forEach(column => {
         let maxLength = 0;
