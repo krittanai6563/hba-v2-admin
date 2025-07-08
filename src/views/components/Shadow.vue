@@ -1,10 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue';
-
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
-// MailIcon, TomlIcon are not used in the provided script, removing them.
-// import { MailIcon, TomlIcon } from 'vue-tabler-icons'; 
+import { TomlIcon } from 'vue-tabler-icons';
 
 const currentYear = new Date().getFullYear() + 543;
 const currentMonth = new Date().getMonth() + 1;
@@ -19,234 +17,234 @@ const priceRanges = ['ไม่เกิน 2.50 ล้านบาท', '2.51 -
 const dataTypes = ['จำนวนหลัง', 'มูลค่ารวม', 'พื้นที่ใช้สอย', 'ราคาเฉลี่ย/ตร.ม.'] as const;
 
 const typeMap: Record<(typeof dataTypes)[number], 'unit' | 'value' | 'area' | 'price_per_sqm'> = {
-  'จำนวนหลัง': 'unit',
-  'มูลค่ารวม': 'value',
-  'พื้นที่ใช้สอย': 'area',
-  'ราคาเฉลี่ย/ตร.ม.': 'price_per_sqm'
+  'จำนวนหลัง': 'unit',
+  'มูลค่ารวม': 'value',
+  'พื้นที่ใช้สอย': 'area',
+  'ราคาเฉลี่ย/ตร.ม.': 'price_per_sqm'
 };
 
 
 const getMaxQuarter = () => {
-  if (selectedYear.value !== currentYear.toString()) return 4;
-  if (currentMonth <= 3) return 1;
-  if (currentMonth <= 6) return 2;
-  if (currentMonth <= 9) return 3;
-  return 4;
+  if (selectedYear.value !== currentYear.toString()) return 4;
+  if (currentMonth <= 3) return 1;
+  if (currentMonth <= 6) return 2;
+  if (currentMonth <= 9) return 3;
+  return 4;
 };
 
 const fetchSummary = async () => {
-  if (!userId) return;
-  try {
-   const res = await fetch(`https://6e9fdf451a56.ngrok-free.app/package/backend/quarter_summary.php`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        user_id: userId,
-        year: selectedYear.value,
-        role: userRole
-      })
+  if (!userId) return;
+  try {
+   const res = await fetch(`https://6e9fdf451a56.ngrok-free.app/package/backend/quarter_summary.php`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: userId,
+        year: selectedYear.value,
+        role: userRole
+      })
 
 
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    summaryData.value = await res.json();
-  } catch (err) {
-    console.error('Error fetching summary:', err);
-  }
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    summaryData.value = await res.json();
+  } catch (err) {
+    console.error('Error fetching summary:', err);
+  }
 };
 
 watch(selectedYear, fetchSummary);
 onMounted(fetchSummary);
 
 const visibleQuarters = computed(() => {
-  const maxQ = getMaxQuarter();
-  return ['Q1', 'Q2', 'Q3', 'Q4'].filter((_, i) => i < maxQ).map(q => `${q} ${selectedYear.value}`);
+  const maxQ = getMaxQuarter();
+  return ['Q1', 'Q2', 'Q3', 'Q4'].filter((_, i) => i < maxQ).map(q => `${q} ${selectedYear.value}`);
 });
 
 
 const chartOptions = ref({
-    chart: {
-        height: 350,
-        type: 'line', 
-        stacked: false,
-        fontFamily: 'inherit',
-        foreColor: '#adb0bb',
-        toolbar: {
-            show: true,
-            tools: {
-                download: true, 
-            },
-        },
-        
-        responsive: [
-            {
-                breakpoint: 1000,  
-                options: {
-                    chart: {
-                        width: '100%', 
-                    },
-                },
-            },
-        ],
-    },
-    plotOptions: {
-        bar: {
-            borderRadius: 4,
-            columnWidth: '40%', 
-            dataLabels: {
-                position: 'top',
-                offsetY: 0,
-            },
-        },
-        line: {
-            dataLabels: {
-                position: 'top',
-                offsetY: 0,
-            },
-            curve: 'smooth',
-        },
-    },
-    dataLabels: {
-        enabled: true,  
-        position: 'top',
-        offsetY: -13,
-        style: {
-            fontSize: '10px',
-        },
-        formatter: (value: number) => {  
-            return value >= 1000 ? value.toLocaleString('th-TH') : value.toString();
-        }
-    },
-    stroke: {
-        width: [2, 2, 4],  
-        curve: 'smooth',
-    },
-    grid: {
-        show: true,
-        strokeDashArray: 4, 
-        borderColor: 'rgba(0, 0, 0, 0.1)',  
-    },
-    xaxis: {
-        categories: visibleQuarters.value,  
-        labels: {
-            rotate: -45, 
-            style: {
-                fontSize: '12px', 
-                colors: '#6c757d',  
-            },
-        },
-    },
-    yaxis: [
-        {
-            seriesName: 'จำนวนหลัง',
-            axisTicks: { show: false },
-            axisBorder: {
-                show: false,
-                color: '#008FFB',
-            },
-            labels: {
-                show: false,  
-                style: {
-                    colors: '#008FFB',  
-                },
-            },
-            tooltip: {
-                enabled: false,
-            },
-        },
-        {
-            seriesName: 'พื้นที่ใช้สอย',
-            opposite: false,
-            axisTicks: { show: false },
-            axisBorder: {
-                show: false,
-                color: '#00E396',
-            },
-            labels: {
-                show: false,  
-                style: {
-                    colors: '#00E396',  
-                },
-            },
-        },
-        {
-            seriesName: 'มูลค่ารวม',
-            opposite: false,
-            axisTicks: { show: true },
-            axisBorder: {
-                show: false,
-                color: '#FEB019',
-            },
-            labels: {
-                show: false,  
-                style: {
-                    colors: '#FEB019',  
-                },
-            },
-        },
-    ],
-    tooltip: {
-        fixed: {
-            enabled: false,
-            position: 'topLeft',
-            offsetY: 0,
-            offsetX: 0,
-        },
-    },
-    legend: {
-        horizontalAlign: 'center',
-        offsetX: 0,
-    },
+    chart: {
+        height: 350,
+        type: 'line', 
+        stacked: false,
+        fontFamily: 'inherit',
+        foreColor: '#adb0bb',
+        toolbar: {
+            show: true,
+            tools: {
+                download: true, 
+            },
+        },
+        
+        responsive: [
+            {
+                breakpoint: 1000,  
+                options: {
+                    chart: {
+                        width: '100%', 
+                    },
+                },
+            },
+        ],
+    },
+    plotOptions: {
+        bar: {
+            borderRadius: 4,
+            columnWidth: '40%', 
+            dataLabels: {
+                position: 'top',
+                offsetY: 0,
+            },
+        },
+        line: {
+            dataLabels: {
+                position: 'top',
+                offsetY: 0,
+            },
+            curve: 'smooth',
+        },
+    },
+    dataLabels: {
+        enabled: true,  
+        position: 'top',
+        offsetY: -13,
+        style: {
+            fontSize: '10px',
+        },
+        formatter: (value: number) => {  
+            return value >= 1000 ? value.toLocaleString('th-TH') : value.toString();
+        }
+    },
+    stroke: {
+        width: [2, 2, 4],  
+        curve: 'smooth',
+    },
+    grid: {
+        show: true,
+        strokeDashArray: 4, 
+        borderColor: 'rgba(0, 0, 0, 0.1)',  
+    },
+    xaxis: {
+        categories: visibleQuarters.value,  
+        labels: {
+            rotate: -45, 
+            style: {
+                fontSize: '12px', 
+                colors: '#6c757d',  
+            },
+        },
+    },
+    yaxis: [
+        {
+            seriesName: 'จำนวนหลัง',
+            axisTicks: { show: false },
+            axisBorder: {
+                show: false,
+                color: '#008FFB',
+            },
+            labels: {
+                show: false,  
+                style: {
+                    colors: '#008FFB',  
+                },
+            },
+            tooltip: {
+                enabled: false,
+            },
+        },
+        {
+            seriesName: 'พื้นที่ใช้สอย',
+            opposite: false,
+            axisTicks: { show: false },
+            axisBorder: {
+                show: false,
+                color: '#00E396',
+            },
+            labels: {
+                show: false,  
+                style: {
+                    colors: '#00E396',  
+                },
+            },
+        },
+        {
+            seriesName: 'มูลค่ารวม',
+            opposite: false,
+            axisTicks: { show: true },
+            axisBorder: {
+                show: false,
+                color: '#FEB019',
+            },
+            labels: {
+                show: false,  
+                style: {
+                    colors: '#FEB019',  
+                },
+            },
+        },
+    ],
+    tooltip: {
+        fixed: {
+            enabled: false,
+            position: 'topLeft',
+            offsetY: 0,
+            offsetX: 0,
+        },
+    },
+    legend: {
+        horizontalAlign: 'center',
+        offsetX: 0,
+    },
 });
 
 
 const chartSeries = computed(() => {
-    return [
-        {
-            name: 'จำนวนหลัง',
-            type: 'column',
-            data: visibleQuarters.value.map((q) => {
-                const [quarter] = q.split(' ');
-                return parseFloat(
-                    priceRanges.reduce((sum, price) => {
-                        const value = summaryData.value[quarter]?.[price]?.['unit'] || 0;
-                        return sum + value;
-                    }, 0).toFixed(2)
-                );
-            }),
-            color: '#F9C80E',
-        },
-        {
-            name: 'พื้นที่ใช้สอย',
-            type: 'column',
-            data: visibleQuarters.value.map((q) => {
-                const [quarter] = q.split(' ');
-                return parseFloat(
-                    priceRanges.reduce((sum, price) => {
-                        const value = summaryData.value[quarter]?.[price]?.['area'] || 0;
-                        return sum + value;
-                    }, 0).toFixed(2)
-                );
-            }),
-            color: '#2983FF',
-        },
-        {
-            name: 'มูลค่ารวม',
-            type: 'line',
-            data: visibleQuarters.value.map((q) => {
-                const [quarter] = q.split(' ');
-                return parseFloat(
-                    priceRanges.reduce((sum, price) => {
-                        const value = summaryData.value[quarter]?.[price]?.['value'] || 0;
-                        return sum + value;
-                    }, 0).toFixed(2)
-                );
-            }),
-            color: '#D7263D',
-        },
+    return [
+        {
+            name: 'จำนวนหลัง',
+            type: 'column',
+            data: visibleQuarters.value.map((q) => {
+                const [quarter] = q.split(' ');
+                return parseFloat(
+                    priceRanges.reduce((sum, price) => {
+                        const value = summaryData.value[quarter]?.[price]?.['unit'] || 0;
+                        return sum + value;
+                    }, 0).toFixed(2)
+                );
+            }),
+            color: '#F9C80E',
+        },
+        {
+            name: 'พื้นที่ใช้สอย',
+            type: 'column',
+            data: visibleQuarters.value.map((q) => {
+                const [quarter] = q.split(' ');
+                return parseFloat(
+                    priceRanges.reduce((sum, price) => {
+                        const value = summaryData.value[quarter]?.[price]?.['area'] || 0;
+                        return sum + value;
+                    }, 0).toFixed(2)
+                );
+            }),
+            color: '#2983FF',
+        },
+        {
+            name: 'มูลค่ารวม',
+            type: 'line',
+            data: visibleQuarters.value.map((q) => {
+                const [quarter] = q.split(' ');
+                return parseFloat(
+                    priceRanges.reduce((sum, price) => {
+                        const value = summaryData.value[quarter]?.[price]?.['value'] || 0;
+                        return sum + value;
+                    }, 0).toFixed(2)
+                );
+            }),
+            color: '#D7263D',
+        },
 
-        
-    ];
+        
+    ];
 });
 
 
@@ -254,180 +252,258 @@ const chartSeries = computed(() => {
 
 
 const formatNumber = (value: number, isDecimal = false) => {
-  return isDecimal
-    ? value.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    : value.toLocaleString('th-TH');
+  return isDecimal
+    ? value.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : value.toLocaleString('th-TH');
 };
 
 
 const getQuarterTotal = (quarterLabel: string, type: 'unit' | 'value' | 'area') => {
-  const [q] = quarterLabel.split(' ');
-  const total = priceRanges.reduce((sum, price) => {
-    return sum + (summaryData.value[q]?.[price]?.[type] || 0);
-  }, 0);
-  return total; // Return raw number for Excel, format later if needed
+  const [q] = quarterLabel.split(' ');
+  const total = priceRanges.reduce((sum, price) => {
+    return sum + (summaryData.value[q]?.[price]?.[type] || 0);
+  }, 0);
+  return formatNumber(total);
 };
 
-const getRowTotal = (label: string, displayType: (typeof dataTypes)[number]) => {
-    // Here, 'displayType' will always be one of 'unit', 'value', 'area', 'price_per_sqm'
-    const internalType = typeMap[displayType];  // This maps to 'unit', 'value', etc.
-    
-    return visibleQuarters.value.reduce((sum, q) => {
-        const [quarter] = q.split(' ');
-        return sum + (summaryData.value[quarter]?.[label]?.[internalType] || 0);
-    }, 0);
+const getRowTotal = (label: string, type: 'unit' | 'value' | 'area' | 'price_per_sqm') => {
+
+  return formatNumber(
+    visibleQuarters.value.reduce((sum, q) => {
+      const [quarter] = q.split(' ');
+      return sum + (summaryData.value[quarter]?.[label]?.[type] || 0);
+    }, 0)
+  );
 };
 
 const getTotalYearTotal = (type: 'unit' | 'value' | 'area') => {
-  return visibleQuarters.value.reduce((sumQ, q) => {
-      const [quarter] = q.split(' ');
-      return (
-        sumQ +
-        priceRanges.reduce((sumP, price) => {
-          return sumP + (summaryData.value[quarter]?.[price]?.[type] || 0);
-        }, 0)
-      );
-    }, 0);
+  return formatNumber(
+    visibleQuarters.value.reduce((sumQ, q) => {
+      const [quarter] = q.split(' ');
+      return (
+        sumQ +
+        priceRanges.reduce((sumP, price) => {
+          return sumP + (summaryData.value[quarter]?.[price]?.[type] || 0);
+        }, 0)
+      );
+    }, 0)
+  );
 };
 
 
 
 
+const exportToExcel = () => {
+  const wb = XLSX.utils.book_new();
+  const ws_data: (string | number)[][] = [];
+  const merges: { s: { r: number, c: number }, e: { r: number, c: number } }[] = [];
+  const colStyles: { [key: string]: { wch?: number } } = {};
+  const cellStyles: { [key: string]: XLSX.CellObject } = {}; 
 
+  let currentRowIndex = 0;
 
-const exportToExcel = async () => {
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('Quarterly Summary');
+  ws_data.push([`รายงานเปรียบเทียบยอดเซ็นสัญญา ประจำปี ${selectedYear.value}`]);
+  merges.push({ s: { r: currentRowIndex, c: 0 }, e: { r: currentRowIndex, c: visibleQuarters.value.length + 1 } });
+  
 
-    const headerFill: ExcelJS.Fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FF00B050' } // Green fill
-    };
-    const headerFont: Partial<ExcelJS.Font> = {
-        bold: true,
-        color: { argb: 'FFFFFFFF' }, // White font
-        name: 'Angsana New'
-    };
-
-    const redFont: Partial<ExcelJS.Font> = {
-        bold: true,
-        color: { argb: 'FFFF0000' }, // Red font
-        name: 'Angsana New'
-    };
-
-    // --- Table Headers ---
-    // First header row: "Financial Summary" and the year
-    const firstHeaderRow = worksheet.addRow(['Financial Summary', ...Array(visibleQuarters.value.length).fill(''), selectedYear.value]);
-    worksheet.mergeCells(`A${firstHeaderRow.number}:A${firstHeaderRow.number}`); // Merge "Financial Summary"
-    worksheet.mergeCells(`B${firstHeaderRow.number}:${String.fromCharCode(65 + visibleQuarters.value.length)}${firstHeaderRow.number}`); // Merge year
-    
-    firstHeaderRow.eachCell((cell, colNumber) => {
-        cell.font = headerFont;
-        cell.fill = headerFill;
-        cell.alignment = { horizontal: 'center' };
-    });
-    firstHeaderRow.getCell(1).alignment = { horizontal: 'left' }; // Align "Financial Summary" to left
-
-    // Second header row: "(Unit: THB million)", Quarters, and Year Total
-    const secondHeaderRow = worksheet.addRow(['(Unit: THB million)', ...visibleQuarters.value, selectedYear.value]);
-    secondHeaderRow.eachCell((cell, colNumber) => {
-        cell.font = { bold: true, name: 'Angsana New' };
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F5F5' } }; // Light gray background
-        cell.alignment = { horizontal: 'center' };
-        if (colNumber === 1) {
-            cell.alignment = { horizontal: 'left' };
-        }
-    });
-    secondHeaderRow.getCell(secondHeaderRow.actualCellCount).border = {
-        bottom: { style: 'thin', color: { argb: 'FF00A6D4' } }
-    };
-
-    // --- Data Rows ---
-    priceRanges.forEach((label) => {
-        // Price Range header row
-        const priceRangeRow = worksheet.addRow([label, ...Array(visibleQuarters.value.length + 1).fill('')]);
-        worksheet.mergeCells(`A${priceRangeRow.number}:${String.fromCharCode(65 + visibleQuarters.value.length)}${priceRangeRow.number}`);
-        priceRangeRow.eachCell((cell) => {
-            cell.font = { bold: true, size: 14, color: { argb: 'FF725AF2' }, name: 'Angsana New' };
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFCE4EC' } }; // Light purple background
-        });
-
-        dataTypes.forEach((type) => {
-            const rowData = [type];
-            visibleQuarters.value.forEach((q) => {
-                const [quarter] = q.split(' ');
-                const value = summaryData.value[quarter]?.[label]?.[typeMap[type]] || 0;
-                rowData.push(value);
-            });
-            // Add row total
-           rowData.push(getRowTotal(label, type)); // Pass 'type' directly here
-
-
-            const dataRow = worksheet.addRow(rowData);
-            dataRow.eachCell((cell, colNumber) => {
-                cell.font = { name: 'Angsana New' };
-                if (colNumber > 1) { // Apply number format to data columns
-                    cell.numFmt = '#,##0.00'; // Format with 2 decimal places and comma separator
-                }
-                if (colNumber === dataRow.actualCellCount) { // Last column (Year Total)
-                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3E0' } }; // Light orange background
-                }
-            });
-        });
-    });
-
-    // --- Total Rows (at the bottom) ---ข้มล ที่ประกอบขไปด้วยหลายส่วนที่คุณ สามารถดูแลข้อมูลส่วนนั้นได้ การทำงานของเรามีข้อมูล ที่เหมือนกันโดยที่ การ
-    const totalTypes: ('unit' | 'value' | 'area')[] = ['unit', 'value', 'area'];
-    const totalTypeLabels = ['จำนวนหลัง (รวม)', 'มูลค่ารวม (รวม)', 'พื้นที่ใช้สอย (รวม)'];
-
-    totalTypes.forEach((type, index) => {
-        const totalRowData = [totalTypeLabels[index]];
-        visibleQuarters.value.forEach((q) => {
-            totalRowData.push(getQuarterTotal(q, type));
-        });
-        totalRowData.push(getTotalYearTotal(type));
-
-        const totalRow = worksheet.addRow(totalRowData);
-        totalRow.eachCell((cell, colNumber) => {
-            cell.font = { bold: true, size: 14, color: { argb: 'FFF8285A' }, name: 'Angsana New' }; // Red font
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFCE4EC' } }; // Light purple background
-            if (colNumber > 1) {
-                cell.numFmt = '#,##0.00'; // Format with 2 decimal places and comma separator
-            }
-            if (colNumber === totalRow.actualCellCount) { // Last column (Year Total)
-                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3E0' } }; // Light orange background
-            }
-        });
-    });
-
-    // Auto-size columns for 'Quarterly Summary' worksheet
-    worksheet.columns.forEach(column => {
-        let maxLength = 0;
-        column.eachCell?.({ includeEmpty: true }, cell => {
-            const columnText = cell.text ? cell.text.toString() : '';
-            maxLength = Math.max(maxLength, columnText.length);
-        });
-        column.width = maxLength < 10 ? 10 : maxLength + 2;
-    });
-
-    try {
-        const buffer = await workbook.xlsx.writeBuffer();
-        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `Quarterly_Summary_${selectedYear.value}.xlsx`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
-    } catch (error) {
-        console.error("Error exporting to Excel:", error);
+  const titleCellAddress = XLSX.utils.encode_cell({ r: currentRowIndex, c: 0 });
+  cellStyles[titleCellAddress] = {
+    v: ws_data[currentRowIndex][0], 
+    t: 's', 
+    s: {
+      fill: { fgColor: { rgb: 'FF008000' } }, 
+      font: { bold: true, color: { rgb: 'FFFFFFFF' }, name: 'Angsana New' },
+      alignment: { horizontal: 'center', vertical: 'center' }
     }
-};
+  };
+  currentRowIndex++;
 
+ 
+  ws_data.push(['(หน่วย : ล้านบาท)', ...visibleQuarters.value, 'รวม']);
+ 
+  const secondHeaderRowIndex = currentRowIndex;
+  ws_data[secondHeaderRowIndex].forEach((_, colIndex) => {
+    const cellAddress = XLSX.utils.encode_cell({ r: secondHeaderRowIndex, c: colIndex });
+    cellStyles[cellAddress] = {
+      v: ws_data[secondHeaderRowIndex][colIndex],
+      t: 's',
+      s: {
+        fill: { fgColor: { rgb: 'FFF0F0F0' } },
+        font: { bold: true, name: 'Angsana New' },
+        alignment: { horizontal: 'center', vertical: 'center' }
+      }
+    };
+  });
+  
+
+  for (let i = 1; i <= visibleQuarters.value.length; i++) {
+    const cellAddress = XLSX.utils.encode_cell({ r: secondHeaderRowIndex, c: i });
+    if (cellStyles[cellAddress]) {
+      cellStyles[cellAddress].s.border = { bottom: { style: 'thin', color: { rgb: 'FF00A6D4' } } }; // Blue border
+    } else {
+      cellStyles[cellAddress] = {
+        v: ws_data[secondHeaderRowIndex][i],
+        t: 's',
+        s: {
+          fill: { fgColor: { rgb: 'FFF0F0F0' } }, 
+          font: { bold: true, name: 'Angsana New' },
+          alignment: { horizontal: 'center', vertical: 'center' },
+          border: { bottom: { style: 'thin', color: { rgb: 'FF00A6D4' } } }
+        }
+      };
+    }
+  }
+  currentRowIndex++;
+
+  
+  priceRanges.forEach((priceRange) => {
+    ws_data.push([priceRange, ...Array(visibleQuarters.value.length + 1).fill('')]);
+    merges.push({
+      s: { r: currentRowIndex, c: 0 },
+      e: { r: currentRowIndex, c: visibleQuarters.value.length + 1 }
+    });
+
+    const priceRangeCellAddress = XLSX.utils.encode_cell({ r: currentRowIndex, c: 0 });
+    cellStyles[priceRangeCellAddress] = {
+      v: ws_data[currentRowIndex][0],
+      t: 's',
+      s: {
+        fill: { fgColor: { rgb: 'FFFCF8FF' } },
+        font: { bold: true, color: { rgb: 'FF725AF2' }, name: 'Angsana New' },
+        alignment: { horizontal: 'left' }
+      }
+    };
+    currentRowIndex++;
+
+    dataTypes.forEach((type) => {
+      const row: (string | number)[] = [type];
+      let total = 0;
+
+      visibleQuarters.value.forEach((q) => {
+        const quarter = q.split(' ')[0];
+        const val = summaryData.value[quarter]?.[priceRange]?.[typeMap[type]] || 0;
+        total += val;
+
+        row.push(val);
+      });
+
+      row.push(total);
+      ws_data.push(row);
+
+      const dataRowIndex = currentRowIndex;
+      const typeLabelCellAddress = XLSX.utils.encode_cell({ r: dataRowIndex, c: 0 });
+      cellStyles[typeLabelCellAddress] = {
+        v: ws_data[dataRowIndex][0],
+        t: 's',
+        s: { font: { name: 'Angsana New' } }
+      };
+
+
+      ws_data[dataRowIndex].forEach((cellValue, colIndex) => {
+        if (colIndex > 0) { 
+          const cellAddress = XLSX.utils.encode_cell({ r: dataRowIndex, c: colIndex });
+          const isTotalColumn = colIndex === ws_data[dataRowIndex].length - 1; 
+
+          const val = cellValue as number;
+          const formattedVal = type === 'ราคาเฉลี่ย/ตร.ม.'
+            ? val.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+            : val.toLocaleString('th-TH');
+
+          cellStyles[cellAddress] = {
+            v: formattedVal,
+            t: 's', 
+            s: {
+              font: { name: 'Angsana New' },
+              alignment: { horizontal: 'right' },
+              fill: isTotalColumn ? { fgColor: { rgb: 'FFFFF3E0' } } : undefined
+            }
+          };
+        }
+      });
+      currentRowIndex++;
+    });
+    ws_data.push([]); 
+    currentRowIndex++;
+  });
+
+
+  const totalSummaryRowStyles: XLSX.Style = {
+    fill: { fgColor: { rgb: 'FFFCF8FF' } }, // Light purple
+    font: { bold: true, color: { rgb: 'FFF8285A' }, name: 'Angsana New' }, 
+    alignment: { horizontal: 'left' }
+  };
+
+  const totalValueCellStyles: XLSX.Style = {
+    font: { bold: true, color: { rgb: 'FFF8285A' }, name: 'Angsana New' }, 
+    alignment: { horizontal: 'right' },
+    fill: { fgColor: { rgb: 'FFFFF3E0' } } 
+  };
+
+
+  ['unit', 'value', 'area'].forEach(typeKey => {
+    const totalRowLabel = dataTypes.find(key => typeMap[key] === typeKey) + ' (รวม)';
+    const row: (string | number)[] = [totalRowLabel];
+    let yearTotal = 0;
+
+    visibleQuarters.value.forEach((q) => {
+      const quarter = q.split(' ')[0];
+      const quarterTotal = priceRanges.reduce((sum, price) => {
+        return sum + (summaryData.value[quarter]?.[price]?.[typeKey as 'unit' | 'value' | 'area'] || 0);
+      }, 0);
+      row.push(quarterTotal); // Push raw number for calculations
+      yearTotal += quarterTotal;
+    });
+    row.push(yearTotal); // Overall year total
+
+    ws_data.push(row);
+
+    // Apply styles to the total row
+    const totalRowIndex = currentRowIndex;
+    // Label cell style
+    const labelCellAddress = XLSX.utils.encode_cell({ r: totalRowIndex, c: 0 });
+    cellStyles[labelCellAddress] = {
+      v: ws_data[totalRowIndex][0],
+      t: 's',
+      s: totalSummaryRowStyles
+    };
+
+    // Quarter totals and year total cells style
+    for (let i = 1; i < row.length; i++) {
+      const cellAddress = XLSX.utils.encode_cell({ r: totalRowIndex, c: i });
+      const val = ws_data[totalRowIndex][i] as number;
+      const formattedVal = formatNumber(val); // Format numbers
+      cellStyles[cellAddress] = {
+        v: formattedVal,
+        t: 's',
+        s: totalValueCellStyles // Apply the light orange fill and red bold font
+      };
+    }
+    currentRowIndex++;
+  });
+
+
+  const sheet = XLSX.utils.aoa_to_sheet(ws_data);
+
+  // Apply all collected cell styles to the sheet
+  for (const cellAddress in cellStyles) {
+    sheet[cellAddress] = cellStyles[cellAddress];
+  }
+
+  // Set column widths
+  sheet['!cols'] = [
+    { wch: 35 }, // Column A (labels)
+    ...visibleQuarters.value.map(() => ({ wch: 15 })), // Quarter columns
+    { wch: 15 }, // Total column
+  ];
+
+  
+  sheet['!merges'] = merges;
+
+  XLSX.utils.book_append_sheet(wb, sheet, 'ตารางรายงาน');
+  XLSX.writeFile(wb, `รายงานแบ่งตามไตรมาส_${selectedYear.value}.xlsx`);
+};
 </script>
+
 
 
 <template>
