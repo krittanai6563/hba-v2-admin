@@ -50,7 +50,7 @@ async function register() {
             formData.append('profile_image', selectedFile.value);
         }
 
-        const res = await fetch('https://06da-1-47-223-210.ngrok-free.app/package/backend/register.php', {
+        const res = await fetch('https://6e9fdf451a56.ngrok-free.app/package/backend/register.php', {
             method: 'POST',
             body: formData
         });
@@ -128,7 +128,7 @@ const filteredMembers = computed(() => {
 
 const fetchMembers = async () => {
     try {
-        let url = 'https://06da-1-47-223-210.ngrok-free.app/package/backend/get_members_master.php';
+        let url = 'https://6e9fdf451a56.ngrok-free.app/package/backend/get_members_master.php';
 
 
         if (selectedYearFilter.value && selectedMonthFilter.value) {
@@ -144,7 +144,7 @@ const fetchMembers = async () => {
             const monthNumber = parseInt(month);
 
 
-            url = `https://06da-1-47-223-210.ngrok-free.app/package/backend/get_members_master.php?buddhist_year=${buddhistYear}&month_number=${monthNumber}`;
+            url = `https://6e9fdf451a56.ngrok-free.app/package/backend/get_members_master.php?buddhist_year=${buddhistYear}&month_number=${monthNumber}`;
         } else if (selectedYearFilter.value) {
             let buddhistYear = parseInt(selectedYearFilter.value);
             const isBuddhistYear = buddhistYear > 2500;
@@ -155,7 +155,7 @@ const fetchMembers = async () => {
             }
 
 
-            url = `https://06da-1-47-223-210.ngrok-free.app/package/backend/get_members_master.php?buddhist_year=${buddhistYear}`;
+            url = `https://6e9fdf451a56.ngrok-free.app/package/backend/get_members_master.php?buddhist_year=${buddhistYear}`;
         }
 
 
@@ -199,7 +199,7 @@ function getProfileImageUrl(path: string | null): string {
     if (!path || path.trim() === '') {
         return defaultAvatar;
     }
-    return `https://06da-1-47-223-210.ngrok-free.app/package/backend/${path}`;
+    return `https://6e9fdf451a56.ngrok-free.app/package/backend/${path}`;
 }
 
 function formatCurrency(value: number | string): string {
@@ -274,7 +274,7 @@ async function updateMember(isActive: { value: boolean }) {
             formData.append('profile_image', selectedFile.value);
         }
 
-        const res = await fetch('https://06da-1-47-223-210.ngrok-free.app/package/backend/edit_profile.php', {
+        const res = await fetch('https://6e9fdf451a56.ngrok-free.app/package/backend/edit_profile.php', {
             method: 'POST',
             body: formData
         });

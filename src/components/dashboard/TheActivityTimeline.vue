@@ -36,7 +36,7 @@ const typeMap: Record<(typeof dataTypes)[number], 'unit' | 'value' | 'area' | 'p
 const fetchSummary = async () => {
   if (!userId) return;
   try {
-    const res = await fetch('https://06da-1-47-223-210.ngrok-free.app/package/backend/quarter_summary_Q.php', {
+    const res = await fetch('https://6e9fdf451a56.ngrok-free.app/package/backend/quarter_summary_Q.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 

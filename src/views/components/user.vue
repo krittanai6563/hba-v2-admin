@@ -51,7 +51,7 @@ async function register() {
             formData.append('profile_image', selectedFile.value);
         }
 
-        const res = await fetch('https://06da-1-47-223-210.ngrok-free.app/package/backend/register.php', {
+        const res = await fetch('https://6e9fdf451a56.ngrok-free.app/package/backend/register.php', {
             method: 'POST',
             body: formData
         });
@@ -159,7 +159,7 @@ const filteredMembers = computed(() => {
 
 const fetchMembers = async () => {
     try {
-        let url = 'https://06da-1-47-223-210.ngrok-free.app/package/backend/get_members.php';
+        let url = 'https://6e9fdf451a56.ngrok-free.app/package/backend/get_members.php';
 
         // ตรวจสอบว่ามีการเลือกปีและเดือนหรือไม่
         if (selectedYearFilter.value && selectedMonthFilter.value) {
@@ -168,11 +168,11 @@ const fetchMembers = async () => {
             const buddhistYear = parseInt(year) + 543;  // คำนวณปีพุทธศักราช
             const monthNumber = parseInt(month); // แปลงเดือนเป็นตัวเลข
 
-            url = `https://06da-1-47-223-210.ngrok-free.app/package/backend/get_members.php?buddhist_year=${buddhistYear}&month_number=${monthNumber}`;
+            url = `https://6e9fdf451a56.ngrok-free.app/package/backend/get_members.php?buddhist_year=${buddhistYear}&month_number=${monthNumber}`;
         } else if (selectedYearFilter.value) {
             // หากเลือกแค่ปี, ให้ดึงข้อมูลสมาชิกตามปี
             const buddhistYear = parseInt(selectedYearFilter.value) + 543;
-            url = `https://06da-1-47-223-210.ngrok-free.app/package/backend/get_members.php?buddhist_year=${buddhistYear}`;
+            url = `https://6e9fdf451a56.ngrok-free.app/package/backend/get_members.php?buddhist_year=${buddhistYear}`;
         }
 
         // เพิ่มการกรองประเภทสมาชิก (ถ้าเลือก)
@@ -215,7 +215,7 @@ function getProfileImageUrl(path: string | null): string {
     if (!path || path.trim() === '') {
         return defaultAvatar;
     }
-    return `https://06da-1-47-223-210.ngrok-free.app/package/backend/${path}`;
+    return `https://6e9fdf451a56.ngrok-free.app/package/backend/${path}`;
 }
 
 function formatCurrency(value: number | string): string {
@@ -269,7 +269,7 @@ async function updateMember(isActive: { value: boolean }) {
             formData.append('profile_image', selectedFile.value);
         }
 
-        const res = await fetch('https://06da-1-47-223-210.ngrok-free.app/package/backend/edit_profile.php', {
+        const res = await fetch('https://6e9fdf451a56.ngrok-free.app/package/backend/edit_profile.php', {
             method: 'POST',
             body: formData
         });

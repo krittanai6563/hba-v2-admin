@@ -27,7 +27,7 @@ if (userRole !== 'admin' && userRole !== 'master' && !userId) return;
   isLoading.value = true;
 
   try {
-    const res = await fetch(`https://06da-1-47-223-210.ngrok-free.app/package/backend/sales_overview.php`, {
+    const res = await fetch(`https://6e9fdf451a56.ngrok-free.app/package/backend/sales_overview.php`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
