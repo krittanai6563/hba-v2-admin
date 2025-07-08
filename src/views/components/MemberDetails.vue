@@ -5,6 +5,8 @@ import { toRaw } from 'vue';  // นำเข้า toRaw
 import logo from '@/assets/images/logos/logo-dark.svg';
 import { useRouter } from 'vue-router';
 import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
+
 
 const router = useRouter();
 
@@ -181,68 +183,108 @@ const goBack = () => {
 };
 
 
-const exportToExcel = () => {
-  const wsData: any[] = [];
+const exportToExcel = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Data');
 
-  // 1. แสดงรายละเอียดของสมาชิก
-  wsData.push(['รายละเอียดของสมาชิก', '', '', '', '', '', '', '']);
-  wsData.push([`ชื่อ: ${memberDetails.value.fullname}`, '', '', '', '', '', '', '']);
-  wsData.push([`ประจำเดือน: ${getMonthName(monthNumber.value)} ปี ${buddhistYear.value}`, '', '', '', '', '', '', '']);
-  wsData.push([`Email: ${memberDetails.value.email}`, '', '', '', '', '', '', '']);
-  wsData.push([`ประเภทสมาชิก: ${memberDetails.value.member_type}`, '', '', '', '', '', '', '']);
-  wsData.push([]);  // เว้นบรรทัดหลังรายละเอียดสมาชิก
+    const headerFill: ExcelJS.Fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF00B050' }
+    };
+    const headerFont: Partial<ExcelJS.Font> = {
+        bold: true,
+        color: { argb: 'FFFFFFFF' },
+        name: 'Angsana New' // Added font name
+    };
 
-  // 2. แสดงข้อมูลตามประเภทสัญญา
-  contractTypes.forEach((label) => {
-    // หัวข้อประเภทสัญญา
-    wsData.push([label, '', '', '', '', '', '', '']);
+    const redFont: Partial<ExcelJS.Font> = {
+        bold: true,
+        color: { argb: 'FFFF0000' }, // Red color (ARGB: Alpha, Red, Green, Blue)
+        name: 'Angsana New' // Added font name
+    };
 
-    // สำหรับแต่ละภูมิภาค
-    const units = regions.map((region: string) => getCell(region, label, 'total_units'));
-    const values = regions.map((region: string) => getCell(region, label, 'total_value'));
-    const areas = regions.map((region: string) => getCell(region, label, 'total_area'));
-    const avgPrices = regions.map((region: string) => getCell(region, label, 'avg_price_per_sqm'));
+    worksheet.addRow(['รายละเอียดของสมาชิก']).font = headerFont;
+    worksheet.addRow([`ชื่อ: ${memberDetails.value.fullname}`]);
+    worksheet.addRow([`ประจำเดือน: ${getMonthName(monthNumber.value)} ปี ${buddhistYear.value}`]);
+    worksheet.addRow([`Email: ${memberDetails.value.email}`]);
+    worksheet.addRow([`ประเภทสมาชิก: ${memberDetails.value.member_type}`]);
+    worksheet.addRow([]);
 
-    // เพิ่มข้อมูลในตาราง
-    wsData.push(['จำนวนหลัง', ...units]);
-    wsData.push(['มูลค่ารวม', ...values]);
-    wsData.push(['พื้นที่ใช้สอย', ...areas]);
-    wsData.push(['ราคาเฉลี่ย ตร.ม', ...avgPrices]);
+    const mainHeaders = ['ประเภทสัญญา/ข้อมูล', ...regions];
+    worksheet.addRow(mainHeaders);
 
-    // เว้นบรรทัดหลังหัวข้อประเภทสัญญา
-    wsData.push([]);
-  });
+    worksheet.getRow(worksheet.rowCount).eachCell((cell) => {
+        cell.fill = headerFill;
+        cell.font = headerFont;
+    });
 
-  // 3. สรุปข้อมูลยอดเซ็นสัญญา
-  const totalUnits = getTotal('total_units');
-  const totalValue = getTotal('total_value');
-  const totalArea = getTotal('total_area');
-  const avgPrice = totalValue / totalArea;
+    contractTypes.forEach((label) => {
+        worksheet.addRow([label]);
+        worksheet.getRow(worksheet.rowCount).eachCell((cell) => {
+            cell.font = { bold: true, name: 'Angsana New' }; // Added font name
+        });
 
-  wsData.push(['สรุปข้อมูลยอดเซ็นสัญญา', '', '', '', '', '', '', '']);
-  wsData.push(['จำนวนหลัง', formatCurrency(totalUnits)]);
-  wsData.push(['มูลค่ารวม', formatCurrency(totalValue)]);
-  wsData.push(['พื้นที่ใช้สอย', formatCurrency(totalArea)]);
-  wsData.push(['ราคาเฉลี่ย ตร.ม', avgPrice.toFixed(2)]);
+        const unitsRow = ['จำนวนหลัง', ...regions.map((region: string) => getCell(region, label, 'total_units'))];
+        const valuesRow = ['มูลค่ารวม', ...regions.map((region: string) => getCell(region, label, 'total_value'))];
+        const areasRow = ['พื้นที่ใช้สอย', ...regions.map((region: string) => getCell(region, label, 'total_area'))];
+        const avgPricesRow = ['ราคาเฉลี่ย ตร.ม', ...regions.map((region: string) => getCell(region, label, 'avg_price_per_sqm'))];
 
-  // 4. สร้าง worksheet จาก wsData
-  const ws = XLSX.utils.aoa_to_sheet(wsData);
+        worksheet.addRow(unitsRow);
+        worksheet.addRow(valuesRow);
+        worksheet.addRow(areasRow);
+        worksheet.addRow(avgPricesRow);
+        worksheet.addRow([]);
+    });
 
-const columnWidths = wsData[0].map((_: any, index: number) => ({
-  wch: Math.max(...wsData.map((row: any[]) => (row[index] ? row[index].toString().length : 0)))
-}));
+    const totalUnits = getTotal('total_units');
+    const totalValue = getTotal('total_value');
+    const totalArea = getTotal('total_area');
+    const avgPrice = totalArea > 0 ? totalValue / totalArea : 0;
 
+    worksheet.addRow(['สรุปข้อมูลยอดเซ็นสัญญา']).font = headerFont;
 
+    const rowUnits = worksheet.addRow(['จำนวนหลัง', formatCurrency(totalUnits)]);
+    rowUnits.getCell(1).font = { bold: true, name: 'Angsana New' }; // Label
+    rowUnits.getCell(2).font = redFont; // Number
 
-  ws['!cols'] = columnWidths;
+    const rowValue = worksheet.addRow(['มูลค่ารวม', formatCurrency(totalValue)]);
+    rowValue.getCell(1).font = { bold: true, name: 'Angsana New' }; // Label
+    rowValue.getCell(2).font = redFont; // Number
 
-  // 5. สร้าง workbook และเพิ่ม worksheet ลงไป
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Data');
+    const rowArea = worksheet.addRow(['พื้นที่ใช้สอย', formatCurrency(totalArea)]);
+    rowArea.getCell(1).font = { bold: true, name: 'Angsana New' }; // Label
+    rowArea.getCell(2).font = redFont; // Number
 
-  // 6. ดาวน์โหลดไฟล์ Excel
-  XLSX.writeFile(wb, 'report.xlsx');
+    const rowAvgPrice = worksheet.addRow(['ราคาเฉลี่ย ตร.ม', avgPrice.toFixed(2)]);
+    rowAvgPrice.getCell(1).font = { bold: true, name: 'Angsana New' }; // Label
+    rowAvgPrice.getCell(2).font = redFont; // Number
+
+    worksheet.columns.forEach(column => {
+        let maxLength = 0;
+        column.eachCell?.({ includeEmpty: true }, cell => {
+            const columnText = cell.text ? cell.text.toString() : '';
+            maxLength = Math.max(maxLength, columnText.length);
+        });
+        column.width = maxLength < 10 ? 10 : maxLength + 2;
+    });
+
+    try {
+        const buffer = await workbook.xlsx.writeBuffer();
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'report.xlsx';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+    } catch (error) {
+        console.error("Error exporting to Excel:", error);
+    }
 };
+
 
 
 </script>
