@@ -193,7 +193,8 @@ const fetchMembers = async () => {
         console.log("Fetching URL: ", url);
 
         const res = await fetch(url, {
-            method: 'POST',  // Ensure the request is a POST request
+            method: 'POST',  
+            
         });
 
         // Check if the response is valid
