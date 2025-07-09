@@ -119,7 +119,7 @@ if (userId) {
   console.log('📤 Sending payload:', payload)
 
   try {
-    const response = await fetch('https://thhbaadmin.infinityfreeapp.com/backend/get_contract_data.php', {
+    const response = await fetch('https://6e9fdf451a56.ngrok-free.app/package/backend/get_contract_data.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)

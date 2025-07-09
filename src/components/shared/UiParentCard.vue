@@ -287,7 +287,7 @@ const saveContractData = async () => {
     };
 
     try {
-        const response = await fetch('https://thhbaadmin.infinityfreeapp.com/backend/submit_contract.php', {
+        const response = await fetch('https://6e9fdf451a56.ngrok-free.app/backend/submit_contract.php', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -320,7 +320,7 @@ const loadContractData = async (month: MonthItem) => {
     };
 
     try {
-        const response = await fetch('http://localhost/package/backend/get_contract.php', {
+        const response = await fetch('https://6e9fdf451a56.ngrok-free.app/package/backend/get_contract.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
