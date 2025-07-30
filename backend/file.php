@@ -8,16 +8,15 @@ header("Content-Type: application/json");
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
-require 'condb.php';  // Database connection file
+require 'condb.php'; 
 
 $data = json_decode(file_get_contents("php://input"), true);
 
 $user_id = $data['user_id'] ?? null;
 $year = $data['buddhist_year'] ?? null;
 $quarter = $data['quarter'] ?? null;
-$role = $data['role'] ?? 'user';  // Default to 'user' if role is not provided
+$role = $data['role'] ?? 'user'; 
 
-// Validate parameters
 if (!$year) {
     echo json_encode(['error' => 'Missing required parameter: buddhist_year']);
     exit;
@@ -28,7 +27,6 @@ if ($role !== 'admin' && $role !== 'master' && !$user_id) {
     exit;
 }
 
-// SQL query to fetch regional data
 $sql = "
     SELECT cd.region,
            SUM(cd.unit) AS unit,
@@ -41,13 +39,11 @@ $sql = "
 
 $params = [$year];
 
-// If role is not 'admin' or 'master', filter by user_id
 if ($role !== 'admin' && $role !== 'master') {
     $sql .= " AND cs.user_id = ?";
     $params[] = $user_id;
 }
 
-// Handle quarter filter
 if (!empty($quarter)) {
     $quarterMap = [
         'ไตรมาส 1' => 1,
@@ -62,16 +58,14 @@ if (!empty($quarter)) {
     }
 }
 
-// Group by region
 $sql .= " GROUP BY cd.region";
 
 try {
-    // Prepare and execute the SQL query
+
     $stmt = $conn->prepare($sql);
     $stmt->execute($params);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Format the result by region
     $regionResult = [];
     foreach ($rows as $row) {
         $region = $row['region'];
@@ -82,7 +76,6 @@ try {
         ];
     }
 
-    // Fetch the latest month's total value
     $latestSql = "
         SELECT SUM(cd.total_value) AS latest_month_value
         FROM contract_submission cs
@@ -96,7 +89,6 @@ try {
         $latestParams[] = $user_id;
     }
 
-    // Execute the latest query
     $latestStmt = $conn->prepare($latestSql);
     $latestStmt->execute($latestParams);
     $latestRow = $latestStmt->fetch(PDO::FETCH_ASSOC);

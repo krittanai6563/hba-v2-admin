@@ -22,7 +22,7 @@ const dataTypes = ['unit', 'total_value', 'usable_area'];
 const fetchSummary = async () => {
     if (!userId) return;
     try {
-        const res = await fetch('https://6e9fdf451a56.ngrok-free.app/package/backend/get_contract_summary.php', {
+        const res = await fetch('https://88ae10127f9b.ngrok-free.app/package/backend/get_contract_summary.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

@@ -3,16 +3,13 @@ import { ref, computed, watch } from 'vue';
 import ExcelJS from 'exceljs';
 import type { BorderStyle, Cell } from 'exceljs';
 
-// Reactive Variables
 const selectedYear = ref((new Date().getFullYear() + 543).toString());
 const selectedQuarter = ref('');
 const selectedMonth = ref('');
 
-// Fetching error and region data
 const fetchError = ref('');
 const regionData = ref<Record<string, { unit: number; total_value: number; usable_area: number }>>({});
 
-// User role and ID (from localStorage)
 const userId = localStorage.getItem('user_id');
 const userRole = localStorage.getItem('user_role') || 'user';
 
@@ -23,7 +20,6 @@ const yearOptions = computed(() => {
 
 const quarterOptions = ['ทั้งหมด', 'ไตรมาสที่ 1', 'ไตรมาสที่ 2', 'ไตรมาสที่ 3', 'ไตรมาสที่ 4'];
 
-// Month Mapping
 const monthMap: { [key: string]: number } = {
     มกราคม: 1,
     กุมภาพันธ์: 2,
@@ -40,23 +36,21 @@ const monthMap: { [key: string]: number } = {
 };
 const monthOptions = Object.keys(monthMap);
 
-// Regions and Data fetching
 const regions = ['กรุงเทพปริมณฑล', 'ภาคเหนือ', 'ภาคตะวันออกเฉียงเหนือ', 'ภาคกลาง', 'ภาคตะวันออก', 'ภาคใต้', 'ภาคตะวันตก'];
 
-// Fetch data from server
 const fetchRegionSummary = async () => {
     if (!userId || !selectedYear.value) return;
     fetchError.value = '';
     try {
-        const res = await fetch('https://6e9fdf451a56.ngrok-free.app/package/backend/get_region_summary.php', {
+        const res = await fetch('https://88ae10127f9b.ngrok-free.app/package/backend/get_region_summary.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 user_id: userId,
                 buddhist_year: selectedYear.value,
                 quarter: selectedQuarter.value !== 'ทั้งหมด' ? selectedQuarter.value : undefined,
-                month: selectedMonth.value ? monthMap[selectedMonth.value] : undefined, // Send numeric month
-                role: userRole // Send role as well
+                month: selectedMonth.value ? monthMap[selectedMonth.value] : undefined,
+                role: userRole
             })
         });
 
@@ -73,12 +67,10 @@ const fetchRegionSummary = async () => {
     }
 };
 
-// Watches
 watch(selectedYear, fetchRegionSummary, { immediate: true });
 watch(selectedQuarter, fetchRegionSummary);
-watch(selectedMonth, fetchRegionSummary); // Watch the month selection for changes
+watch(selectedMonth, fetchRegionSummary);
 
-// Function to get region data fields
 type RegionField = 'unit' | 'total_value' | 'usable_area' | 'price_per_sqm';
 const getRegionField = (region: string, field: RegionField): number => {
     const entry = regionData.value[region];
@@ -87,44 +79,42 @@ const getRegionField = (region: string, field: RegionField): number => {
     return field === 'price_per_sqm' ? (entry.usable_area > 0 ? entry.total_value / entry.usable_area : 0) : entry[field];
 };
 
-// Chart Data
 const chartLabels = computed(() => regions);
 
 const chartSeries = computed(() => {
     return [
         {
             name: 'จำนวนหลัง',
-            type: 'column', // Set type to column (bar graph)
+            type: 'column',
             data: regions.map((region) => getRegionField(region, 'unit')),
-            color: '#f9ce1d' // Set color for this column
+            color: '#f9ce1d'
         },
         {
             name: 'พื้นที่ใช้สอย',
-            type: 'column', // Set type to column (bar graph)
+            type: 'column',
             data: regions.map((region) => getRegionField(region, 'usable_area')),
-            color: '#4caf50' // Set color for this column
+            color: '#4caf50'
         },
         {
             name: 'มูลค่ารวม',
-            type: 'line', // Set type to line (line graph)
+            type: 'line',
             data: regions.map((region) => getRegionField(region, 'total_value')),
-            color: '#3f51b5' // Set color for this line
+            color: '#3f51b5'
         }
     ];
 });
 
-// Chart options setup
 const chartOptions = ref({
     chart: {
         height: 350,
-        type: 'line', // Set the default chart type to 'line'
+        type: 'line',
         stacked: false,
         fontFamily: 'inherit',
         foreColor: '#adb0bb',
         toolbar: {
             show: true,
             tools: {
-                download: true // Enable only the download tool
+                download: true
             }
         }
     },
@@ -241,26 +231,23 @@ const exportToExcel = async () => {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Region Summary');
 
-    // Set the title row (first row)
     worksheet.mergeCells('A1:E1');
     worksheet.getCell('A1').value = `ข้อมูลยอดเซ็นสัญญาแยกตามภูมิภาค ปี ${selectedYear.value} - 
         ${selectedQuarter && !selectedMonth ? selectedQuarter : selectedMonth ? 'เดือน ' + selectedMonth : 'ทั้งปี'}`;
-    
+
     worksheet.getCell('A1').font = { bold: true, size: 14 };
     worksheet.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle' };
     worksheet.getCell('A1').border = { bottom: { style: 'thin' as BorderStyle, color: { argb: '00A6D4' } } };
-    worksheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'D3D3D3' } }; // Light grey background
+    worksheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'D3D3D3' } };
 
-    // Set header row
     const headerRow = ['พื้นที่', 'จำนวนหลัง', 'มูลค่ารวม', 'พื้นที่ใช้สอย', 'ราคาเฉลี่ย/ตร.ม.'];
     worksheet.addRow(headerRow);
     const headerRowFormatted = worksheet.getRow(2);
     headerRowFormatted.font = { bold: true };
     headerRowFormatted.alignment = { horizontal: 'center', vertical: 'middle' };
-    
-    // Apply background color to header row
+
     headerRowFormatted.eachCell((cell: Cell) => {
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'D3D3D3' } }; // Light grey
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'D3D3D3' } };
         cell.border = {
             top: { style: 'thin' as BorderStyle },
             left: { style: 'thin' as BorderStyle },
@@ -269,7 +256,6 @@ const exportToExcel = async () => {
         };
     });
 
-    // Add data rows
     regions.forEach((region) => {
         const row = [
             region,
@@ -281,7 +267,6 @@ const exportToExcel = async () => {
         const dataRow = worksheet.addRow(row);
         dataRow.alignment = { horizontal: 'center', vertical: 'middle' };
 
-        // Apply borders and background color for the data row
         dataRow.eachCell((cell: Cell, colNumber) => {
             cell.border = {
                 top: { style: 'thin' as BorderStyle },
@@ -290,19 +275,16 @@ const exportToExcel = async () => {
                 bottom: { style: 'thin' as BorderStyle }
             };
 
-            // Apply light blue background for data rows
             if (colNumber !== 1) {
-                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'D9EAF7' } }; // Light blue
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'D9EAF7' } };
             }
 
-            // Format numbers (currency)
             if (typeof cell.value === 'number') {
-                cell.numFmt = '#,##0.00'; // For numbers, show 2 decimal places
+                cell.numFmt = '#,##0.00';
             }
         });
     });
 
-    // Set column widths
     worksheet.columns = [
         { key: 'region', width: 30 },
         { key: 'unit', width: 15 },
@@ -311,22 +293,16 @@ const exportToExcel = async () => {
         { key: 'price_per_sqm', width: 20 }
     ];
 
-    // Generate Excel file as a buffer
     const buffer = await workbook.xlsx.writeBuffer();
 
-    // Create a Blob object for the buffer
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 
-    // Create a link element to trigger the download
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = `Region_Summary_${selectedYear.value}.xlsx`;
 
-    // Trigger the download
     link.click();
 };
-
-
 </script>
 
 <template>
@@ -338,7 +314,6 @@ const exportToExcel = async () => {
                         <div>
                             <h3 class="text-h5 card-title">รายงานยอดเซ็นสัญญาเปรียบเทียบตามพื้นที่</h3>
                             <ul class="v-breadcrumbs v-breadcrumbs--density-default text-subtitle-1 textSecondary pa-0 ml-n1">
-                                <!---->
                                 <li class="v-breadcrumbs-item" text="Home">
                                     <a class="v-breadcrumbs-item--link" href="#">
                                         <p>หน้าแรก</p>
@@ -528,12 +503,11 @@ const exportToExcel = async () => {
                                 </div>
                             </div>
                         </div>
-                        <!----><!----><span class="v-card__underlay"></span>
+                        <span class="v-card__underlay"></span>
                     </div>
                 </div>
                 <div class="v-col-sm-6 v-col-lg-3 v-col-12 py-0 mb-3" revenuecard="[object Object]">
                     <div class="v-card v-theme--BLUE_THEME v-card--density-default elevation-10 rounded-md v-card--variant-elevated">
-                        <!---->
                         <div class="v-card__loader">
                             <div
                                 class="v-progress-linear v-theme--BLUE_THEME v-locale--is-ltr"
@@ -543,17 +517,15 @@ const exportToExcel = async () => {
                                 aria-valuemax="100"
                                 style="top: 0px; height: 0px; --v-progress-linear-height: 2px"
                             >
-                                <!---->
                                 <div class="v-progress-linear__background"></div>
                                 <div class="v-progress-linear__buffer" style="width: 0%"></div>
                                 <div class="v-progress-linear__indeterminate">
                                     <div class="v-progress-linear__indeterminate long"></div>
                                     <div class="v-progress-linear__indeterminate short"></div>
                                 </div>
-                                <!---->
                             </div>
                         </div>
-                        <!----><!---->
+
                         <div class="v-card-text pa-5">
                             <div class="d-flex align-center ga-4">
                                 <button
@@ -579,12 +551,11 @@ const exportToExcel = async () => {
                                 </div>
                             </div>
                         </div>
-                        <!----><!----><span class="v-card__underlay"></span>
+                        <span class="v-card__underlay"></span>
                     </div>
                 </div>
                 <div class="v-col-sm-6 v-col-lg-3 v-col-12 py-0 mb-3" revenuecard="[object Object]">
                     <div class="v-card v-theme--BLUE_THEME v-card--density-default elevation-10 rounded-md v-card--variant-elevated">
-                        <!---->
                         <div class="v-card__loader">
                             <div
                                 class="v-progress-linear v-theme--BLUE_THEME v-locale--is-ltr"
@@ -594,17 +565,15 @@ const exportToExcel = async () => {
                                 aria-valuemax="100"
                                 style="top: 0px; height: 0px; --v-progress-linear-height: 2px"
                             >
-                                <!---->
                                 <div class="v-progress-linear__background"></div>
                                 <div class="v-progress-linear__buffer" style="width: 0%"></div>
                                 <div class="v-progress-linear__indeterminate">
                                     <div class="v-progress-linear__indeterminate long"></div>
                                     <div class="v-progress-linear__indeterminate short"></div>
                                 </div>
-                                <!---->
                             </div>
                         </div>
-                        <!----><!---->
+
                         <div class="v-card-text pa-5">
                             <div class="d-flex align-center ga-4">
                                 <button
@@ -627,12 +596,11 @@ const exportToExcel = async () => {
                                 </div>
                             </div>
                         </div>
-                        <!----><!----><span class="v-card__underlay"></span>
+                        <span class="v-card__underlay"></span>
                     </div>
                 </div>
                 <div class="v-col-sm-6 v-col-lg-3 v-col-12 py-0 mb-3" revenuecard="[object Object]">
                     <div class="v-card v-theme--BLUE_THEME v-card--density-default elevation-10 rounded-md v-card--variant-elevated">
-                        <!---->
                         <div class="v-card__loader">
                             <div
                                 class="v-progress-linear v-theme--BLUE_THEME v-locale--is-ltr"
@@ -642,17 +610,15 @@ const exportToExcel = async () => {
                                 aria-valuemax="100"
                                 style="top: 0px; height: 0px; --v-progress-linear-height: 2px"
                             >
-                                <!---->
                                 <div class="v-progress-linear__background"></div>
                                 <div class="v-progress-linear__buffer" style="width: 0%"></div>
                                 <div class="v-progress-linear__indeterminate">
                                     <div class="v-progress-linear__indeterminate long"></div>
                                     <div class="v-progress-linear__indeterminate short"></div>
                                 </div>
-                                <!---->
                             </div>
                         </div>
-                        <!----><!---->
+
                         <div class="v-card-text pa-5">
                             <div class="d-flex align-center ga-4">
                                 <button
@@ -711,3 +677,4 @@ td {
     opacity: 0;
 }
 </style>
+

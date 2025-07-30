@@ -4,12 +4,12 @@ import { ref, computed, onMounted } from 'vue';
 const currentYear = new Date().getFullYear() + 543;
 
 const userId = localStorage.getItem('user_id');
-const userRole = localStorage.getItem('user_role') || 'user'; // 👈 เพิ่ม
+const userRole = localStorage.getItem('user_role') || 'user'; 
 
 const summaryData = ref<Record<string, Record<string, Record<string, number>>>>({});
 
 const visibleYears = computed(
-    () => Array.from({ length: 4 }, (_, i) => (currentYear - 3 + i).toString()) // รวมปีปัจจุบัน
+    () => Array.from({ length: 4 }, (_, i) => (currentYear - 3 + i).toString()) 
 );
 
 const priceRanges = ['ไม่เกิน 2.50 ล้านบาท', '2.51 - 5 ล้านบาท', '5.01 - 10 ล้านบาท', '10.01 - 20 ล้านบาท', '20.01 ล้านขึ้นไป'];
@@ -26,7 +26,7 @@ const typeMap: Record<(typeof dataTypes)[number], 'unit' | 'value' | 'area' | 'p
 const fetchSummary = async () => {
     if (!userId) return;
     try {
-        const res = await fetch('https://6e9fdf451a56.ngrok-free.app/package/backend/quarter_summary_Q.php', {
+        const res = await fetch('https://88ae10127f9b.ngrok-free.app/package/backend/quarter_summary_Q.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

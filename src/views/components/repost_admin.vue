@@ -102,7 +102,7 @@ const fetchSummary = async (type: 'monthly' | 'quarterly') => {
     console.log('Sending data to backend:', data);
 
     try {
-        const res = await fetch('https://6e9fdf451a56.ngrok-free.app/package/backend/repost_admin.php', {
+        const res = await fetch('https://88ae10127f9b.ngrok-free.app/package/backend/repost_admin.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
@@ -506,7 +506,7 @@ const updateChartQuarterData = (data: SummaryData) => {
                 data: quarterData
             });
         });
-    }
+    } 
 
     chartQuarterSeries.value = totalValueData;
     chartQuarterOptions.value.xaxis.categories = categories;

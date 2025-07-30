@@ -2,7 +2,7 @@
 import SalesOverview from '@/components/dashboard/SalesOverview.vue';
 import TheActivityTimeline from '@/components/dashboard/TheActivityTimeline.vue';
 import TotalSales from '@/components/dashboard/TotalSales.vue';
-import { ref, computed, watch,onMounted } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 
 const selectedYear = ref((new Date().getFullYear() + 543).toString());
 const selectedQuarter = ref('ทั้งหมด');
@@ -24,8 +24,6 @@ const userId = localStorage.getItem('user_id');
 
 const userRole = ref(localStorage.getItem('user_role') || 'user');
 const isAdmin = computed(() => userRole.value === 'admin' || userRole.value === 'master');
-
-
 
 
 
@@ -51,10 +49,10 @@ const fetchRegionSummary = async () => {
     if (!selectedYear.value) return;
 
     const payload = buildPayload();
-    fetchErrorRegionSummary.value = '';  // Reset before fetching data
+    fetchErrorRegionSummary.value = '';
 
     try {
-        const res = await fetch('https://6e9fdf451a56.ngrok-free.app/package/backend/file.php', {
+        const res = await fetch('https://88ae10127f9b.ngrok-free.app/package/backend/file.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
@@ -152,50 +150,50 @@ defineExpose({
 });
 
 const months = [
-  "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
-  "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
+    "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+    "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
 ];
 
 // คำนวณชื่อเดือนและปี
 const currentYear = new Date().getFullYear() + 543;  // ปีพุทธศักราช
 const currentMonth = new Date().getMonth();  // เดือนปัจจุบัน
-const currentMonthName = months[currentMonth];  // ชื่อเดือนที่ตรงกับตัวแปร currentMonth
+const currentMonthName = months[currentMonth];  
 
 const errorMessage = computed(() => {
-  return `กรุณากรอกข้อมูลก่อนวันที่ 10 ${currentMonthName} ${currentYear}`;
+    return `กรุณากรอกข้อมูลก่อนวันที่ 10 ${currentMonthName} ${currentYear}`;
 });
 
 const fetchUserStatus = async () => {
-  if (!userId) {
-    fetchErrorUserStatus.value = 'ไม่พบข้อมูลผู้ใช้';
-    return;
-  }
-
-  try {
-    const payload = {
-      user_id: userId,
-      buddhist_year: currentYear.toString(), 
-      month_number: (currentMonth + 1).toString()  // เดือนปัจจุบัน
-    };
-
-    const res = await fetch('http://localhost/package/backend/data_and_email.php', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-
-    const data = await res.json();
-
-    if (data.error) {
-      fetchErrorUserStatus.value = data.error;
-    } else {
-      statusMessage.value = data.status;
+    if (!userId) {
+        fetchErrorUserStatus.value = 'ไม่พบข้อมูลผู้ใช้';
+        return;
     }
-  } catch (err) {
-    console.error('Error fetching user status:', err);
-    fetchErrorUserStatus.value = 'ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้';
-    console.log(err);
-  }
+
+    try {
+        const payload = {
+            user_id: userId,
+            buddhist_year: currentYear.toString(),
+            month_number: (currentMonth + 1).toString()  // เดือนปัจจุบัน
+        };
+
+        const res = await fetch('http://localhost/package/backend/data_and_email.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+
+        const data = await res.json();
+
+        if (data.error) {
+            fetchErrorUserStatus.value = data.error;
+        } else {
+            statusMessage.value = data.status;
+        }
+    } catch (err) {
+        console.error('Error fetching user status:', err);
+        fetchErrorUserStatus.value = 'ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้';
+        console.log(err);
+    }
 };
 
 onMounted(fetchUserStatus);
@@ -207,14 +205,15 @@ onMounted(fetchUserStatus);
 
 
 <template>
-  <v-row v-if="fetchErrorUserStatus && userRole === 'user'">
-    
-    <v-alert density="compact" type="error" :text="errorMessage" title="กรุณากรอกข้อมูล"></v-alert>
-  </v-row>
+    <v-row v-if="fetchErrorUserStatus && userRole === 'user'">
 
-  <v-row v-if="statusMessage && userRole === 'user'">
-    <v-alert density="compact" v-bind:type="statusMessage === 'กรอกข้อมูลเรียบร้อย' ? 'success' : 'error'" :text="statusMessage" title="สถานะการกรอกข้อมูล"></v-alert>
-  </v-row>
+        <v-alert density="compact" type="error" :text="errorMessage" title="กรุณากรอกข้อมูล"></v-alert>
+    </v-row>
+
+    <v-row v-if="statusMessage && userRole === 'user'">
+        <v-alert density="compact" v-bind:type="statusMessage === 'กรอกข้อมูลเรียบร้อย' ? 'success' : 'error'"
+            :text="statusMessage" title="สถานะการกรอกข้อมูล"></v-alert>
+    </v-row>
 
     <v-row>
         <v-col cols="12" sm="12" lg="12">
@@ -520,11 +519,7 @@ onMounted(fetchUserStatus);
                     </div>
                 </div>
             </div>
-
         </v-col>
-
-
-
         <v-col cols="12" sm="12" lg="12">
             <div class="v-row">
                 <div class="v-col-sm-0 v-col-lg-3 v-col-0 py-0 mb-0" revenuecard="[object Object]">
@@ -667,9 +662,6 @@ onMounted(fetchUserStatus);
                                     <h2 class="text-h4">
                                         {{ formatNumber(parseFloat(averagePricePerSqm), true) }}
                                     </h2>
-
-
-
                                     <p class="textSecondary mt-1 text-15">ราคาเฉลี่ย/ตร.ม.</p>
                                 </div>
                             </div>
@@ -677,10 +669,6 @@ onMounted(fetchUserStatus);
                     </div>
                 </div>
             </div>
-
-
-
-
 
         </v-col>
         <v-col cols="12" sm="12" lg="8">
@@ -700,4 +688,4 @@ onMounted(fetchUserStatus);
         </v-col>
     </v-row>
 </template>
- 
+

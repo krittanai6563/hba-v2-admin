@@ -15,7 +15,7 @@ async function register() {
 
   try {
 
-    const res = await fetch('https://6e9fdf451a56.ngrok-free.app/package/backend/register.php', {
+    const res = await fetch('https://88ae10127f9b.ngrok-free.app/package/backend/register.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }, 
       body: JSON.stringify({ 

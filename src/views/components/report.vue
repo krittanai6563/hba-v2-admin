@@ -58,11 +58,11 @@ const selectedComparisonPeriods = computed(() => {
     return [];
 });
 
-const selectedYear = ref(''); // ค่าว่างเพื่อรอรับปีจากฟอร์ม
-const selectedMonth = ref(''); // ค่าว่างเพื่อรอรับเดือนจากฟอร์ม
-const selectedComparisonQuarter = ref(''); // ค่าว่างเพื่อรอรับไตรมาสจากฟอร์ม
-const selectedComparisonType = ref(''); // ค่าว่างเพื่อรอรับประเภทการเปรียบเทียบจากฟอร์ม
-const selectedComparisonPeriod = ref(''); // ค่าว่างเพื่อรอรับปีเปรียบเทียบจากฟอร์ม
+const selectedYear = ref(''); 
+const selectedMonth = ref(''); 
+const selectedComparisonQuarter = ref(''); 
+const selectedComparisonType = ref(''); 
+const selectedComparisonPeriod = ref(''); 
 
 const currentYear = new Date().getFullYear() + 543;
 
@@ -90,7 +90,7 @@ const fetchSummary = async () => {
     isLoading.value = true;
 
     try {
-        const res = await fetch(`https://6e9fdf451a56.ngrok-free.app/package/backend/roport_pricerange.php`, {
+        const res = await fetch(`https://88ae10127f9b.ngrok-free.app/package/backend/roport_pricerange.php`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -132,30 +132,28 @@ const calculatePercentageDifference = (value2567: number, value2568: number) => 
 const series = computed(() => {
     const priceRanges = ['ไม่เกิน 2.50 ล้านบาท', '2.51 - 5 ล้านบาท', '5.01 - 10 ล้านบาท', '10.01 - 20 ล้านบาท', '20.01 ล้านขึ้นไป'];
 
-    // If comparing by quarter, return an empty array to prevent the graph from rendering
     if (selectedComparisonType.value === 'เปรียบเทียบไตรมาส') {
-        return []; // Do not render any data if comparing by quarter
+        return []; 
     }
 
-    // If comparing by year
     if (selectedComparisonType.value === 'เปรียบเทียบปี') {
-        const year1 = selectedYear.value; // The first selected year (e.g., 2567)
-        const year2 = selectedComparisonPeriod.value; // The selected comparison year (e.g., 2568)
+        const year1 = selectedYear.value;
+        const year2 = selectedComparisonPeriod.value; 
 
         const totalYear1 = priceRanges.reduce((total: number, range) => {
-            const value = summaryData.value['yearly_data']?.[year1]?.[range] || 0; // Fetched yearly data for year1
+            const value = summaryData.value['yearly_data']?.[year1]?.[range] || 0; 
             return total + value;
         }, 0);
 
         const totalYear2 = priceRanges.reduce((total: number, range) => {
-            const value = summaryData.value['yearly_data']?.[year2]?.[range] || 0; // Fetched yearly data for year2
+            const value = summaryData.value['yearly_data']?.[year2]?.[range] || 0; 
             return total + value;
         }, 0);
 
         const percentageDifference = priceRanges.map((range) => {
-            const valueYear1 = summaryData.value['yearly_data']?.[year1]?.[range] || 0; // Data for year1
-            const valueYear2 = summaryData.value['yearly_data']?.[year2]?.[range] || 0; // Data for year2
-            return calculatePercentageDifference(valueYear1, valueYear2); // Calculate percentage change
+            const valueYear1 = summaryData.value['yearly_data']?.[year1]?.[range] || 0; 
+            const valueYear2 = summaryData.value['yearly_data']?.[year2]?.[range] || 0; 
+            return calculatePercentageDifference(valueYear1, valueYear2); 
         });
 
         const totalPercentageDifference = calculatePercentageDifference(totalYear1, totalYear2);
@@ -165,7 +163,7 @@ const series = computed(() => {
                 name: `ปี ${year1}`,
                 type: 'column',
                 data: [
-                    ...priceRanges.map((range) => summaryData.value['yearly_data']?.[year1]?.[range] || 0), // Data for year1
+                    ...priceRanges.map((range) => summaryData.value['yearly_data']?.[year1]?.[range] || 0), 
                     totalYear1
                 ],
                 color: '#008FFB'
@@ -174,7 +172,7 @@ const series = computed(() => {
                 name: `ปี ${year2}`,
                 type: 'column',
                 data: [
-                    ...priceRanges.map((range) => summaryData.value['yearly_data']?.[year2]?.[range] || 0), // Data for year2
+                    ...priceRanges.map((range) => summaryData.value['yearly_data']?.[year2]?.[range] || 0), 
                     totalYear2
                 ],
                 color: '#00E396'
@@ -194,7 +192,6 @@ const series = computed(() => {
         ];
     }
 
-    // Default case if comparison type is not selected or invalid
     return [];
 });
 
@@ -288,9 +285,6 @@ const chartOptions = computed(() => ({
     }
 }));
 
-// const selectedComparisonQuarter = ref('Q2');
-// const selectedComparisonYears = ref(['2567', '2568']);
-
 const monthsInQuarter = computed(() => {
     const quarter = selectedComparisonQuarter.value;
     switch (quarter) {
@@ -323,14 +317,13 @@ const monthNamesMapping: Record<string, string> = {
 };
 
 const series3 = computed(() => {
-    const year1 = selectedYear.value; // ใช้ปีที่เลือกจาก selectedYear
-    const year2 = selectedComparisonPeriod.value; // ใช้ปีที่เลือกจาก selectedComparisonPeriod
-    const quarter = selectedComparisonQuarter.value; // ใช้ไตรมาสที่เลือกจาก selectedComparisonQuarter
+    const year1 = selectedYear.value; 
+    const year2 = selectedComparisonPeriod.value; 
+    const quarter = selectedComparisonQuarter.value;
 
     const quarterData1 = summaryData.value.quarterly_data[year1]?.[quarter] || {};
     const quarterData2 = summaryData.value.quarterly_data[year2]?.[quarter] || {};
 
-    // แปลงข้อมูลจากเดือนภาษาอังกฤษเป็นภาษาไทย
     const translatedQuarterData1 = Object.fromEntries(
         Object.entries(quarterData1).map(([month, value]) => [monthNamesMapping[month] || month, value])
     );
@@ -473,9 +466,9 @@ const chartOptions3 = computed(() => ({
 }));
 
 const series4 = computed(() => {
-    const year1 = selectedYear.value; // ใช้ปีที่เลือกจากฟอร์ม
-    const year2 = selectedComparisonPeriod.value; // ใช้ปีเปรียบเทียบที่เลือกจากฟอร์ม
-    const quarter = selectedComparisonQuarter.value; // ใช้ไตรมาสที่เลือกจากฟอร์ม
+    const year1 = selectedYear.value; 
+    const year2 = selectedComparisonPeriod.value;
+    const quarter = selectedComparisonQuarter.value;
 
     const quarterData1 = summaryData.value.yearly_data_quarterly?.[year1]?.[quarter] || {};
     const quarterData2 = summaryData.value.yearly_data_quarterly?.[year2]?.[quarter] || {};
@@ -485,17 +478,17 @@ const series4 = computed(() => {
 
     const priceRanges = ['ไม่เกิน 2.50 ล้านบาท', '2.51 - 5 ล้านบาท', '5.01 - 10 ล้านบาท', '10.01 - 20 ล้านบาท', '20.01 ล้านขึ้นไป'];
 
-    // คำนวณมูลค่าของแต่ละช่วงราคา
-    const data1 = priceRanges.map((range) => quarterData1[range] || 0); // หากไม่พบช่วงราคาจะใช้ค่า 0
-    const data2 = priceRanges.map((range) => quarterData2[range] || 0); // หากไม่พบช่วงราคาจะใช้ค่า 0
 
-    // คำนวณเปอร์เซ็นต์การเปลี่ยนแปลง
+    const data1 = priceRanges.map((range) => quarterData1[range] || 0); 
+    const data2 = priceRanges.map((range) => quarterData2[range] || 0);
+
+
     const percentageChanges = data1.map((value1, index) => {
         const value2 = data2[index] || 0;
         return calculatePercentageDifference(value1, value2);
     });
 
-    // รวมมูลค่าทั้งหมด
+
     const total1 = data1.reduce((a, b) => a + b, 0);
     const total2 = data2.reduce((a, b) => a + b, 0);
     const totalPercentageChange = calculatePercentageDifference(total1, total2);

@@ -1,5 +1,5 @@
 <?php
-// CORS headers (ลบซ้ำ)
+
 header("Access-Control-Allow-Origin: *"); 
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type");
@@ -9,24 +9,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit();
 }
 
-require 'condb.php'; // ต้องแน่ใจว่าไฟล์นี้สร้าง $conn เป็น PDO instance
+require 'condb.php'; 
 
-// ดึงปีปัจจุบันแบบ พ.ศ. (ปี ค.ศ. + 543)
+
 $currentYear = date('Y') + 543;
 
-// ดึงเดือนปัจจุบัน (เลข 1-12)
 $currentMonth = date('n');
 
-// กำหนดค่า parameter โดยใช้ค่าใน URL ถ้ามี ไม่งั้นใช้ค่าเริ่มต้นเป็นปีและเดือนปัจจุบัน
+
 $buddhist_year = isset($_GET['buddhist_year']) ? intval($_GET['buddhist_year']) : $currentYear;
 $month_number = isset($_GET['month_number']) ? intval($_GET['month_number']) : $currentMonth;
 
-// ป้องกันค่าเดือนเกินขอบเขต
+
 if ($month_number < 1 || $month_number > 12) {
     $month_number = $currentMonth;
 }
 
-// ไม่จำเป็นต้องป้องกันปีอีกต่อไป สามารถใช้ปีใดก็ได้จากพารามิเตอร์
+
 try {
     $sql = "
         SELECT 
