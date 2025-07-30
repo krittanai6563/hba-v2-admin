@@ -66,6 +66,9 @@ const getRowTotal = (label: string, type: 'unit' | 'value' | 'area' | 'price_per
 };
 </script>
 
+<main>
+
+</main>
 <template>
     <v-row>
         <v-col cols="12">
