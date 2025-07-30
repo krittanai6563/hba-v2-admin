@@ -82,4 +82,3 @@ foreach ($rows as $row) {
 }
 
 echo json_encode($data, JSON_UNESCAPED_UNICODE);
-?>

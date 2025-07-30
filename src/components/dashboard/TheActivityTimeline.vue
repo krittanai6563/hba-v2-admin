@@ -26,7 +26,7 @@ const typeMap: Record<(typeof dataTypes)[number], 'unit' | 'value' | 'area' | 'p
 const fetchSummary = async () => {
     if (!userId) return;
     try {
-        const res = await fetch('https://88ae10127f9b.ngrok-free.app/package/backend/quarter_summary_Q.php', {
+        const res = await fetch('https://88ae10127f9b.ngrok-free.app/package/backend/sales_overview.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -37,6 +37,7 @@ const fetchSummary = async () => {
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         summaryData.value = await res.json();
+        console.log( summaryData.value)
     } catch (err) {
         console.error('Error fetching summary:', err);
     }
@@ -147,6 +148,3 @@ const getRowTotal = (label: string, type: 'unit' | 'value' | 'area' | 'price_per
 }
 </style>
 
-<style>
-
-</style>

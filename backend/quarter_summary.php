@@ -49,7 +49,7 @@ if ($role === 'admin' || $role === 'master') {
     ";
     $params = [$year];
 } else {
-    // ✅ เฉพาะ user ตัวเอง
+
     if (!$userId) {
         http_response_code(400);
         echo json_encode(['error' => 'Missing user_id']);
