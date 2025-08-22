@@ -216,6 +216,8 @@ function validateRowValue(row: any) {
     }
 
     return messages;
+
+    
 }
 
 function setActiveMonthPanel(year: number) {
@@ -287,7 +289,7 @@ const saveContractData = async () => {
     };
 
     try {
-        const response = await fetch('https://88ae10127f9b.ngrok-free.app/package//backend/submit_contract.php', {
+        const response = await fetch('https://d2e03fa78899.ngrok-free.app/package//backend/submit_contract.php', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -320,7 +322,7 @@ const loadContractData = async (month: MonthItem) => {
     };
 
     try {
-        const response = await fetch('https://88ae10127f9b.ngrok-free.app/package/backend/get_contract.php', {
+        const response = await fetch('https://d2e03fa78899.ngrok-free.app/package/backend/get_contract.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
@@ -349,6 +351,9 @@ const loadContractData = async (month: MonthItem) => {
                             row.unit = 0;
                             row.value = 0;
                             row.area = 0;
+
+                    
+                
                         }
                     });
                 }
@@ -741,6 +746,11 @@ function clearComma(event: any) {
             </v-card-text>
         </v-card>
     </v-row>
+
+<v-row>
+    
+</v-row>
+
 </template>
 
 <style scoped>
@@ -748,5 +758,6 @@ function clearComma(event: any) {
     font-size: 18px;
 }
 </style>
+
 
 
