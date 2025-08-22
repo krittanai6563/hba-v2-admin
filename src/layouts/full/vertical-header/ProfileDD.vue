@@ -30,7 +30,7 @@ onUnmounted(() => {
 });
 
 const logout = async () => {
-  await fetch('https://88ae10127f9b.ngrok-free.app/package/backend/logout.php', {
+  await fetch('https://d2e03fa78899.ngrok-free.app/package/backend/logout.php', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' }
   });
