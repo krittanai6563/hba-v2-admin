@@ -42,7 +42,7 @@ const fetchRegionSummary = async () => {
     if (!userId || !selectedYear.value) return;
     fetchError.value = '';
     try {
-        const res = await fetch('https://88ae10127f9b.ngrok-free.app/package/backend/get_region_summary.php', {
+        const res = await fetch('https://d2e03fa78899.ngrok-free.app/package/backend/get_region_summary.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
