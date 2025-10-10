@@ -119,7 +119,7 @@ if (userId) {
   console.log('📤 Sending payload:', payload)
 
   try {
-    const response = await fetch('https://d2e03fa78899.ngrok-free.app/package/backend/get_contract_data.php', {
+    const response = await fetch('https://uat.hba-sales.org/backend/get_contract_data.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)

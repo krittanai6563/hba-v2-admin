@@ -6,9 +6,9 @@ header('Content-Type: application/json');
 
 
 $host = "localhost";
-$username = "root";
-$password = "";
-$dbname = "hba-sales";
+$username = "hbasa_sales";
+$password = "6H^K1evvr0eL@ccq";
+$dbname = "hbasa_sales";
 
 try {
     $conn = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8", $username, $password);

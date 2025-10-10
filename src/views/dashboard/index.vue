@@ -52,7 +52,7 @@ const fetchRegionSummary = async () => {
     fetchErrorRegionSummary.value = '';
 
     try {
-        const res = await fetch('https://d2e03fa78899.ngrok-free.app/package/backend/file.php', {
+        const res = await fetch('https://uat.hba-sales.org/backend/file.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
@@ -176,7 +176,7 @@ const fetchUserStatus = async () => {
             month_number: (currentMonth + 1).toString()  // เดือนปัจจุบัน
         };
 
-        const res = await fetch('http://localhost/package/backend/data_and_email.php', {
+        const res = await fetch('https://uat.hba-sales.org/backend/data_and_email.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),

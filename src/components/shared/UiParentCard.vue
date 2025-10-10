@@ -289,7 +289,7 @@ const saveContractData = async () => {
     };
 
     try {
-        const response = await fetch('https://d2e03fa78899.ngrok-free.app/package//backend/submit_contract.php', {
+        const response = await fetch('https://uat.hba-sales.org/package//backend/submit_contract.php', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -322,7 +322,7 @@ const loadContractData = async (month: MonthItem) => {
     };
 
     try {
-        const response = await fetch('https://d2e03fa78899.ngrok-free.app/package/backend/get_contract.php', {
+        const response = await fetch('https://uat.hba-sales.org/backend/get_contract.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)

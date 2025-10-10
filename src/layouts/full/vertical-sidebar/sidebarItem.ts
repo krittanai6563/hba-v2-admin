@@ -56,12 +56,12 @@ export function getSidebarItems(role: string): Menu[] {
             to: '/ui/user',
             external: false,
           },
-          {
-            title: 'สรุปรายงาน',
-            icon: 'notebook-line-duotone',
-            to: '/ui/repost_admin',
-            external: false,
-          },
+          // {
+          //   title: 'สรุปรายงาน',
+          //   icon: 'notebook-line-duotone',
+          //   to: '/ui/repost_admin',
+          //   external: false,
+          // },
         ]
       : []),
 
@@ -73,12 +73,12 @@ export function getSidebarItems(role: string): Menu[] {
             to: '/ui/report_user',
             external: false,
           },
-          {
-            title: 'สรุปรายงาน',
-            icon: 'notebook-line-duotone',
-            to: '/ui/repost_admin',
-            external: false,
-          },
+          // {
+          //   title: 'สรุปรายงาน',
+          //   icon: 'notebook-line-duotone',
+          //   to: '/ui/repost_admin',
+          //   external: false,
+          // },
         ]
       : []),
     {

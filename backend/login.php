@@ -17,7 +17,7 @@ require 'condb.php';
 
 $data = json_decode(file_get_contents("php://input"));
 
-define('BASE_UPLOAD_URL', 'https://c44d-2405-9800-b861-96e-d38-cc71-74cd-d0c1.ngrok-free.app/package/backend/uploads/');
+define('BASE_UPLOAD_URL', 'https://uat.hba-sales.org/package/backend/uploads/');
 
 if ($data && isset($data->email) && isset($data->password)) {
     try {

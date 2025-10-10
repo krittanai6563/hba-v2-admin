@@ -42,7 +42,7 @@ const fetchMemberDetails = async () => {
   if (!memberId.value) return;
 
   try {
-const response = await fetch(`https://d2e03fa78899.ngrok-free.app/package/backend/get_members_master-D.php?id=${memberId.value}&buddhist_year=${buddhistYear.value}&month_number=${monthNumber.value}`, {
+const response = await fetch(`https://uat.hba-sales.org/backend/get_members_master-D.php?id=${memberId.value}&buddhist_year=${buddhistYear.value}&month_number=${monthNumber.value}`, {
       method: 'POST',  
     });
 

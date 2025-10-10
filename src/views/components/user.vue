@@ -53,7 +53,7 @@ async function register() {
             formData.append('profile_image', selectedFile.value);
         }
 
-        const res = await fetch('https://d2e03fa78899.ngrok-free.app/package/backend/register.php', {
+        const res = await fetch('https://uat.hba-sales.org/backend/register.php', {
             method: 'POST',
             body: formData
         });
@@ -161,7 +161,7 @@ const filteredMembers = computed(() => {
 
 const fetchMembers = async () => {
     try {
-        let url = 'https://d2e03fa78899.ngrok-free.app/package/backend/get_members.php';
+        let url = 'https://uat.hba-sales.org/backend/get_members.php';
         const requestOptions = {
             method: 'POST', 
             headers: {
@@ -177,11 +177,11 @@ const fetchMembers = async () => {
             const buddhistYear = parseInt(year) + 543; 
             const monthNumber = parseInt(month); 
 
-            url = `https://d2e03fa78899.ngrok-free.app/package/backend/get_members.php?buddhist_year=${buddhistYear}&month_number=${monthNumber}`;
+            url = `https://uat.hba-sales.org/backend/get_members.php?buddhist_year=${buddhistYear}&month_number=${monthNumber}`;
         } else if (selectedYearFilter.value) {
           
             const buddhistYear = parseInt(selectedYearFilter.value) + 543;
-            url = `https://d2e03fa78899.ngrok-free.app/package/backend/get_members.php?buddhist_year=${buddhistYear}`;
+            url = `https://uat.hba-sales.org/backend/get_members.php?buddhist_year=${buddhistYear}`;
         }
 
         
@@ -219,7 +219,7 @@ function getProfileImageUrl(path: string | null): string {
     if (!path || path.trim() === '') {
         return defaultAvatar;
     }
-    return 'https://d2e03fa78899.ngrok-free.app/package/backend/${path}';
+    return 'https://uat.hba-sales.org/backend/${path}';
 }
 
 function formatCurrency(value: number | string): string {
@@ -268,7 +268,7 @@ async function updateMember(isActive: { value: boolean }) {
             formData.append('profile_image', selectedFile.value);
         }
 
-        const res = await fetch('https://d2e03fa78899.ngrok-free.app/package/backend/edit_profile.php', {
+        const res = await fetch('https://uat.hba-sales.org/backend/edit_profile.php', {
             method: 'POST',
             body: formData
         });

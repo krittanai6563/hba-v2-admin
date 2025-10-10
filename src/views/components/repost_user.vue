@@ -50,7 +50,7 @@ async function register() {
             formData.append('profile_image', selectedFile.value);
         }
 
-        const res = await fetch('https://d2e03fa78899.ngrok-free.app/package/backend/register.php', {
+        const res = await fetch('https://uat.hba-sales.org/backend/register.php', {
             method: 'POST',
             body: formData
         });
@@ -128,7 +128,7 @@ const filteredMembers = computed(() => {
 
 // const fetchMembers = async () => {
 //     try {
-//         let url = 'https://d2e03fa78899.ngrok-free.app/package/backend/get_members_master.php';
+//         let url = 'https://uat.hba-sales.org/backend/get_members_master.php';
 
 //         // URL parameters logic as you already have
 //         // Check for year and month parameters, then build the URL
@@ -157,7 +157,7 @@ const filteredMembers = computed(() => {
 
 const fetchMembers = async () => {
     try {
-        let url = 'https://d2e03fa78899.ngrok-free.app/package/backend/get_members_master.php';
+        let url = 'https://uat.hba-sales.org/backend/get_members_master.php';
 
         // Append the filters to the URL
         if (selectedYearFilter.value && selectedMonthFilter.value) {
@@ -241,7 +241,7 @@ function getProfileImageUrl(path: string | null): string {
     if (!path || path.trim() === '') {
         return defaultAvatar;
     }
-    return `https://d2e03fa78899.ngrok-free.app/package/backend/${path}`;
+    return `https://uat.hba-sales.org/backend/${path}`;
 }
 
 function formatCurrency(value: number | string): string {
@@ -316,7 +316,7 @@ async function updateMember(isActive: { value: boolean }) {
             formData.append('profile_image', selectedFile.value);
         }
 
-        const res = await fetch('https://d2e03fa78899.ngrok-free.app/package/backend/edit_profile.php', {
+        const res = await fetch('https://uat.hba-sales.org/backend/edit_profile.php', {
             method: 'POST',
             body: formData
         });
