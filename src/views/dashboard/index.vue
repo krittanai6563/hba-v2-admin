@@ -1,11 +1,144 @@
 <script setup lang="ts">
+// (!!! เพิ่ม: computed ถูก import แล้ว) ---
 import { ref, onMounted, watch, computed } from 'vue';
 import VueApexCharts from 'vue3-apexcharts';
 
+// --- (!!! เพิ่ม: ส่วนตัวแปรสำหรับ Notification !!!) ---
+const statusMessage = ref(''); // สถานะการกรอกข้อมูล
+const contractStatusMessage = ref(''); // (!!! ใหม่ !!!) สถานะการกรอกสัญญา
+const fetchErrorUserStatus = ref('');
+const fetchErrorContractStatus = ref(''); // (!!! ใหม่ !!!)
 
+// (!!! เพิ่ม: ดึงข้อมูล user จาก localStorage !!!) ---
+const userId = localStorage.getItem('user_id');
+const userRole = ref(localStorage.getItem('user_role') || 'user');
+
+// --- (!!! เพิ่ม: ส่วนคำนวณวันที่ Notification !!!) ---
+const months = [
+    "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+    "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
+];
+const currentDate = new Date();
+const currentYear = currentDate.getFullYear() + 543; // ปีพุทธศักราช
+const currentMonth = currentDate.getMonth(); // เดือนปัจจุบัน (0-11)
+const currentDay = currentDate.getDate(); // วันที่ปัจจุบัน (1-31)
+const currentMonthName = months[currentMonth];
+
+const nextMonthDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1);
+const nextMonthName = months[nextMonthDate.getMonth()];
+const nextMonthYearDisplay = nextMonthDate.getFullYear() + 543; 
+
+const deadlineDay = 10;
+
+const remainingDays = computed(() => {
+    if (currentDay > deadlineDay) {
+        return 0;
+    }
+    return deadlineDay - currentDay;
+});
+// --- (!!! สิ้นสุดส่วนที่เพิ่ม: วันที่ !!!) ---
+
+
+// --- (!!! เพิ่ม: Computed Property สำหรับ Notification ข้อมูล !!!) ---
+const userNotification = computed(() => {
+    // แสดงเฉพาะสำหรับบทบาท 'user'
+    if (userRole.value !== 'user') {
+        return { message: '', type: '', title: '' }; 
+    }
+
+    // 1. Submitted
+   if (statusMessage.value === 'กรอกข้อมูลเรียบร้อย') {
+        return {
+            message: `คุณได้ทำการกรอกข้อมูลประจำเดือน ${currentMonthName} ${currentYear} เรียบร้อยแล้ว`,
+            type: 'success',
+            title: 'สถานะการกรอกข้อมูล'
+        };
+    }
+
+    // 2. Not Submitted (ก่อนหรือตรงกับวันที่ 10)
+    if (currentDay <= deadlineDay) {
+        const days = remainingDays.value;
+        let message = '';
+        let type = 'warning'; 
+        if (days > 0) {
+            message = `เหลืออีก ${days} วัน ในการกรอกข้อมูล ก่อนวันที่ ${deadlineDay} ${currentMonthName} ${currentYear}`;
+            if (days <= 2) {
+                type = 'error';
+            }
+        } else { // วันที่ 10 พอดี
+            message = `ถึงกำหนดส่งข้อมูลวันนี้! กรุณากรอกข้อมูลก่อนสิ้นสุดวันที่ ${deadlineDay} ${currentMonthName} ${currentYear}`;
+            type = 'error'; 
+        }
+        return { message: message, type: type as 'warning' | 'error', title: 'กรุณากรอกข้อมูล' };
+    }
+
+    // 3. Not Submitted (หลังวันที่ 10)
+    if (currentDay > deadlineDay) {
+        const message = `เดือนนี้คุณไม่ได้กรอกข้อมูล กรุณายกยอดไปกรอกในเดือนถัดไป (${nextMonthName} ${nextMonthYearDisplay})`;
+        return { message: message, type: 'error',  title: 'การกรอกข้อมูลล่าช้า' };
+    }
+
+    // Fallback/Error
+    if (fetchErrorUserStatus.value) {
+         return { message: `ไม่สามารถตรวจสอบสถานะได้: ${fetchErrorUserStatus.value}`, type: 'error',  title: 'ข้อผิดพลาด' };
+    }
+    return { message: '', type: '', title: '' }; // Default
+});
+
+// --- (!!! เพิ่ม: Computed Property สำหรับ Notification สัญญา !!!) ---
+const contractNotification = computed(() => {
+    // แสดงเฉพาะสำหรับบทบาท 'user'
+    if (userRole.value !== 'user') {
+        return { message: '', type: '', title: '' }; 
+    }
+
+    // 1. Submitted (สมมติว่าสถานะคือ 'กรอกสัญญาเรียบร้อย')
+    // *** คุณต้องปรับ 'กรอกสัญญาเรียบร้อย' ให้ตรงกับค่าที่ Backend ส่งมา ***
+    if (contractStatusMessage.value === 'กรอกสัญญาเรียบร้อย') { 
+        return {
+            message: `คุณได้ทำการกรอกข้อมูลสัญญาประจำเดือน ${currentMonthName} ${currentYear} เรียบร้อยแล้ว`,
+            type: 'success',
+            title: 'สถานะการกรอกสัญญา'
+        };
+    }
+
+    // 2. Not Submitted (ก่อนหรือตรงกับวันที่ 10)
+    if (currentDay <= deadlineDay) {
+        const days = remainingDays.value;
+        let message = '';
+        let type = 'warning'; 
+        if (days > 0) {
+            message = `เหลืออีก ${days} วัน ในการกรอกข้อมูลสัญญา ก่อนวันที่ ${deadlineDay} ${currentMonthName} ${currentYear}`;
+            if (days <= 2) {
+                type = 'error';
+            }
+        } else { // วันที่ 10 พอดี
+            message = `ถึงกำหนดส่งข้อมูลสัญญาวันนี้! กรุณากรอกข้อมูลสัญญาก่อนสิ้นสุดวันที่ ${deadlineDay} ${currentMonthName} ${currentYear}`;
+            type = 'error'; 
+        }
+        return { message: message, type: type as 'warning' | 'error', title: 'กรุณากรอกข้อมูลสัญญา' };
+    }
+
+    // 3. Not Submitted (หลังวันที่ 10)
+    if (currentDay > deadlineDay) {
+        const message = `เดือนนี้คุณไม่ได้กรอกข้อมูลสัญญา กรุณายกยอดไปกรอกในเดือนถัดไป (${nextMonthName} ${nextMonthYearDisplay})`;
+        return { message: message, type: 'error',  title: 'การกรอกสัญญาล่าช้า' };
+    }
+
+    // Fallback/Error
+    if (fetchErrorContractStatus.value) {
+         return { message: `ไม่สามารถตรวจสอบสถานะสัญญาได้: ${fetchErrorContractStatus.value}`, type: 'error',  title: 'ข้อผิดพลาด' };
+    }
+    return { message: '', type: '', title: '' }; // Default
+});
+// --- (!!! สิ้นสุดส่วนที่เพิ่ม: Computed Notifications !!!) ---
+
+
+// (--- โค้ดเดิมของคุณ ---)
 const jsDate = new Date();
 const currentJsYear = jsDate.getFullYear();
 const currentJsMonth = jsDate.getMonth() + 1;
+// ... (โค้ดเดิมของคุณทั้งหมด) ...
 const allMonthItems = [
     { title: 'มกราคม', value: 1 }, { title: 'กุมภาพันธ์', value: 2 },
     { title: 'มีนาคม', value: 3 }, { title: 'เมษายน', value: 4 },
@@ -28,8 +161,6 @@ const quarterOptions = ref([
     { title: 'ไตรมาส 4 (ต.ค. - ธ.ค.)', value: 'Q4' }
 ]);
 const monthOptions = ref(allMonthItems);
-
-// --- ตัวแปรสำหรับข้อมูล (กราฟ) ---
 const loading = ref(false);
 const summaryData = ref({ total_units: 0, total_value: 0, total_area: 0, value_per_sqm: 0 });
 const monthlyChartLabels = ref<string[]>([]);
@@ -37,17 +168,65 @@ const monthlyUnitsData = ref<number[]>([]);
 const monthlyValueData = ref<number[]>([]);
 const monthlyAreaData = ref<number[]>([]);
 const monthlyValuePerSqmData = ref<number[]>([]);
-
-// --- (!!! ใหม่ !!!) ตัวแปรสำหรับข้อมูล (ตารางเปรียบเทียบ) ---
 const loadingRegional = ref(false);
-const regionalData = ref<any[]>([]); // (เก็บข้อมูลดิบจาก API ใหม่)
-
-// --- ตัวแปรควบคุม Metric ---
+const regionalData = ref<any[]>([]); 
 type Metric = 'units' | 'value' | 'area' | 'valuePerSqm';
-const activeMetric = ref<Metric>('value'); // (ค่าเริ่มต้น "มูลค่า")
+const activeMetric = ref<Metric>('value'); 
+// (--- จบส่วนโค้ดเดิม ---)
 
 
-// --- (!!! อัปเดต !!!) 3. ฟังก์ชันหลักในการดึงข้อมูล (เรียก 2 APIs) ---
+// --- (!!! เพิ่ม: ฟังก์ชันดึงสถานะผู้ใช้ (ข้อมูลและสัญญา) !!!) ---
+// (ฟังก์ชันนี้จะเรียก API ที่ต่างจาก fetchData หลักของคุณ)
+const fetchUserStatus = async () => {
+    if (!userId) {
+        fetchErrorUserStatus.value = 'ไม่พบข้อมูลผู้ใช้';
+        statusMessage.value = ''; 
+        fetchErrorContractStatus.value = 'ไม่พบข้อมูลผู้ใช้';
+        contractStatusMessage.value = ''; 
+        return;
+    }
+
+    try {
+        const payload = {
+            user_id: userId,
+            buddhist_year: currentYear.toString(),
+            month_number: (currentMonth + 1).toString() // (1-12)
+        };
+
+        // (!!! เรียก API เดิมที่ใช้เช็คสถานะ !!!)
+        const res = await fetch('https://uat.hba-sales.org/backend/data_and_email.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+
+        const data = await res.json();
+        console.log('API Response Data (Status):', data);
+
+        if (data.error) {
+            statusMessage.value = '';
+            fetchErrorUserStatus.value = data.error;
+            contractStatusMessage.value = '';
+            fetchErrorContractStatus.value = data.error;
+        } else {
+            statusMessage.value = data.status || 'กรอกข้อมูลเรียบร้อย'; 
+            fetchErrorUserStatus.value = '';
+            // (!!! ใหม่: ดึงสถานะสัญญา (สมมติชื่อ field คือ 'contract_status') !!!)
+            contractStatusMessage.value = data.contract_status || ''; 
+            fetchErrorContractStatus.value = '';
+        }
+    } catch (err) {
+        console.error('Error fetching user status:', err);
+        fetchErrorUserStatus.value = 'ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้';
+        statusMessage.value = ''; 
+        fetchErrorContractStatus.value = 'ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้';
+        contractStatusMessage.value = '';
+    }
+};
+// --- (!!! สิ้นสุดส่วนที่เพิ่ม: fetchUserStatus !!!) ---
+
+
+// --- (!!! อัปเดต !!!) 3. ฟังก์ชันหลักในการดึงข้อมูล (โค้ดเดิมของคุณ) ---
 const fetchData = async () => {
     // (A. ส่วน Logic ตรวจสอบค่าว่าง (เหมือนเดิม))
     if (selectedMonths.value.length === 0 || !selectedYear.value) {
@@ -116,7 +295,7 @@ const fetchData = async () => {
     }
 };
 
-// --- 4. Logic Filters & onMounted (เหมือนเดิม) ---
+// --- 4. Logic Filters & onMounted (!!! อัปเดต onMounted !!!) ---
 watch(selectedQuarter, (newQuarter) => {
     if (newQuarter === 'all') updateToAllMonths();
     else if (newQuarter === 'Q1') selectedMonths.value = [1, 2, 3];
@@ -152,11 +331,16 @@ const updateToAllMonths = () => {
         selectedMonths.value = allMonthItems.map(m => m.value);
     }
 };
-onMounted(() => { updateToAllMonths(); });
+
+onMounted(() => { 
+    updateToAllMonths(); 
+    fetchUserStatus(); // (!!! เพิ่มบรรทัดนี้ เพื่อเรียกเช็คสถานะตอนเปิดหน้า !!!)
+});
 // --- (จบส่วน Logic Filters) ---
 
 
-// --- 6. Computed Properties ---
+// --- 6. Computed Properties (โค้ดเดิมของคุณ) ---
+// ... (โค้ด computed เดิมทั้งหมดของคุณ) ...
 
 // (A) สำหรับการ์ดสรุป 4 ใบ (เหมือนเดิม)
 const formattedSummary = computed(() => ({
@@ -182,7 +366,6 @@ const allRegionsMasterList = [
     'ภาคตะวันตก'
 ];
 
-// (!!! D. อัปเดต: computed สำหรับตารางใหม่ (รองรับ 4 Metrics) !!!)
 // (!!! D. อัปเดต: computed สำหรับตารางใหม่ (รองรับ 4 Metrics) !!!)
 const regionalTableData = computed(() => {
     
@@ -292,7 +475,6 @@ const regionalTableData = computed(() => {
 });
 
 // (!!! E. อัปเดต: Headers สำหรับตารางใหม่ (รองรับ 4 Metrics) !!!)
-
 const regionalTableHeaders = computed(() => {
     // (!!! ใหม่: เปลี่ยนชื่อ Metric ให้ถูกต้อง !!!)
     let metricName = 'มูลค่า (บาท)'; // Default
@@ -506,7 +688,8 @@ const chartUnitSubtitle = computed(() => {
             return '(หน่วย : บาท / ตร.ม.)';
         case 'value':
         default:
-            return '(หน่วย : ล้านบาท)'; 
+            // (!!! แก้ไขเล็กน้อยให้ตรงกับ Chart)
+            return '(หน่วย : บาท)'; 
     }
 });
 
@@ -548,40 +731,22 @@ const regionalTableSubtitle = computed(() => {
     }
 });
 </script>
+
 <template>
+    
     <v-container fluid>
+    
+         <v-row v-if="userNotification.message">
+        <v-col cols="12" sm="12" lg="12" class="pb-0">
+            <v-alert density="compact" :type="userNotification.type" :text="userNotification.message"
+                :title="userNotification.title"></v-alert>
+        </v-col>
+    </v-row>
+
+
         <v-row>
-            <v-col cols="12" sm="12" lg="12">
-                <div class="mt-3 mb-6">
-                    <div class="d-flex justify-space-between">
-                        <div class="d-flex py-0 align-center">
-                            <div>
-                                <h3 class="text-h5 card-title">รายงานยอดเซ็นสัญญาแบ่งตามมูลค่าบ้าน</h3>
-                                <ul class="v-breadcrumbs v-breadcrumbs--density-default text-subtitle-1 textSecondary pa-0 ml-n1">
-                                    <li class="v-breadcrumbs-item" text="Home">
-                                        <a class="v-breadcrumbs-item--link" href="#">
-                                            <p>หน้าแรก</p>
-                                        </a>
-                                    </li>
-                                    <li class="v-breadcrumbs-divider">
-                                        <i
-                                            class="mdi-chevron-right mdi v-icon notranslate v-theme--BLUE_THEME"
-                                            aria-hidden="true"
-                                            style="font-size: 15px; height: 15px; width: 15px"
-                                        ></i>
-                                    </li>
-                                    <li class="v-breadcrumbs-item" text="Dashboard">
-                                        <a class="v-breadcrumbs-item--link" href="#">
-                                            <p>รายงานยอดเซ็นสัญญาแบ่งตามมูลค่าบ้าน</p>
-                                        </a>
-                                    </li>
-                                </ul>
-                            </div>
-                        </div>
-                        <div></div>
-                    </div>
-                </div>
-            </v-col>
+           
+        
             
             <v-col cols="12" sm="12" lg="12">
                 <v-card elevation="10">
@@ -779,16 +944,13 @@ const regionalTableSubtitle = computed(() => {
 
                     <v-card-text>
                        <v-data-table-virtual
-    :headers="regionalTableHeaders"
-    :items="regionalTableData"
-    :loading="loadingRegional"
-    :items-per-page="10"
-    class="elevation-0"
-    density="compact"
-    
-
-   
->
+                            :headers="regionalTableHeaders"
+                            :items="regionalTableData"
+                            :loading="loadingRegional"
+                            :items-per-page="10"
+                            class="elevation-0"
+                            density="compact"
+                        >
   
                             <template v-slot:item.current_period="{ item }">
                                 <span class="text-end d-block">{{ item.current_period.toLocaleString('th-TH', { 
