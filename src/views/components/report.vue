@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import vuetify from '@/plugins/vuetify';
 import MainRoutes from '@/router/MainRoutes';
-import { isObject } from 'highcharts';
+
 import { ref, computed, onMounted } from 'vue';
 import { BottleOffIcon, CircleTriangleIcon, ManIcon, Rotate2Icon } from 'vue-tabler-icons';
 

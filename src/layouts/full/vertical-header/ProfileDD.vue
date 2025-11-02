@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import defaultAvatar from '@/assets/images/users/img-logo_0.png';  // ใช้ import แทน require
+import defaultAvatar from '@/assets/images/users/img-logo_0.png';  
 
 const router = useRouter();
 const profileImageUrl = ref<string>(defaultAvatar);
@@ -41,9 +41,7 @@ const logout = async () => {
 </script>
 
 <template>
-    <!-- ---------------------------------------------- -->
-    <!-- notifications DD -->
-    <!-- ---------------------------------------------- -->
+
     <v-menu :close-on-content-click="false">
         <template v-slot:activator="{ props }">
             <v-btn class=" custom-hover-primary" rounded="pill" variant="text" v-bind="props" icon>
@@ -54,24 +52,7 @@ const logout = async () => {
         </template>
         <v-sheet rounded="md" width="200" elevation="10" class="mt-2">
             <v-list class="py-0" lines="one" density="compact">
-                <!-- <v-list-item value="item1" color="primary" >
-                    <template v-slot:prepend>
-                        <UserIcon stroke-width="1.5" size="20"/>
-                    </template>
-                    <v-list-item-title class="pl-4 text-body-1">My Profile</v-list-item-title>
-                </v-list-item> -->
-                <!-- <v-list-item value="item2" color="primary">
-                    <template v-slot:prepend>
-                        <MailIcon stroke-width="1.5" size="20"/>
-                    </template>
-                    <v-list-item-title  class="pl-4 text-body-1">My Account</v-list-item-title>
-                </v-list-item> -->
-                <!-- <v-list-item value="item3" color="primary"> 
-                    <template v-slot:prepend>
-                        <ListCheckIcon stroke-width="1.5"  size="20"/>
-                    </template>
-                    <v-list-item-title class="pl-4 text-body-1">My Task</v-list-item-title>
-                </v-list-item> -->
+              
             </v-list>
             <div class="pt-4 pb-4 px-5 text-center">
                 <v-btn  @click="logout" color="primary" variant="outlined" block>Logout</v-btn>

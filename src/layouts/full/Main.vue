@@ -34,7 +34,7 @@ function loadUserData() {
         if (/^https?:\/\//.test(pi)) {
           profileImageUrl.value = pi;
         } else {
-          profileImageUrl.value = 'http://localhost/package/backend/' + pi;
+          profileImageUrl.value = 'https://uat.hba-sales.org/backend' + pi;
         }
       } else {
         profileImageUrl.value = defaultAvatar;
@@ -85,7 +85,7 @@ watch(mdAndDown, (val) => {
         </v-btn>
       </div>
       <div>
-        <v-btn class="mr-2 bg-success" rounded="pill" href="#" target="_blank">
+        <v-btn class="mr-2 bg-success" rounded="pill" href="https://hba-th.org/" target="_blank">
           <Icon icon="solar:home-2-linear" height="20" width="20" class="mr-2" /> กลับสู่หน้าหลัก
         </v-btn>
         <ProfileDD />
@@ -94,28 +94,7 @@ watch(mdAndDown, (val) => {
   </v-app-bar>
 
   <v-main>
-    <!-- <v-navigation-drawer left elevation="0" app class="leftSidebar top-header" :width="300" v-model="sDrawer">
-      <perfect-scrollbar class="scrollnavbar">
-        <div class="profile">
-          <div class="profile-img py-10 px-3 d-flex align-center">
-            <v-avatar size="50">
-              <img :src="profileImageUrl" width="50" alt="User Profile"  style="object-fit: contain; border-radius: 50%;" />
-            </v-avatar>
-          </div>
-          <div class="profile-name d-flex align-center px-3">
-            <SidebarProfile />
-          </div>
-        </div>
-
-        <v-list class="px-4 py-2">
-          <template v-for="(item, i) in sidebarMenu" :key="i">
-            <NavGroup v-if="item.header" :item="item" :key="item.title" />
-            <NavCollapse v-else-if="item.children" class="leftPadding" :item="item" :level="0" />
-            <NavItem v-else class="leftPadding" :item="item" />
-          </template>
-        </v-list>
-      </perfect-scrollbar>
-    </v-navigation-drawer> -->
+    
 
      <v-navigation-drawer left elevation="0" app class="leftSidebar"  :width="270" v-model="sDrawer">
                 <!-- ---------------------------------------------- -->
@@ -124,11 +103,25 @@ watch(mdAndDown, (val) => {
 
                 <perfect-scrollbar class="scrollnavbar">
                     <div class="profile">
-                        <div class="profile-img py-10 px-3">
-                            <v-avatar size="50">
-                                <img src="@/assets/images/users/user-1.jpg" width="50" alt="Julia" />
-                            </v-avatar>
-                        </div>
+                     <div class="profile-img py-10 px-3">
+ <v-avatar size="50">
+        <img 
+            :src="profileImageUrl" 
+            width="50" 
+            alt="User Profile" 
+            style="object-fit: cover;"
+            @error="
+                (e: Event) => {
+                   
+                    const target = e.target as HTMLImageElement | null;
+                    if (target) {
+                        target.src = defaultAvatar;
+                    }
+                }
+            "
+        />
+    </v-avatar>
+</div>
                         <div class="profile-name d-flex align-center px-3">
                             <div class="profile-logout w-100">
                                 <SidebarProfile />
@@ -147,10 +140,7 @@ watch(mdAndDown, (val) => {
                             <!---End Single Item-->
                         </template>
                     </v-list>
-<!-- 
-                    <div class="">
-                        <ExtraBox />
-                    </div> -->
+
                 </perfect-scrollbar>
             </v-navigation-drawer>
 

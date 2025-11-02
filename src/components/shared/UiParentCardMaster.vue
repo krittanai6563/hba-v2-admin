@@ -361,8 +361,8 @@ onMounted(fetchContractData)
                         ยอดเซ็นสัญญาไตรมาส {{ quarter }}
                     </h3>
 
-                    <v-expansion-panels accordion :model-value="getPanelModel(quarter)[0]"
-                        @update:model-value="(val) => updatePanelModel(quarter, val)">
+                  <v-expansion-panels accordion :model-value="getPanelModel(quarter)[0]"
+    @update:model-value="(val: unknown) => updatePanelModel(quarter, val)">
                         <v-expansion-panel v-for="month in monthsList.filter((m) => m.quarter === quarter)"
                             :key="month.index"
                             :hide-actions="month.monthNumber === currentMonthNumber && selectedBuddhistYear === currentYear">

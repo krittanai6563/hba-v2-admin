@@ -9,7 +9,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit();
 }
 
-require 'condb.php'; // Make sure this file contains the correct PDO connection
+require 'condb.php'; 
 
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
     // Retrieve POST data
@@ -70,15 +70,15 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
         // Execute the query
         if ($stmt->execute()) {
-            echo json_encode(["message" => "Profile updated successfully!"]);
+            echo json_encode(["message" => "อัปเดตโปรไฟล์สำเร็จแล้ว!"]);
         } else {
-            echo json_encode(["message" => "Update failed"]);
+            echo json_encode(["message" => "การอัปเดตล้มเหลว"]);
         }
 
     } catch (Exception $e) {
         // Handle exceptions (database errors)
         http_response_code(500);
-        echo json_encode(["message" => "Error updating profile: " . $e->getMessage()]);
+        echo json_encode(["message" => "เกิดข้อผิดพลาดในการอัปเดตโปรไฟล์ :" . $e->getMessage()]);
     }
 
     // Close the statement and connection

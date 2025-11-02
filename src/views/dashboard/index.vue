@@ -1,691 +1,852 @@
 <script setup lang="ts">
-import SalesOverview from '@/components/dashboard/SalesOverview.vue';
-import TheActivityTimeline from '@/components/dashboard/TheActivityTimeline.vue';
-import TotalSales from '@/components/dashboard/TotalSales.vue';
-import { ref, computed, watch, onMounted } from 'vue';
-
-const selectedYear = ref((new Date().getFullYear() + 543).toString());
-const selectedQuarter = ref('ทั้งหมด');
-
-const statusMessage = ref('');
-const contractValue = ref(0);
-
-const fetchErrorUserStatus = ref('');
-const fetchErrorRegionSummary = ref('');
+import { ref, onMounted, watch, computed } from 'vue';
+import VueApexCharts from 'vue3-apexcharts';
 
 
-const yearOptions = computed(() => {
-    const current = new Date().getFullYear() + 543;
-    return Array.from({ length: 6 }, (_, i) => (current - i).toString());
-});
+const jsDate = new Date();
+const currentJsYear = jsDate.getFullYear();
+const currentJsMonth = jsDate.getMonth() + 1;
+const allMonthItems = [
+    { title: 'มกราคม', value: 1 }, { title: 'กุมภาพันธ์', value: 2 },
+    { title: 'มีนาคม', value: 3 }, { title: 'เมษายน', value: 4 },
+    { title: 'พฤษภาคม', value: 5 }, { title: 'มิถุนายน', value: 6 },
+    { title: 'กรกฎาคม', value: 7 }, { title: 'สิงหาคม', value: 8 },
+    { title: 'กันยายน', value: 9 }, { title: 'ตุลาคม', value: 10 },
+    { title: 'พฤศจิกายน', value: 11 }, { title: 'ธันวาคม', value: 12 }
+];
+const selectedYear = ref(currentJsYear + 543); 
+const selectedQuarter = ref('all');
+const selectedMonths = ref<number[]>([]);
+const yearOptions = ref(
+    Array.from({ length: 5 }, (_, i) => currentJsYear + 543 - i)
+); 
+const quarterOptions = ref([
+    { title: 'ทุกไตรมาส / ทุกเดือน', value: 'all' },
+    { title: 'ไตรมาส 1 (ม.ค. - มี.ค.)', value: 'Q1' },
+    { title: 'ไตรมาส 2 (เม.ย. - มิ.ย.)', value: 'Q2' },
+    { title: 'ไตรมาส 3 (ก.ค. - ก.ย.)', value: 'Q3' },
+    { title: 'ไตรมาส 4 (ต.ค. - ธ.ค.)', value: 'Q4' }
+]);
+const monthOptions = ref(allMonthItems);
 
-const userId = localStorage.getItem('user_id');
+// --- ตัวแปรสำหรับข้อมูล (กราฟ) ---
+const loading = ref(false);
+const summaryData = ref({ total_units: 0, total_value: 0, total_area: 0, value_per_sqm: 0 });
+const monthlyChartLabels = ref<string[]>([]);
+const monthlyUnitsData = ref<number[]>([]);
+const monthlyValueData = ref<number[]>([]);
+const monthlyAreaData = ref<number[]>([]);
+const monthlyValuePerSqmData = ref<number[]>([]);
+
+// --- (!!! ใหม่ !!!) ตัวแปรสำหรับข้อมูล (ตารางเปรียบเทียบ) ---
+const loadingRegional = ref(false);
+const regionalData = ref<any[]>([]); // (เก็บข้อมูลดิบจาก API ใหม่)
+
+// --- ตัวแปรควบคุม Metric ---
+type Metric = 'units' | 'value' | 'area' | 'valuePerSqm';
+const activeMetric = ref<Metric>('value'); // (ค่าเริ่มต้น "มูลค่า")
 
 
-const userRole = ref(localStorage.getItem('user_role') || 'user');
-const isAdmin = computed(() => userRole.value === 'admin' || userRole.value === 'master');
-
-
-
-const buildPayload = () => {
-    const payload: any = {
-        buddhist_year: selectedYear.value,
-        role: userRole.value,
-    };
-    if (!isAdmin.value && userId) {
-        payload.user_id = userId;
+// --- (!!! อัปเดต !!!) 3. ฟังก์ชันหลักในการดึงข้อมูล (เรียก 2 APIs) ---
+const fetchData = async () => {
+    // (A. ส่วน Logic ตรวจสอบค่าว่าง (เหมือนเดิม))
+    if (selectedMonths.value.length === 0 || !selectedYear.value) {
+        summaryData.value = { total_units: 0, total_value: 0, total_area: 0, value_per_sqm: 0 };
+        monthlyChartLabels.value = []; monthlyUnitsData.value = [];
+        monthlyValueData.value = []; monthlyAreaData.value = [];
+        monthlyValuePerSqmData.value = [];
+        
+        regionalData.value = []; // (!!! เพิ่ม: เคลียร์ค่าตารางด้วย !!!)
+        return; 
     }
-    if (selectedQuarter.value !== 'ทั้งหมด') {
-        payload.quarter = selectedQuarter.value;
-    }
-    return payload;
-};
-
-const regionData = ref<Record<string, { unit: number; total_value: number; usable_area: number }>>({});
-const fetchError = ref('');
-const latestMonthValue = ref(0);
-
-const fetchRegionSummary = async () => {
-    if (!selectedYear.value) return;
-
-    const payload = buildPayload();
-    fetchErrorRegionSummary.value = '';
+    
+    // (B. สั่ง loading ทั้งคู่)
+    loading.value = true;
+    loadingRegional.value = true;
 
     try {
-        const res = await fetch('https://uat.hba-sales.org/backend/file.php', {
+        const yearAD = selectedYear.value - 543; 
+        const bodyPayload = JSON.stringify({
+            year: yearAD,
+            months: selectedMonths.value.sort((a,b) => a - b) 
+        });
+        
+        // (C. สร้าง Promise สำหรับ API ทั้งสองตัว)
+        const chartApiUrl = 'https://uat.hba-sales.org/backend/get_dashboard_data.php';
+        const regionalApiUrl = 'https://uat.hba-sales.org/backend/get_regional_comparison.php'; // (!!! API ใหม่ !!!)
+
+        const fetchOptions = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
+            body: bodyPayload
+        };
 
-        const data = await res.json();
-        if (data.error) {
-            fetchErrorRegionSummary.value = `เกิดข้อผิดพลาด: ${data.error}`;
-            regionData.value = {};
-            latestMonthValue.value = 0;
+        const chartPromise = fetch(chartApiUrl, fetchOptions).then(res => res.json());
+        const regionalPromise = fetch(regionalApiUrl, fetchOptions).then(res => res.json());
+
+        // (D. รอให้ทั้งคู่เสร็จสิ้น)
+        const [chartResponse, regionalResponse] = await Promise.all([chartPromise, regionalPromise]);
+
+        // (E. ประมวลผล Chart (เหมือนเดิม))
+        if (chartResponse.status === 'success') {
+            summaryData.value = chartResponse.data.summary;
+            const monthly = chartResponse.data.monthly_data;
+            monthlyChartLabels.value = monthly.labels;
+            monthlyUnitsData.value = monthly.units;
+            monthlyValueData.value = monthly.value;
+            monthlyAreaData.value = monthly.area;
+            monthlyValuePerSqmData.value = monthly.valuePerSqm;
         } else {
-            regionData.value = data.regions || {};
-            latestMonthValue.value = data.latest_month_value || 0;
+            console.error('Error fetching chart data:', chartResponse.message);
         }
-    } catch (err: any) {
-        console.error('Error fetching region data:', err);
-        fetchErrorRegionSummary.value = 'ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้';
+
+        // (F. ประมวลผลตาราง (ใหม่))
+        if (regionalResponse.status === 'success') {
+            regionalData.value = regionalResponse.data;
+        } else {
+            console.error('Error fetching regional data:', regionalResponse.message);
+        }
+
+    } catch (error) {
+        console.error('Fetch error:', error);
+    } finally {
+        // (G. ปิด loading ทั้งคู่)
+        loading.value = false;
+        loadingRegional.value = false;
     }
 };
 
-watch(selectedYear, fetchRegionSummary, { immediate: true });
-watch(selectedQuarter, fetchRegionSummary);
+// --- 4. Logic Filters & onMounted (เหมือนเดิม) ---
+watch(selectedQuarter, (newQuarter) => {
+    if (newQuarter === 'all') updateToAllMonths();
+    else if (newQuarter === 'Q1') selectedMonths.value = [1, 2, 3];
+    else if (newQuarter === 'Q2') selectedMonths.value = [4, 5, 6];
+    else if (newQuarter === 'Q3') selectedMonths.value = [7, 8, 9];
+    else if (newQuarter === 'Q4') selectedMonths.value = [10, 11, 12];
+});
+watch(selectedYear, () => {
+    if (selectedQuarter.value === 'all') updateToAllMonths();
+    else fetchData(); 
+});
+watch(selectedMonths, () => {
+    const sortedMonths = [...selectedMonths.value].sort((a, b) => a - b).join(',');
+    if (sortedMonths === '1,2,3') selectedQuarter.value = 'Q1';
+    else if (sortedMonths === '4,5,6') selectedQuarter.value = 'Q2';
+    else if (sortedMonths === '7,8,9') selectedQuarter.value = 'Q3';
+    else if (sortedMonths === '10,11,12') selectedQuarter.value = 'Q4';
+    else {
+        const allMonthsCurrentYear = allMonthItems.map(m => m.value).slice(0, currentJsMonth).join(',');
+        const allMonthsPastYear = allMonthItems.map(m => m.value).join(',');
+        if (sortedMonths === allMonthsCurrentYear || sortedMonths === allMonthsPastYear) selectedQuarter.value = 'all';
+        else if (selectedQuarter.value !== 'all') selectedQuarter.value = 'all';
+    }
+    fetchData();
+}, { deep: true });
+const updateToAllMonths = () => {
+    const yearAD = selectedYear.value - 543; 
+    if (yearAD === currentJsYear) {
+        selectedMonths.value = allMonthItems.map(m => m.value).filter(m => m <= currentJsMonth);
+    } else if (yearAD > currentJsYear) {
+        selectedMonths.value = [];
+    } else {
+        selectedMonths.value = allMonthItems.map(m => m.value);
+    }
+};
+onMounted(() => { updateToAllMonths(); });
+// --- (จบส่วน Logic Filters) ---
 
-type RegionField = 'unit' | 'total_value' | 'usable_area' | 'price_per_sqm';
 
-const regions = [
-    'กรุงเทพปริมณฑล',
-    'ภาคเหนือ',
-    'ภาคตะวันออกเฉียงเหนือ',
-    'ภาคกลาง',
-    'ภาคตะวันออก',
-    'ภาคใต้',
+// --- 6. Computed Properties ---
+
+// (A) สำหรับการ์ดสรุป 4 ใบ (เหมือนเดิม)
+const formattedSummary = computed(() => ({
+    units: summaryData.value.total_units.toLocaleString('th-TH') + ' หลัง',
+    value: (summaryData.value.total_value / 1000000).toLocaleString('th-TH', { maximumFractionDigits: 2 }) + ' ล้าน',
+    area: summaryData.value.total_area.toLocaleString('th-TH', { maximumFractionDigits: 0 }) + ' ตร.ม.',
+    valuePerSqm: summaryData.value.value_per_sqm.toLocaleString('th-TH', { maximumFractionDigits: 0 }) + ' / ตร.ม.'
+}));
+
+// (B) computed ใหม่: เช็คว่าโชว์ MoM ได้หรือไม่ (เหมือนเดิม)
+const showMomColumn = computed(() => {
+    return selectedMonths.value.length === 1;
+});
+
+// (C) Master List 7 ภูมิภาค (เหมือนเดิม)
+const allRegionsMasterList = [
+    'กรุงเทพปริมณฑล', 
+    'ภาคเหนือ', 
+    'ภาคตะวันออกเฉียงเหนือ', 
+    'ภาคกลาง', 
+    'ภาคตะวันออก', 
+    'ภาคใต้', 
     'ภาคตะวันตก'
 ];
 
-const getRegionField = (region: string, field: RegionField): number => {
-    const entry = regionData.value[region];
-    if (!entry) return 0;
+// (!!! D. อัปเดต: computed สำหรับตารางใหม่ (รองรับ 4 Metrics) !!!)
+// (!!! D. อัปเดต: computed สำหรับตารางใหม่ (รองรับ 4 Metrics) !!!)
+const regionalTableData = computed(() => {
+    
+    // 1. สร้าง Map จากข้อมูล API
+    const dataMap = new Map(regionalData.value.map(row => [row.region, row]));
 
-    return field === 'price_per_sqm'
-        ? entry.usable_area > 0
-            ? Math.round(entry.total_value / entry.usable_area)
-            : 0
-        : entry[field];
-};
+    // 2. วนลูปจาก "Master List"
+    return allRegionsMasterList.map(regionName => {
+        
+        const row = dataMap.get(regionName) || null;
 
-const chartSeries = computed(() => [
-    {
-        name: 'จำนวนหลัง',
-        data: regions.map(region => getRegionField(region, 'unit'))
-    },
-    {
-        name: 'พื้นที่ใช้สอย',
-        data: regions.map(region => getRegionField(region, 'usable_area'))
-    },
-    {
-        name: 'มูลค่ารวม',
-        data: regions.map(region => getRegionField(region, 'total_value'))
-    }
-]);
+        // 3. ถ้าไม่พบข้อมูล (row === null) -> คืนค่า 0
+        if (!row) {
+            return {
+                region: regionName,
+                current_period: 0, yoy_change: 0, mom_change: 0,
+                cytd: 0, pytd: 0, ytd_change: 0
+            };
+        }
 
-const totalUnit = computed(() =>
-    regions.reduce((sum, region) => sum + getRegionField(region, 'unit'), 0)
-);
+        // 4. (!!! อัปเดต !!!) ถ้าพบข้อมูล -> ดึงข้อมูลดิบทั้งหมด
+        const raw = {
+            cp_units: parseFloat(row.cp_units),
+            cp_value: parseFloat(row.cp_value),
+            cp_area: parseFloat(row.cp_area),
+            
+            pyp_units: parseFloat(row.pyp_units),
+            pyp_value: parseFloat(row.pyp_value),
+            pyp_area: parseFloat(row.pyp_area),
 
-const totalValue = computed(() =>
-    regions.reduce((sum, region) => sum + getRegionField(region, 'total_value'), 0)
-);
+            cytd_units: parseFloat(row.cytd_units),
+            cytd_value: parseFloat(row.cytd_value),
+            cytd_area: parseFloat(row.cytd_area),
 
-const totalArea = computed(() =>
-    regions.reduce((sum, region) => sum + getRegionField(region, 'usable_area'), 0)
-);
+            pytd_units: parseFloat(row.pytd_units),
+            pytd_value: parseFloat(row.pytd_value),
+            pytd_area: parseFloat(row.pytd_area),
 
-const averagePricePerSqm = computed(() => {
-    const value = totalValue.value;
-    const area = totalArea.value;
-    return area > 0 ? (value / area).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00';
-});
+            // (mom_... ตอนนี้คือ 'เดือนก่อนหน้าเดือนล่าสุด')
+            mom_units: parseFloat(row.mom_units),
+            mom_value: parseFloat(row.mom_value),
+            mom_area: parseFloat(row.mom_area),
 
-
-const formatNumber = (value: number, isDecimal = false) => {
-    return value.toLocaleString('th-TH', {
-        minimumFractionDigits: isDecimal ? 2 : 0,
-        maximumFractionDigits: isDecimal ? 2 : 0
-    });
-};
-
-
-defineExpose({
-    formatNumber,
-    totalUnit,
-    totalValue,
-    totalArea,
-    averagePricePerSqm,
-});
-
-const months = [
-    "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
-    "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
-];
-
-// คำนวณชื่อเดือนและปี
-const currentYear = new Date().getFullYear() + 543;  // ปีพุทธศักราช
-const currentMonth = new Date().getMonth();  // เดือนปัจจุบัน
-const currentMonthName = months[currentMonth];  
-
-const errorMessage = computed(() => {
-    return `กรุณากรอกข้อมูลก่อนวันที่ 10 ${currentMonthName} ${currentYear}`;
-});
-
-const fetchUserStatus = async () => {
-    if (!userId) {
-        fetchErrorUserStatus.value = 'ไม่พบข้อมูลผู้ใช้';
-        return;
-    }
-
-    try {
-        const payload = {
-            user_id: userId,
-            buddhist_year: currentYear.toString(),
-            month_number: (currentMonth + 1).toString()  // เดือนปัจจุบัน
+            // (!!! ใหม่: ดึงข้อมูลเดือนล่าสุด (LSM) !!!)
+            lsm_units: parseFloat(row.lsm_units),
+            lsm_value: parseFloat(row.lsm_value),
+            lsm_area: parseFloat(row.lsm_area)
         };
 
-        const res = await fetch('https://uat.hba-sales.org/backend/data_and_email.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-        });
+        // 5. (!!! อัปเดต !!!) เลือก metricData (แยก MoM ออกมา)
+        let metricData; // (สำหรับ CP, PYP, CYTD, PYTD)
+        let momMetricData; // (!!! ใหม่: สำหรับ MoM เท่านั้น !!!)
 
-        const data = await res.json();
+        if (activeMetric.value === 'units') {
+            metricData = { cp: raw.cp_units, pyp: raw.pyp_units, cytd: raw.cytd_units, pytd: raw.pytd_units };
+            // (!!! MoM เทียบ lsm (ล่าสุด) กับ mom (เดือนก่อน) !!!)
+            momMetricData = { latest: raw.lsm_units, prev: raw.mom_units };
+        
+        } else if (activeMetric.value === 'area') {
+            metricData = { cp: raw.cp_area, pyp: raw.pyp_area, cytd: raw.cytd_area, pytd: raw.pytd_area };
+            momMetricData = { latest: raw.lsm_area, prev: raw.mom_area };
 
-        if (data.error) {
-            fetchErrorUserStatus.value = data.error;
-        } else {
-            statusMessage.value = data.status;
+        } else if (activeMetric.value === 'valuePerSqm') {
+            // (คำนวณ 'ยอดรวม')
+            metricData = {
+                cp: raw.cp_area > 0 ? (raw.cp_value / raw.cp_area) : 0,
+                pyp: raw.pyp_area > 0 ? (raw.pyp_value / raw.pyp_area) : 0,
+                cytd: raw.cytd_area > 0 ? (raw.cytd_value / raw.cytd_area) : 0,
+                pytd: raw.pytd_area > 0 ? (raw.pytd_value / raw.pytd_area) : 0
+            };
+            // (!!! คำนวณ MoM V/Sqm แยก !!!)
+            const lsm_vps = raw.lsm_area > 0 ? (raw.lsm_value / raw.lsm_area) : 0;
+            const mom_vps = raw.mom_area > 0 ? (raw.mom_value / raw.mom_area) : 0;
+            momMetricData = { latest: lsm_vps, prev: mom_vps };
+
+        } else { // Default คือ 'value'
+            metricData = { cp: raw.cp_value, pyp: raw.pyp_value, cytd: raw.cytd_value, pytd: raw.pytd_value };
+            momMetricData = { latest: raw.lsm_value, prev: raw.mom_value };
         }
-    } catch (err) {
-        console.error('Error fetching user status:', err);
-        fetchErrorUserStatus.value = 'ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้';
-        console.log(err);
-    }
+
+        // 6. (!!! อัปเดต !!!) คำนวณ %
+        // (YoY และ YTD เหมือนเดิม - ใช้ metricData.cp)
+        const yoy_change = (metricData.pyp > 0) 
+            ? ((metricData.cp - metricData.pyp) / metricData.pyp) * 100 
+            : (metricData.cp > 0 ? 100 : 0);
+
+        const ytd_change = (metricData.pytd > 0)
+            ? ((metricData.cytd - metricData.pytd) / metricData.pytd) * 100
+            : (metricData.cytd > 0 ? 100 : 0);
+            
+        // (!!! MoM ใช้ตรรกะใหม่: latest vs prev !!!)
+        const mom_change = (momMetricData.prev > 0)
+            ? ((momMetricData.latest - momMetricData.prev) / momMetricData.prev) * 100
+            : (momMetricData.latest > 0 ? 100 : 0);
+
+        // 7. คืนค่า (ใช้ metricData.cp สำหรับ 'ยอดรวม')
+        return {
+            region: regionName,
+            current_period: metricData.cp, // (คอลัมน์นี้ยังคงเป็น 'ยอดรวม' ถูกต้องแล้ว)
+            yoy_change: yoy_change,
+            mom_change: mom_change, // (คอลัมน์นี้คำนวณจาก (LSM vs Prev) ถูกต้องแล้ว)
+            cytd: metricData.cytd,
+            pytd: metricData.pytd,
+            ytd_change: ytd_change
+        };
+    });
+});
+
+// (!!! E. อัปเดต: Headers สำหรับตารางใหม่ (รองรับ 4 Metrics) !!!)
+
+const regionalTableHeaders = computed(() => {
+    // (!!! ใหม่: เปลี่ยนชื่อ Metric ให้ถูกต้อง !!!)
+    let metricName = 'มูลค่า (บาท)'; // Default
+    if (activeMetric.value === 'units') metricName = 'จำนวน (หลัง)';
+    else if (activeMetric.value === 'area') metricName = 'พื้นที่ (ตร.ม.)';
+    else if (activeMetric.value === 'valuePerSqm') metricName = 'มูลค่า/ตร.ม. (บาท)';
+    
+    // (!!! ดึงปี พ.ศ. ปัจจุบันและปีที่แล้วมาใช้ !!!)
+    const currentYearBE = selectedYear.value;     // เช่น 2568
+    const previousYearBE = selectedYear.value - 1; // เช่น 2567
+
+    const headers = [
+        { title: 'ภูมิภาค', key: 'region', align: 'start', sortable: true, width: '25%' },
+        // { title: `ยอดรวม (${metricName})`, key: 'current_period', align: 'end', sortable: true },
+        
+        { title: 'MoM %', key: 'mom_change', align: 'end', sortable: true },
+        { title: 'YoY %', key: 'yoy_change', align: 'end', sortable: true },
+
+        { title: `YTD ${currentYearBE} `, key: 'cytd', align: 'end', sortable: true },
+        { title: `YTD ${previousYearBE} `, key: 'pytd', align: 'end', sortable: true },
+        
+        { title: 'YTD %', key: 'ytd_change', align: 'end', sortable: true },
+    ] as const; // (!!! <-- เพิ่ม 'as const' ตรงนี้ครับ !!!)
+
+    return headers;
+});
+// (!!! F. Helpers สำหรับตารางใหม่ (เหมือนเดิม) !!!)
+const formatPercentage = (value: number) => {
+    if (value === 0) return '0.0%';
+    const prefix = value > 0 ? '+' : '';
+    return `${prefix}${value.toFixed(1)}%`;
 };
 
-onMounted(fetchUserStatus);
+const getPercentageColor = (value: number) => {
+    if (value > 0) return 'text-success';
+    if (value < 0) return 'text-error';
+    return 'text-grey';
+};
 
+// (!!! G. X-Axis Title (Dynamic) (เหมือนเดิม) !!!)
+const xaxisTitleText = computed(() => {
+    if (selectedQuarter.value !== 'all') {
+        return 'เดือน'; 
+    }
+    const yearAD = selectedYear.value - 543;
+    let totalMonthsInSelectedYear;
+    if (yearAD === currentJsYear) totalMonthsInSelectedYear = currentJsMonth;
+    else if (yearAD > currentJsYear) totalMonthsInSelectedYear = 0;
+    else totalMonthsInSelectedYear = 12;
+
+    if (selectedMonths.value.length === totalMonthsInSelectedYear || selectedMonths.value.length === 0) {
+        return 'เดือน';
+    }
+    if (selectedMonths.value.length > 0) {
+        return 'เดือน (ที่เลือก)';
+    }
+    return 'เดือน';
+});
+
+const tableKey = computed(() => {
+    return `${activeMetric.value}-${showMomColumn.value}`;
+});
+
+// (!!! H. Chart Options (เหมือนเดิม) !!!)
+const chartOptions = computed(() => {
+    
+    let yAxisTitle = '';
+    let barColor = '#5D87FF'; 
+    
+    if (activeMetric.value === 'units') {
+         yAxisTitle = 'จำนวน (หลัง)';
+         barColor = '#5D87FF'; 
+    }
+    else if (activeMetric.value === 'area') {
+         yAxisTitle = 'พื้นที่ (ตร.ม.)';
+         barColor = '#E53935'; 
+    }
+    else if (activeMetric.value === 'valuePerSqm') {
+         yAxisTitle = 'มูลค่า/ตร.ม. (บาท)';
+         barColor = '#FFB22B'; 
+    }
+    else if (activeMetric.value === 'value') {
+        yAxisTitle = 'มูลค่า (บาท)';
+        barColor = '#5D87FF'; 
+    }
+    
+    return {
+        chart: { 
+            type: 'bar', 
+            height: 350, 
+            stacked: false,  
+            fontFamily: 'inherit',
+            foreColor: '#adb0bb',
+            toolbar: { show: true } 
+        },
+        stroke: { show: true, width: 2, colors: ['transparent'] },
+        grid: {
+            borderColor: '#e0e0e0',
+            strokeDashArray: 4
+        },
+        dataLabels: { 
+            enabled: false
+        },
+        xaxis: { 
+            categories: monthlyChartLabels.value,
+            title: { text: xaxisTitleText.value } 
+        },
+        yaxis: {
+            title: { text: yAxisTitle, show: false },
+            labels: {
+                formatter: (val: number) => {
+                    if (val >= 1000000) return (val / 1000000).toFixed(1) + 'M';
+                    if (val >= 1000) return (val / 1000).toFixed(0) + 'K';
+                    return val.toFixed(0);
+                }
+            }
+        },
+        tooltip: { 
+            y: { 
+                formatter: (val: number) => {
+                    if (val === undefined || val === null) return 'N/A';
+                    if (activeMetric.value === 'units') {
+                        return val.toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+                    }
+                    return val.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                }
+            } 
+        },
+        plotOptions: { 
+            bar: { 
+                horizontal: false, 
+                columnWidth: '60%', 
+                borderRadius: 4,
+            } 
+        },
+        legend: {
+            show: true,
+            position: 'bottom', 
+            horizontalAlign: 'center',
+            offsetY: 5 
+        }
+    };
+});
+
+
+// (!!! I. Main Graph Title (เหมือนเดิม) !!!)
+const mainGraphTitle = computed(() => {
+    
+    let baseTitle = '';
+    switch (activeMetric.value) {
+        case 'units': 
+            baseTitle = 'กราฟจำนวนหลัง';
+            break;
+        case 'area': 
+            baseTitle = 'กราฟพื้นที่ใช้สอย';
+            break;
+        case 'valuePerSqm': 
+            baseTitle = 'กราฟมูลค่าเฉลี่ย / ตร.ม.';
+            break;
+        case 'value':
+        default:
+            baseTitle = 'กราฟสรุปมูลค่า';
+            break;
+    }
+
+    const yearText = ' ประจำปี ' + selectedYear.value;
+
+    if (selectedQuarter.value !== 'all') {
+        const quarter = quarterOptions.value.find(q => q.value === selectedQuarter.value);
+        return quarter ? `${baseTitle} ${quarter.title}${yearText}` : `${baseTitle}${yearText}`;
+    }
+
+    const yearAD = selectedYear.value - 543;
+    let totalMonthsInSelectedYear;
+    if (yearAD === currentJsYear) totalMonthsInSelectedYear = currentJsMonth;
+    else if (yearAD > currentJsYear) totalMonthsInSelectedYear = 0;
+    else totalMonthsInSelectedYear = 12;
+
+    if (selectedMonths.value.length === totalMonthsInSelectedYear || selectedMonths.value.length === 0) {
+        return `${baseTitle}${yearText}`;
+    }
+    
+    if (selectedMonths.value.length > 0) {
+        const sortedMonths = [...selectedMonths.value].sort((a, b) => a - b);
+        const firstMonthValue = sortedMonths[0];
+        const firstMonth = monthOptions.value.find(m => m.value === firstMonthValue);
+        const firstMonthName = firstMonth ? firstMonth.title : '';
+
+        if (sortedMonths.length === 1) {
+            return `${baseTitle} ประจำเดือน ${firstMonthName}${yearText}`;
+        }
+
+        const lastMonthValue = sortedMonths[sortedMonths.length - 1];
+        const lastMonth = monthOptions.value.find(m => m.value === lastMonthValue);
+        const lastMonthName = lastMonth ? lastMonth.title : '';
+        
+        return `${baseTitle} ประจำเดือน ${firstMonthName} - ${lastMonthName}${yearText}`;
+    }
+
+    return `${baseTitle}${yearText}`;
+});
+
+// (!!! J. Chart Unit Subtitle (เหมือนเดิม) !!!)
+const chartUnitSubtitle = computed(() => {
+    switch (activeMetric.value) {
+        case 'units':
+            return '(หน่วย : หลัง)';
+        case 'area':
+            return '(หน่วย : ตร.ม.)';
+        case 'valuePerSqm':
+            return '(หน่วย : บาท / ตร.ม.)';
+        case 'value':
+        default:
+            return '(หน่วย : ล้านบาท)'; 
+    }
+});
+
+// (!!! K. Main Graph Series (เหมือนเดิม) !!!)
+const mainGraphSeries = computed(() => {
+    switch (activeMetric.value) {
+        
+        case 'units':
+            return [{ name: 'จำนวน (หลัง)', type: 'bar', data: monthlyUnitsData.value, color: '#5D87FF' }]; 
+        case 'area':
+            return [{ name: 'พื้นที่ (ตร.ม.)', type: 'bar', data: monthlyAreaData.value, color: '#E53935' }]; 
+        case 'valuePerSqm':
+            return [{ name: 'มูลค่า/ตร.ม. (บาท)', type: 'bar', data: monthlyValuePerSqmData.value, color: '#FFB22B' }]; 
+        
+        case 'value':
+        default:
+            return [
+                {
+                    name: 'มูลค่า (บาท)',
+                    type: 'bar', 
+                    data: monthlyValueData.value,
+                    color: '#5D87FF' // (สีฟ้า)
+                }
+            ];
+    }
+});
+
+const regionalTableSubtitle = computed(() => {
+    switch (activeMetric.value) {
+        case 'units':
+            return '(เปรียบเทียบตาม: จำนวนหลัง)';
+        case 'area':
+            return '(เปรียบเทียบตาม: พื้นที่ใช้สอย)';
+        case 'valuePerSqm':
+            return '(เปรียบเทียบตาม: มูลค่าเฉลี่ย / ตร.ม.)';
+        case 'value':
+        default:
+            return '(เปรียบเทียบตาม: มูลค่า)';
+    }
+});
 </script>
-
-
-
-
-
 <template>
-    <v-row v-if="fetchErrorUserStatus && userRole === 'user'">
-
-        <v-alert density="compact" type="error" :text="errorMessage" title="กรุณากรอกข้อมูล"></v-alert>
-    </v-row>
-
-    <v-row v-if="statusMessage && userRole === 'user'">
-        <v-alert density="compact" v-bind:type="statusMessage === 'กรอกข้อมูลเรียบร้อย' ? 'success' : 'error'"
-            :text="statusMessage" title="สถานะการกรอกข้อมูล"></v-alert>
-    </v-row>
-
-    <v-row>
-        <v-col cols="12" sm="12" lg="12">
-
-            <div class="mt-3 mb-6">
-                <div class="d-flex justify-space-between">
-                    <div class="d-flex py-0 align-center">
-                        <div>
-                            <h3 class="text-h5 card-title">Dashboard</h3>
-                            <ul
-                                class="v-breadcrumbs v-breadcrumbs--density-default text-subtitle-1 textSecondary pa-0 ml-n1">
-                                <!---->
-                                <li class="v-breadcrumbs-item" text="Home"><a class="v-breadcrumbs-item--link" href="#">
-                                        <p>Home</p>
-                                    </a></li>
-                                <li class="v-breadcrumbs-divider"><i
-                                        class="mdi-chevron-right mdi v-icon notranslate v-theme--BLUE_THEME"
-                                        aria-hidden="true" style="font-size: 15px; height: 15px; width: 15px;"></i></li>
-                                <li class="v-breadcrumbs-item" text="Dashboard"><a class="v-breadcrumbs-item--link"
-                                        href="#">
-                                        <p>Dashboard</p>
-                                    </a></li>
-                            </ul>
-                        </div>
-                    </div>
-
-                    <div>
-                        <div class="d-sm-flex d-none ga-4 justify-content-end align-center">
-                            <div class="d-flex ga-2">
-                                <div>
-                                    <p class="textSecondary text-13 mb-0 lh-normal">มูลค่ารวมเดือนล่าสุด</p>
-                                    <h5 class="text-h5 text-primary mb-0 font-weight-medium mt-n1"> {{
-                                        latestMonthValue.toLocaleString('th-TH') }} บาท</h5>
-
-
-                                </div>
-                                <div>
-                                    <div class="vue-apexcharts" style="min-height: 40px;">
-                                        <div id="apexchartsqycvbxyj"
-                                            class="apexcharts-canvas apexchartsqycvbxyj apexcharts-theme-light"
-                                            style="width: 70px; height: 40px;"><svg id="SvgjsSvg1543" width="70"
-                                                height="40" xmlns="http://www.w3.org/2000/svg" version="1.1"
-                                                xmlns:xlink="http://www.w3.org/1999/xlink"
-                                                xmlns:svgjs="http://svgjs.dev" class="apexcharts-svg"
-                                                xmlns:data="ApexChartsNS" transform="translate(0, 0)"
-                                                style="background: transparent;">
-                                                <foreignObject x="0" y="0" width="70" height="40">
-                                                    <div class="apexcharts-legend" xmlns="http://www.w3.org/1999/xhtml"
-                                                        style="max-height: 20px;"></div>
-                                                </foreignObject>
-                                                <g id="SvgjsG1596" class="apexcharts-yaxis" rel="0"
-                                                    transform="translate(-18, 0)"></g>
-                                                <g id="SvgjsG1545" class="apexcharts-inner apexcharts-graphical"
-                                                    transform="translate(12.333333333333334, 0)">
-                                                    <defs id="SvgjsDefs1544">
-                                                        <linearGradient id="SvgjsLinearGradient1547" x1="0" y1="0"
-                                                            x2="0" y2="1">
-                                                            <stop id="SvgjsStop1548" stop-opacity="0.4"
-                                                                stop-color="rgba(216,227,240,0.4)" offset="0"></stop>
-                                                            <stop id="SvgjsStop1549" stop-opacity="0.5"
-                                                                stop-color="rgba(190,209,230,0.5)" offset="1"></stop>
-                                                            <stop id="SvgjsStop1550" stop-opacity="0.5"
-                                                                stop-color="rgba(190,209,230,0.5)" offset="1"></stop>
-                                                        </linearGradient>
-                                                        <clipPath id="gridRectMaskqycvbxyj">
-                                                            <rect id="SvgjsRect1552" width="74" height="44"
-                                                                x="-10.333333333333334" y="-2" rx="0" ry="0" opacity="1"
-                                                                stroke-width="0" stroke="none" stroke-dasharray="0"
-                                                                fill="#fff"></rect>
-                                                        </clipPath>
-                                                        <clipPath id="forecastMaskqycvbxyj"></clipPath>
-                                                        <clipPath id="nonForecastMaskqycvbxyj"></clipPath>
-                                                        <clipPath id="gridRectMarkerMaskqycvbxyj">
-                                                            <rect id="SvgjsRect1553" width="57.33333333333333"
-                                                                height="44" x="-2" y="-2" rx="0" ry="0" opacity="1"
-                                                                stroke-width="0" stroke="none" stroke-dasharray="0"
-                                                                fill="#fff"></rect>
-                                                        </clipPath>
-                                                    </defs>
-                                                    <rect id="SvgjsRect1551" width="3.809523809523809" height="40"
-                                                        x="28.190513974144345" y="0" rx="0" ry="0" opacity="1"
-                                                        stroke-width="0" stroke-dasharray="3"
-                                                        fill="url(#SvgjsLinearGradient1547)"
-                                                        class="apexcharts-xcrosshairs" y2="40" filter="none"
-                                                        fill-opacity="0.9" x1="28.190513974144345"
-                                                        x2="28.190513974144345"></rect>
-                                                    <g id="SvgjsG1575" class="apexcharts-grid">
-                                                        <g id="SvgjsG1576" class="apexcharts-gridlines-horizontal"
-                                                            style="display: none;">
-                                                            <line id="SvgjsLine1579" x1="-8.333333333333334" y1="0"
-                                                                x2="61.666666666666664" y2="0" stroke="#e0e0e0"
-                                                                stroke-dasharray="0" stroke-linecap="butt"
-                                                                class="apexcharts-gridline"></line>
-                                                            <line id="SvgjsLine1580" x1="-8.333333333333334" y1="10"
-                                                                x2="61.666666666666664" y2="10" stroke="#e0e0e0"
-                                                                stroke-dasharray="0" stroke-linecap="butt"
-                                                                class="apexcharts-gridline"></line>
-                                                            <line id="SvgjsLine1581" x1="-8.333333333333334" y1="20"
-                                                                x2="61.666666666666664" y2="20" stroke="#e0e0e0"
-                                                                stroke-dasharray="0" stroke-linecap="butt"
-                                                                class="apexcharts-gridline"></line>
-                                                            <line id="SvgjsLine1582" x1="-8.333333333333334" y1="30"
-                                                                x2="61.666666666666664" y2="30" stroke="#e0e0e0"
-                                                                stroke-dasharray="0" stroke-linecap="butt"
-                                                                class="apexcharts-gridline"></line>
-                                                            <line id="SvgjsLine1583" x1="-8.333333333333334" y1="40"
-                                                                x2="61.666666666666664" y2="40" stroke="#e0e0e0"
-                                                                stroke-dasharray="0" stroke-linecap="butt"
-                                                                class="apexcharts-gridline"></line>
-                                                        </g>
-                                                        <g id="SvgjsG1577" class="apexcharts-gridlines-vertical"
-                                                            style="display: none;"></g>
-                                                        <line id="SvgjsLine1585" x1="0" y1="40" x2="53.33333333333333"
-                                                            y2="40" stroke="transparent" stroke-dasharray="0"
-                                                            stroke-linecap="butt"></line>
-                                                        <line id="SvgjsLine1584" x1="0" y1="1" x2="0" y2="40"
-                                                            stroke="transparent" stroke-dasharray="0"
-                                                            stroke-linecap="butt"></line>
-                                                    </g>
-                                                    <g id="SvgjsG1578" class="apexcharts-grid-borders"
-                                                        style="display: none;"></g>
-                                                    <g id="SvgjsG1554"
-                                                        class="apexcharts-bar-series apexcharts-plot-series">
-                                                        <g id="SvgjsG1555" class="apexcharts-series" rel="1"
-                                                            seriesName="" data:realIndex="0">
-                                                            <path id="SvgjsPath1560"
-                                                                d="M -1.9047619047619044 38.001 L -1.9047619047619044 32.001000000000005 C -1.9047619047619044 31.001000000000005 -0.9047619047619044 30.001 0.09523809523809557 30.001 L 0.09523809523809557 30.001 C 1 30.001 1.9047619047619044 31.001000000000005 1.9047619047619044 32.001000000000005 L 1.9047619047619044 38.001 C 1.9047619047619044 39.001 0.9047619047619044 40.001 -0.09523809523809557 40.001 L -0.09523809523809557 40.001 C -1 40.001 -1.9047619047619044 39.001 -1.9047619047619044 38.001 Z "
-                                                                fill="rgba(var(--v-theme-primary))" fill-opacity="1"
-                                                                stroke-opacity="1" stroke-linecap="round"
-                                                                stroke-width="0" stroke-dasharray="0"
-                                                                class="apexcharts-bar-area" index="0"
-                                                                clip-path="url(#gridRectMaskqycvbxyj)"
-                                                                pathTo="M -1.9047619047619044 38.001 L -1.9047619047619044 32.001000000000005 C -1.9047619047619044 31.001000000000005 -0.9047619047619044 30.001 0.09523809523809557 30.001 L 0.09523809523809557 30.001 C 1 30.001 1.9047619047619044 31.001000000000005 1.9047619047619044 32.001000000000005 L 1.9047619047619044 38.001 C 1.9047619047619044 39.001 0.9047619047619044 40.001 -0.09523809523809557 40.001 L -0.09523809523809557 40.001 C -1 40.001 -1.9047619047619044 39.001 -1.9047619047619044 38.001 Z "
-                                                                pathFrom="M -1.9047619047619044 40.001 L -1.9047619047619044 40.001 L 1.9047619047619044 40.001 L 1.9047619047619044 40.001 L 1.9047619047619044 40.001 L 1.9047619047619044 40.001 L 1.9047619047619044 40.001 L -1.9047619047619044 40.001 Z"
-                                                                cy="30" cx="1.9047619047619044" j="0" val="5"
-                                                                barHeight="10" barWidth="3.809523809523809"></path>
-                                                            <path id="SvgjsPath1562"
-                                                                d="M 5.714285714285714 38.001 L 5.714285714285714 26.001 C 5.714285714285714 25.001 6.714285714285714 24.001 7.714285714285714 24.001 L 7.714285714285714 24.001 C 8.619047619047619 24.001 9.523809523809524 25.001 9.523809523809524 26.001 L 9.523809523809524 38.001 C 9.523809523809524 39.001 8.523809523809524 40.001 7.523809523809524 40.001 L 7.523809523809524 40.001 C 6.619047619047619 40.001 5.714285714285714 39.001 5.714285714285714 38.001 Z "
-                                                                fill="rgba(var(--v-theme-primary))" fill-opacity="1"
-                                                                stroke-opacity="1" stroke-linecap="round"
-                                                                stroke-width="0" stroke-dasharray="0"
-                                                                class="apexcharts-bar-area" index="0"
-                                                                clip-path="url(#gridRectMaskqycvbxyj)"
-                                                                pathTo="M 5.714285714285714 38.001 L 5.714285714285714 26.001 C 5.714285714285714 25.001 6.714285714285714 24.001 7.714285714285714 24.001 L 7.714285714285714 24.001 C 8.619047619047619 24.001 9.523809523809524 25.001 9.523809523809524 26.001 L 9.523809523809524 38.001 C 9.523809523809524 39.001 8.523809523809524 40.001 7.523809523809524 40.001 L 7.523809523809524 40.001 C 6.619047619047619 40.001 5.714285714285714 39.001 5.714285714285714 38.001 Z "
-                                                                pathFrom="M 5.714285714285714 40.001 L 5.714285714285714 40.001 L 9.523809523809524 40.001 L 9.523809523809524 40.001 L 9.523809523809524 40.001 L 9.523809523809524 40.001 L 9.523809523809524 40.001 L 5.714285714285714 40.001 Z"
-                                                                cy="24" cx="9.523809523809524" j="1" val="8"
-                                                                barHeight="16" barWidth="3.809523809523809"></path>
-                                                            <path id="SvgjsPath1564"
-                                                                d="M 13.333333333333332 38.001 L 13.333333333333332 28.001 C 13.333333333333332 27.001 14.333333333333332 26.001 15.333333333333332 26.001 L 15.333333333333332 26.001 C 16.238095238095237 26.001 17.142857142857142 27.001 17.142857142857142 28.001 L 17.142857142857142 38.001 C 17.142857142857142 39.001 16.142857142857142 40.001 15.142857142857142 40.001 L 15.142857142857142 40.001 C 14.238095238095237 40.001 13.333333333333332 39.001 13.333333333333332 38.001 Z "
-                                                                fill="rgba(var(--v-theme-primary))" fill-opacity="1"
-                                                                stroke-opacity="1" stroke-linecap="round"
-                                                                stroke-width="0" stroke-dasharray="0"
-                                                                class="apexcharts-bar-area" index="0"
-                                                                clip-path="url(#gridRectMaskqycvbxyj)"
-                                                                pathTo="M 13.333333333333332 38.001 L 13.333333333333332 28.001 C 13.333333333333332 27.001 14.333333333333332 26.001 15.333333333333332 26.001 L 15.333333333333332 26.001 C 16.238095238095237 26.001 17.142857142857142 27.001 17.142857142857142 28.001 L 17.142857142857142 38.001 C 17.142857142857142 39.001 16.142857142857142 40.001 15.142857142857142 40.001 L 15.142857142857142 40.001 C 14.238095238095237 40.001 13.333333333333332 39.001 13.333333333333332 38.001 Z "
-                                                                pathFrom="M 13.333333333333332 40.001 L 13.333333333333332 40.001 L 17.142857142857142 40.001 L 17.142857142857142 40.001 L 17.142857142857142 40.001 L 17.142857142857142 40.001 L 17.142857142857142 40.001 L 13.333333333333332 40.001 Z"
-                                                                cy="26" cx="17.142857142857142" j="2" val="7"
-                                                                barHeight="14" barWidth="3.809523809523809"></path>
-                                                            <path id="SvgjsPath1566"
-                                                                d="M 20.952380952380953 38.001 L 20.952380952380953 18.001 C 20.952380952380953 17.001 21.952380952380953 16.001 22.952380952380953 16.001 L 22.952380952380953 16.001 C 23.857142857142858 16.001 24.761904761904763 17.001 24.761904761904763 18.001 L 24.761904761904763 38.001 C 24.761904761904763 39.001 23.761904761904763 40.001 22.761904761904763 40.001 L 22.761904761904763 40.001 C 21.857142857142858 40.001 20.952380952380953 39.001 20.952380952380953 38.001 Z "
-                                                                fill="rgba(var(--v-theme-primary))" fill-opacity="1"
-                                                                stroke-opacity="1" stroke-linecap="round"
-                                                                stroke-width="0" stroke-dasharray="0"
-                                                                class="apexcharts-bar-area" index="0"
-                                                                clip-path="url(#gridRectMaskqycvbxyj)"
-                                                                pathTo="M 20.952380952380953 38.001 L 20.952380952380953 18.001 C 20.952380952380953 17.001 21.952380952380953 16.001 22.952380952380953 16.001 L 22.952380952380953 16.001 C 23.857142857142858 16.001 24.761904761904763 17.001 24.761904761904763 18.001 L 24.761904761904763 38.001 C 24.761904761904763 39.001 23.761904761904763 40.001 22.761904761904763 40.001 L 22.761904761904763 40.001 C 21.857142857142858 40.001 20.952380952380953 39.001 20.952380952380953 38.001 Z "
-                                                                pathFrom="M 20.952380952380953 40.001 L 20.952380952380953 40.001 L 24.761904761904763 40.001 L 24.761904761904763 40.001 L 24.761904761904763 40.001 L 24.761904761904763 40.001 L 24.761904761904763 40.001 L 20.952380952380953 40.001 Z"
-                                                                cy="16" cx="24.761904761904763" j="3" val="12"
-                                                                barHeight="24" barWidth="3.809523809523809"></path>
-                                                            <path id="SvgjsPath1568"
-                                                                d="M 28.57142857142857 38.001 L 28.57142857142857 30.001 C 28.57142857142857 29.001 29.57142857142857 28.001 30.57142857142857 28.001 L 30.57142857142857 28.001 C 31.476190476190474 28.001 32.38095238095238 29.001 32.38095238095238 30.001 L 32.38095238095238 38.001 C 32.38095238095238 39.001 31.38095238095238 40.001 30.38095238095238 40.001 L 30.38095238095238 40.001 C 29.476190476190474 40.001 28.57142857142857 39.001 28.57142857142857 38.001 Z "
-                                                                fill="rgba(var(--v-theme-primary))" fill-opacity="1"
-                                                                stroke-opacity="1" stroke-linecap="round"
-                                                                stroke-width="0" stroke-dasharray="0"
-                                                                class="apexcharts-bar-area" index="0"
-                                                                clip-path="url(#gridRectMaskqycvbxyj)"
-                                                                pathTo="M 28.57142857142857 38.001 L 28.57142857142857 30.001 C 28.57142857142857 29.001 29.57142857142857 28.001 30.57142857142857 28.001 L 30.57142857142857 28.001 C 31.476190476190474 28.001 32.38095238095238 29.001 32.38095238095238 30.001 L 32.38095238095238 38.001 C 32.38095238095238 39.001 31.38095238095238 40.001 30.38095238095238 40.001 L 30.38095238095238 40.001 C 29.476190476190474 40.001 28.57142857142857 39.001 28.57142857142857 38.001 Z "
-                                                                pathFrom="M 28.57142857142857 40.001 L 28.57142857142857 40.001 L 32.38095238095238 40.001 L 32.38095238095238 40.001 L 32.38095238095238 40.001 L 32.38095238095238 40.001 L 32.38095238095238 40.001 L 28.57142857142857 40.001 Z"
-                                                                cy="28" cx="32.38095238095238" j="4" val="6"
-                                                                barHeight="12" barWidth="3.809523809523809"></path>
-                                                            <path id="SvgjsPath1570"
-                                                                d="M 36.19047619047619 38.001 L 36.19047619047619 28.001 C 36.19047619047619 27.001 37.19047619047619 26.001 38.19047619047619 26.001 L 38.19047619047619 26.001 C 39.095238095238095 26.001 40 27.001 40 28.001 L 40 38.001 C 40 39.001 39 40.001 38 40.001 L 38 40.001 C 37.095238095238095 40.001 36.19047619047619 39.001 36.19047619047619 38.001 Z "
-                                                                fill="rgba(var(--v-theme-primary))" fill-opacity="1"
-                                                                stroke-opacity="1" stroke-linecap="round"
-                                                                stroke-width="0" stroke-dasharray="0"
-                                                                class="apexcharts-bar-area" index="0"
-                                                                clip-path="url(#gridRectMaskqycvbxyj)"
-                                                                pathTo="M 36.19047619047619 38.001 L 36.19047619047619 28.001 C 36.19047619047619 27.001 37.19047619047619 26.001 38.19047619047619 26.001 L 38.19047619047619 26.001 C 39.095238095238095 26.001 40 27.001 40 28.001 L 40 38.001 C 40 39.001 39 40.001 38 40.001 L 38 40.001 C 37.095238095238095 40.001 36.19047619047619 39.001 36.19047619047619 38.001 Z "
-                                                                pathFrom="M 36.19047619047619 40.001 L 36.19047619047619 40.001 L 40 40.001 L 40 40.001 L 40 40.001 L 40 40.001 L 40 40.001 L 36.19047619047619 40.001 Z"
-                                                                cy="26" cx="40" j="5" val="7" barHeight="14"
-                                                                barWidth="3.809523809523809"></path>
-                                                            <path id="SvgjsPath1572"
-                                                                d="M 43.80952380952381 38.001 L 43.80952380952381 12.001 C 43.80952380952381 11.001 44.80952380952381 10.001 45.80952380952381 10.001 L 45.80952380952381 10.001 C 46.714285714285715 10.001 47.61904761904762 11.001 47.61904761904762 12.001 L 47.61904761904762 38.001 C 47.61904761904762 39.001 46.61904761904762 40.001 45.61904761904762 40.001 L 45.61904761904762 40.001 C 44.714285714285715 40.001 43.80952380952381 39.001 43.80952380952381 38.001 Z "
-                                                                fill="rgba(var(--v-theme-primary))" fill-opacity="1"
-                                                                stroke-opacity="1" stroke-linecap="round"
-                                                                stroke-width="0" stroke-dasharray="0"
-                                                                class="apexcharts-bar-area" index="0"
-                                                                clip-path="url(#gridRectMaskqycvbxyj)"
-                                                                pathTo="M 43.80952380952381 38.001 L 43.80952380952381 12.001 C 43.80952380952381 11.001 44.80952380952381 10.001 45.80952380952381 10.001 L 45.80952380952381 10.001 C 46.714285714285715 10.001 47.61904761904762 11.001 47.61904761904762 12.001 L 47.61904761904762 38.001 C 47.61904761904762 39.001 46.61904761904762 40.001 45.61904761904762 40.001 L 45.61904761904762 40.001 C 44.714285714285715 40.001 43.80952380952381 39.001 43.80952380952381 38.001 Z "
-                                                                pathFrom="M 43.80952380952381 40.001 L 43.80952380952381 40.001 L 47.61904761904762 40.001 L 47.61904761904762 40.001 L 47.61904761904762 40.001 L 47.61904761904762 40.001 L 47.61904761904762 40.001 L 43.80952380952381 40.001 Z"
-                                                                cy="10" cx="47.61904761904762" j="6" val="15"
-                                                                barHeight="30" barWidth="3.809523809523809"></path>
-                                                            <path id="SvgjsPath1574"
-                                                                d="M 51.42857142857142 38.001 L 51.42857142857142 2.001 C 51.42857142857142 1.001 52.42857142857142 0.001 53.42857142857142 0.001 L 53.42857142857142 0.001 C 54.33333333333333 0.001 55.238095238095234 1.001 55.238095238095234 2.001 L 55.238095238095234 38.001 C 55.238095238095234 39.001 54.238095238095234 40.001 53.238095238095234 40.001 L 53.238095238095234 40.001 C 52.33333333333333 40.001 51.42857142857142 39.001 51.42857142857142 38.001 Z "
-                                                                fill="rgba(var(--v-theme-primary))" fill-opacity="1"
-                                                                stroke-opacity="1" stroke-linecap="round"
-                                                                stroke-width="0" stroke-dasharray="0"
-                                                                class="apexcharts-bar-area" index="0"
-                                                                clip-path="url(#gridRectMaskqycvbxyj)"
-                                                                pathTo="M 51.42857142857142 38.001 L 51.42857142857142 2.001 C 51.42857142857142 1.001 52.42857142857142 0.001 53.42857142857142 0.001 L 53.42857142857142 0.001 C 54.33333333333333 0.001 55.238095238095234 1.001 55.238095238095234 2.001 L 55.238095238095234 38.001 C 55.238095238095234 39.001 54.238095238095234 40.001 53.238095238095234 40.001 L 53.238095238095234 40.001 C 52.33333333333333 40.001 51.42857142857142 39.001 51.42857142857142 38.001 Z "
-                                                                pathFrom="M 51.42857142857142 40.001 L 51.42857142857142 40.001 L 55.238095238095234 40.001 L 55.238095238095234 40.001 L 55.238095238095234 40.001 L 55.238095238095234 40.001 L 55.238095238095234 40.001 L 51.42857142857142 40.001 Z"
-                                                                cy="0" cx="55.238095238095234" j="7" val="20"
-                                                                barHeight="40" barWidth="3.809523809523809"></path>
-                                                            <g id="SvgjsG1557" class="apexcharts-bar-goals-markers">
-                                                                <g id="SvgjsG1559"
-                                                                    className="apexcharts-bar-goals-groups"
-                                                                    class="apexcharts-hidden-element-shown"
-                                                                    clip-path="url(#gridRectMarkerMaskqycvbxyj)"></g>
-                                                                <g id="SvgjsG1561"
-                                                                    className="apexcharts-bar-goals-groups"
-                                                                    class="apexcharts-hidden-element-shown"
-                                                                    clip-path="url(#gridRectMarkerMaskqycvbxyj)"></g>
-                                                                <g id="SvgjsG1563"
-                                                                    className="apexcharts-bar-goals-groups"
-                                                                    class="apexcharts-hidden-element-shown"
-                                                                    clip-path="url(#gridRectMarkerMaskqycvbxyj)"></g>
-                                                                <g id="SvgjsG1565"
-                                                                    className="apexcharts-bar-goals-groups"
-                                                                    class="apexcharts-hidden-element-shown"
-                                                                    clip-path="url(#gridRectMarkerMaskqycvbxyj)"></g>
-                                                                <g id="SvgjsG1567"
-                                                                    className="apexcharts-bar-goals-groups"
-                                                                    class="apexcharts-hidden-element-shown"
-                                                                    clip-path="url(#gridRectMarkerMaskqycvbxyj)"></g>
-                                                                <g id="SvgjsG1569"
-                                                                    className="apexcharts-bar-goals-groups"
-                                                                    class="apexcharts-hidden-element-shown"
-                                                                    clip-path="url(#gridRectMarkerMaskqycvbxyj)"></g>
-                                                                <g id="SvgjsG1571"
-                                                                    className="apexcharts-bar-goals-groups"
-                                                                    class="apexcharts-hidden-element-shown"
-                                                                    clip-path="url(#gridRectMarkerMaskqycvbxyj)"></g>
-                                                                <g id="SvgjsG1573"
-                                                                    className="apexcharts-bar-goals-groups"
-                                                                    class="apexcharts-hidden-element-shown"
-                                                                    clip-path="url(#gridRectMarkerMaskqycvbxyj)"></g>
-                                                            </g>
-                                                            <g id="SvgjsG1558"
-                                                                class="apexcharts-bar-shadows apexcharts-hidden-element-shown">
-                                                            </g>
-                                                        </g>
-                                                        <g id="SvgjsG1556"
-                                                            class="apexcharts-datalabels apexcharts-hidden-element-shown"
-                                                            data:realIndex="0"></g>
-                                                    </g>
-                                                    <line id="SvgjsLine1586" x1="-8.333333333333334" y1="0"
-                                                        x2="61.666666666666664" y2="0" stroke="#b6b6b6"
-                                                        stroke-dasharray="0" stroke-width="1" stroke-linecap="butt"
-                                                        class="apexcharts-ycrosshairs"></line>
-                                                    <line id="SvgjsLine1587" x1="-8.333333333333334" y1="0"
-                                                        x2="61.666666666666664" y2="0" stroke-dasharray="0"
-                                                        stroke-width="0" stroke-linecap="butt"
-                                                        class="apexcharts-ycrosshairs-hidden"></line>
-                                                    <g id="SvgjsG1588" class="apexcharts-xaxis"
-                                                        transform="translate(0, 0)">
-                                                        <g id="SvgjsG1589" class="apexcharts-xaxis-texts-g"
-                                                            transform="translate(0, -4)"></g>
-                                                    </g>
-                                                    <g id="SvgjsG1597" class="apexcharts-yaxis-annotations"></g>
-                                                    <g id="SvgjsG1598" class="apexcharts-xaxis-annotations"></g>
-                                                    <g id="SvgjsG1599" class="apexcharts-point-annotations"></g>
-                                                </g>
-                                            </svg>
-                                            <div class="apexcharts-tooltip apexcharts-theme-dark"
-                                                style="left: -20.2589px; top: 11.5px;">
-                                                <div class="apexcharts-tooltip-series-group apexcharts-active"
-                                                    style="order: 1; display: flex;"><span
-                                                        class="apexcharts-tooltip-marker"
-                                                        style="background-color: rgba(var(--v-theme-primary));"></span>
-                                                    <div class="apexcharts-tooltip-text"
-                                                        style="font-family: inherit; font-size: 12px;">
-                                                        <div class="apexcharts-tooltip-y-group"><span
-                                                                class="apexcharts-tooltip-text-y-label"></span></div>
-                                                        <div class="apexcharts-tooltip-goals-group"><span
-                                                                class="apexcharts-tooltip-text-goals-label"></span><span
-                                                                class="apexcharts-tooltip-text-goals-value"></span>
-                                                        </div>
-                                                        <div class="apexcharts-tooltip-z-group"><span
-                                                                class="apexcharts-tooltip-text-z-label"></span><span
-                                                                class="apexcharts-tooltip-text-z-value"></span></div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div
-                                                class="apexcharts-yaxistooltip apexcharts-yaxistooltip-0 apexcharts-yaxistooltip-left apexcharts-theme-dark">
-                                                <div class="apexcharts-yaxistooltip-text"></div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
+    <v-container fluid>
+        <v-row>
+            <v-col cols="12" sm="12" lg="12">
+                <div class="mt-3 mb-6">
+                    <div class="d-flex justify-space-between">
+                        <div class="d-flex py-0 align-center">
+                            <div>
+                                <h3 class="text-h5 card-title">รายงานยอดเซ็นสัญญาแบ่งตามมูลค่าบ้าน</h3>
+                                <ul class="v-breadcrumbs v-breadcrumbs--density-default text-subtitle-1 textSecondary pa-0 ml-n1">
+                                    <li class="v-breadcrumbs-item" text="Home">
+                                        <a class="v-breadcrumbs-item--link" href="#">
+                                            <p>หน้าแรก</p>
+                                        </a>
+                                    </li>
+                                    <li class="v-breadcrumbs-divider">
+                                        <i
+                                            class="mdi-chevron-right mdi v-icon notranslate v-theme--BLUE_THEME"
+                                            aria-hidden="true"
+                                            style="font-size: 15px; height: 15px; width: 15px"
+                                        ></i>
+                                    </li>
+                                    <li class="v-breadcrumbs-item" text="Dashboard">
+                                        <a class="v-breadcrumbs-item--link" href="#">
+                                            <p>รายงานยอดเซ็นสัญญาแบ่งตามมูลค่าบ้าน</p>
+                                        </a>
+                                    </li>
+                                </ul>
                             </div>
                         </div>
+                        <div></div>
                     </div>
                 </div>
-            </div>
-        </v-col>
-        <v-col cols="12" sm="12" lg="12">
-            <div class="v-row">
-                <div class="v-col-sm-0 v-col-lg-3 v-col-0 py-0 mb-0" revenuecard="[object Object]">
-                    <div
-                        class="v-card v-theme--BLUE_THEME v-card--density-default elevation-10 rounded-md v-card--variant-elevated">
-                        <div class="v-card__loader">
-                            <div class="v-progress-linear v-theme--BLUE_THEME v-locale--is-ltr" role="progressbar"
-                                aria-hidden="true" aria-valuemin="0" aria-valuemax="100"
-                                style="top: 0px; height: 0px; --v-progress-linear-height: 2px;">
-                                <div class="v-progress-linear__background"></div>
-                                <div class="v-progress-linear__buffer" style="width: 0%;"></div>
-                                <div class="v-progress-linear__indeterminate">
-                                    <div class="v-progress-linear__indeterminate long"></div>
-                                    <div class="v-progress-linear__indeterminate short"></div>
-                                </div>
+            </v-col>
+            
+            <v-col cols="12" sm="12" lg="12">
+                <v-card elevation="10">
+                    <v-card-text>
+                        <v-row>
+                            <v-col cols="12" md="4">
+                                <v-select
+                                    v-model="selectedYear"
+                                    :items="yearOptions"
+                                    label="ปี (พ.ศ.)"
+                                    density="compact"
+                                    variant="outlined"
+                                    hide-details
+                                ></v-select>
+                            </v-col>
+                            <v-col cols="12" md="4">
+                                <v-select
+                                    v-model="selectedQuarter"
+                                    :items="quarterOptions"
+                                    item-title="title"
+                                    item-value="value"
+                                    label="ไตรมาส"
+                                    density="compact"
+                                    variant="outlined"
+                                    hide-details
+                                ></v-select>
+                            </v-col>
+                            <v-col cols="12" md="4">
+                                <v-select
+                                    v-model="selectedMonths"
+                                    :items="monthOptions"
+                                    item-title="title"
+                                    item-value="value"
+                                    label="เดือน (เลือกได้หลายเดือน)"
+                                    multiple
+                                    chips
+                                    closable-chips
+                                    density="compact"
+                                    variant="outlined"
+                                    hide-details
+                                ></v-select>
+                            </v-col>
+                        </v-row>
+                    </v-card-text>
+                </v-card>
+            </v-col>
+        </v-row>
+
+        <v-row class="mt-4">
+            <v-col cols="12" sm="6" md="3">
+                <v-card
+                    class="clickable-card"
+                    :variant="activeMetric === 'units' ? 'tonal' : 'elevated'"
+                    elevation="2"
+                    @click="activeMetric = 'units'"
+                    :color="activeMetric === 'units' ? 'primary' : undefined"
+                >
+                    <v-card-text class="pa-5">
+                        <div class="d-flex align-center ga-4">
+                            <v-btn icon color="primary" variant="elevated" elevation="0" density="default">
+                                <v-icon icon="mdi-home-group" size="24"></v-icon>
+                            </v-btn>
+                            <div>
+                                <h4 class="text-h4" :class="{ 'text-grey': loading }">
+                                    {{ loading ? '...' : formattedSummary.units }}
+                                </h4>
+                                <p class="text-subtitle-1 text-grey-darken-1 mt-1">จำนวนหลัง (รวม)</p>
                             </div>
                         </div>
-                        <div class="v-card-text pa-5">
-                            <div class="d-flex align-center ga-4"><button type="button"
-                                    class="v-btn v-btn--elevated v-btn--icon v-theme--BLUE_THEME v-btn--density-default v-btn--size-default v-btn--variant-elevated bg-primary elevation-0"
-                                    dark=""><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"
-                                        viewBox="0 0 24 24">
-                                        <path fill="currentColor"
-                                            d="M11.25 18a.75.75 0 0 0 1.5 0v-3a.75.75 0 0 0-1.5 0z" />
-                                        <path fill="currentColor" fill-rule="evenodd"
-                                            d="M12 1.25c-.708 0-1.351.203-2.05.542c-.674.328-1.454.812-2.427 1.416L5.456 4.491c-.92.572-1.659 1.03-2.227 1.465c-.589.45-1.041.91-1.368 1.507c-.326.595-.472 1.229-.543 1.978c-.068.725-.068 1.613-.068 2.726v1.613c0 1.904 0 3.407.153 4.582c.156 1.205.486 2.178 1.23 2.947c.747.773 1.697 1.119 2.875 1.282c1.14.159 2.598.159 4.434.159h4.116c1.836 0 3.294 0 4.434-.159c1.177-.163 2.128-.509 2.876-1.282c.743-.769 1.073-1.742 1.23-2.947c.152-1.175.152-2.678.152-4.582v-1.613c0-1.113 0-2-.068-2.726c-.07-.75-.217-1.383-.543-1.978c-.327-.597-.78-1.056-1.368-1.507c-.568-.436-1.306-.893-2.227-1.465l-2.067-1.283c-.973-.604-1.753-1.088-2.428-1.416c-.697-.34-1.34-.542-2.049-.542M8.28 4.504c1.015-.63 1.73-1.072 2.327-1.363c.581-.283.993-.391 1.393-.391s.812.108 1.393.391c.598.29 1.312.733 2.327 1.363l2 1.241c.961.597 1.636 1.016 2.14 1.402c.489.375.77.684.963 1.036c.193.353.306.766.365 1.398c.061.648.062 1.465.062 2.623v1.521c0 1.97-.002 3.376-.14 4.443c-.136 1.048-.393 1.656-.82 2.099c-.425.439-1.003.7-2.004.839c-1.026.142-2.379.144-4.286.144h-4c-1.908 0-3.26-.002-4.286-.144c-1.001-.14-1.579-.4-2.003-.84c-.428-.442-.685-1.05-.82-2.098c-.14-1.067-.141-2.472-.141-4.443v-1.521c0-1.158 0-1.975.062-2.623c.059-.632.172-1.045.365-1.398c.193-.352.474-.661.964-1.036c.503-.386 1.178-.805 2.139-1.402z"
-                                            clip-rule="evenodd" />
-                                    </svg></button>
-                                <div class="">
-                                    <h2 class="text-h4">{{ totalUnit.toLocaleString('th-TH') }}</h2>
-                                    <p class="textSecondary mt-1 text-15">จำนวนหลัง</p>
-                                </div>
-                            </div>
-                        </div><!----><!----><span class="v-card__underlay"></span>
-                    </div>
-                </div>
-                <div class="v-col-sm-6 v-col-lg-3 v-col-12 py-0 mb-3" revenuecard="[object Object]">
-                    <div
-                        class="v-card v-theme--BLUE_THEME v-card--density-default elevation-10 rounded-md v-card--variant-elevated">
-                        <!---->
-                        <div class="v-card__loader">
-                            <div class="v-progress-linear v-theme--BLUE_THEME v-locale--is-ltr" role="progressbar"
-                                aria-hidden="true" aria-valuemin="0" aria-valuemax="100"
-                                style="top: 0px; height: 0px; --v-progress-linear-height: 2px;"><!---->
-                                <div class="v-progress-linear__background"></div>
-                                <div class="v-progress-linear__buffer" style="width: 0%;"></div>
-                                <div class="v-progress-linear__indeterminate">
-                                    <div class="v-progress-linear__indeterminate long"></div>
-                                    <div class="v-progress-linear__indeterminate short"></div>
-                                </div><!---->
-                            </div>
-                        </div><!----><!---->
-                        <div class="v-card-text pa-5">
-                            <div class="d-flex align-center ga-4"><button type="button"
-                                    class="v-btn v-btn--elevated v-btn--icon v-theme--BLUE_THEME v-btn--density-default v-btn--size-default v-btn--variant-elevated bg-secondary elevation-0"
-                                    dark=""><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"
-                                        viewBox="0 0 24 24">
-                                        <g fill="none" stroke="currentColor" stroke-width="1.5">
-                                            <path
-                                                d="M2 14c0-3.771 0-5.657 1.172-6.828S6.229 6 10 6h4c3.771 0 5.657 0 6.828 1.172S22 10.229 22 14s0 5.657-1.172 6.828S17.771 22 14 22h-4c-3.771 0-5.657 0-6.828-1.172S2 17.771 2 14Zm14-8c0-1.886 0-2.828-.586-3.414S13.886 2 12 2s-2.828 0-3.414.586S8 4.114 8 6" />
-                                            <path stroke-linecap="round"
-                                                d="M12 17.333c1.105 0 2-.746 2-1.666S13.105 14 12 14s-2-.746-2-1.667c0-.92.895-1.666 2-1.666m0 6.666c-1.105 0-2-.746-2-1.666m2 1.666V18m0-8v.667m0 0c1.105 0 2 .746 2 1.666" />
-                                        </g>
-                                    </svg></button>
-                                <div class="">
-                                    <h2 class="text-h4">{{ totalValue.toLocaleString('th-TH') }}</h2>
-                                    <p class="textSecondary mt-1 text-15">มูลค่ารวม</p>
-                                </div>
-                            </div>
-                        </div><!----><!----><span class="v-card__underlay"></span>
-                    </div>
-                </div>
-                <div class="v-col-sm-6 v-col-lg-3 v-col-12 py-0 mb-3" revenuecard="[object Object]">
-                    <div
-                        class="v-card v-theme--BLUE_THEME v-card--density-default elevation-10 rounded-md v-card--variant-elevated">
-                        <!---->
-                        <div class="v-card__loader">
-                            <div class="v-progress-linear v-theme--BLUE_THEME v-locale--is-ltr" role="progressbar"
-                                aria-hidden="true" aria-valuemin="0" aria-valuemax="100"
-                                style="top: 0px; height: 0px; --v-progress-linear-height: 2px;"><!---->
-                                <div class="v-progress-linear__background"></div>
-                                <div class="v-progress-linear__buffer" style="width: 0%;"></div>
-                                <div class="v-progress-linear__indeterminate">
-                                    <div class="v-progress-linear__indeterminate long"></div>
-                                    <div class="v-progress-linear__indeterminate short"></div>
-                                </div><!---->
-                            </div>
-                        </div><!----><!---->
-                        <div class="v-card-text pa-5">
-                            <div class="d-flex align-center ga-4"><button type="button"
-                                    class="v-btn v-btn--elevated v-btn--icon v-theme--BLUE_THEME v-btn--density-default v-btn--size-default v-btn--variant-elevated bg-error elevation-0"
-                                    dark=""><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"
-                                        viewBox="0 0 24 24">
-                                        <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5">
-                                            <path
-                                                d="M11 2c-4.055.007-6.178.107-7.536 1.464C2 4.928 2 7.285 2 11.999s0 7.071 1.464 8.536C4.93 21.999 7.286 21.999 12 21.999s7.071 0 8.535-1.464c1.358-1.357 1.457-3.48 1.464-7.536" />
-                                            <path stroke-linejoin="round"
-                                                d="m13 11l9-9m0 0h-5.344M22 2v5.344M21 3l-9 9m0 0h4m-4 0V8" />
-                                        </g>
-                                    </svg></button>
-                                <div class="">
-                                    <h2 class="text-h4"> {{ totalArea.toLocaleString('th-TH') }}</h2>
-                                    <p class="textSecondary mt-1 text-15">พื้นที่ใช้สอย</p>
-                                </div>
-                            </div>
-                        </div><!----><!----><span class="v-card__underlay"></span>
-                    </div>
-                </div>
-                <div class="v-col-sm-6 v-col-lg-3 v-col-12 py-0 mb-3" revenuecard="[object Object]">
-                    <div
-                        class="v-card v-theme--BLUE_THEME v-card--density-default elevation-10 rounded-md v-card--variant-elevated">
-                        <!---->
-                        <div class="v-card__loader">
-                            <div class="v-progress-linear v-theme--BLUE_THEME v-locale--is-ltr" role="progressbar"
-                                aria-hidden="true" aria-valuemin="0" aria-valuemax="100"
-                                style="top: 0px; height: 0px; --v-progress-linear-height: 2px;"><!---->
-                                <div class="v-progress-linear__background"></div>
-                                <div class="v-progress-linear__buffer" style="width: 0%;"></div>
-                                <div class="v-progress-linear__indeterminate">
-                                    <div class="v-progress-linear__indeterminate long"></div>
-                                    <div class="v-progress-linear__indeterminate short"></div>
-                                </div><!---->
-                            </div>
-                        </div><!----><!---->
-                        <div class="v-card-text pa-5">
-                            <div class="d-flex align-center ga-4"><button type="button"
-                                    class="v-btn v-btn--elevated v-btn--icon v-theme--BLUE_THEME v-btn--density-default v-btn--size-default v-btn--variant-elevated bg-warning elevation-0"
-                                    dark=""> <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"
-                                        viewBox="0 0 24 24">
-                                        <g fill="none" stroke="currentColor" stroke-width="1.5">
-                                            <path
-                                                d="M4.979 9.685C2.993 8.891 2 8.494 2 8s.993-.89 2.979-1.685l2.808-1.123C9.773 4.397 10.767 4 12 4s2.227.397 4.213 1.192l2.808 1.123C21.007 7.109 22 7.506 22 8s-.993.89-2.979 1.685l-2.808 1.124C14.227 11.603 13.233 12 12 12s-2.227-.397-4.213-1.191z" />
-                                            <path
-                                                d="m5.766 10l-.787.315C2.993 11.109 2 11.507 2 12s.993.89 2.979 1.685l2.808 1.124C9.773 15.603 10.767 16 12 16s2.227-.397 4.213-1.191l2.808-1.124C21.007 12.891 22 12.493 22 12s-.993-.89-2.979-1.685L18.234 10" />
-                                            <path
-                                                d="m5.766 14l-.787.315C2.993 15.109 2 15.507 2 16s.993.89 2.979 1.685l2.808 1.124C9.773 19.603 10.767 20 12 20s2.227-.397 4.213-1.192l2.808-1.123C21.007 16.891 22 16.494 22 16c0-.493-.993-.89-2.979-1.685L18.234 14" />
-                                        </g>
-                                    </svg></button>
-                                <div class="">
-                                    <h2 class="text-h4">
-                                        {{ formatNumber(parseFloat(averagePricePerSqm), true) }}
-                                    </h2>
-                                    <p class="textSecondary mt-1 text-15">ราคาเฉลี่ย/ตร.ม.</p>
-                                </div>
-                            </div>
-                        </div> <span class="v-card__underlay"></span>
-                    </div>
-                </div>
-            </div>
+                    </v-card-text>
+                </v-card>
+            </v-col>
 
-        </v-col>
-        <v-col cols="12" sm="12" lg="8">
-            <SalesOverview />
-        </v-col>
-        <v-col cols="12" sm="12" lg="4">
-            <TotalSales />
-        </v-col>
+            <v-col cols="12" sm="6" md="3">
+                <v-card
+                    class="clickable-card"
+                    :color="activeMetric === 'value' ? 'primary' : undefined"
+                    :variant="activeMetric === 'value' ? 'tonal' : 'elevated'"
+                    elevation="2"
+                    @click="activeMetric = 'value'"
+                >
+                    <v-card-text class="pa-5">
+                        <div class="d-flex align-center ga-4">
+                            <v-btn icon color="secondary" variant="elevated" elevation="0" density="default">
+                                <v-icon icon="mdi-cash-multiple" size="24"></v-icon>
+                            </v-btn>
+                            <div>
+                                <h4 class="text-h4" :class="{ 'text-grey': loading }">
+                                    {{ loading ? '...' : formattedSummary.value }}
+                                </h4>
+                                <p class="text-subtitle-1 text-grey-darken-1 mt-1">จำนวนมูลค่า (รวม)</p>
+                            </div>
+                        </div>
+                    </v-card-text>
+                </v-card>
+            </v-col>
 
-        <v-col cols="12" sm="12" lg="12">
-            <VCard elevation="10">
+            <v-col cols="12" sm="6" md="3">
+                <v-card
+                    class="clickable-card"
+                    :variant="activeMetric === 'area' ? 'tonal' : 'elevated'"
+                    elevation="2"
+                    @click="activeMetric = 'area'"
+                    :color="activeMetric === 'area' ? 'primary' : undefined"
+                >
+                    <v-card-text class="pa-5">
+                        <div class="d-flex align-center ga-4">
+                            <v-btn icon color="error" variant="elevated" elevation="0" density="default">
+                                <v-icon icon="mdi-floor-plan" size="24"></v-icon>
+                            </v-btn>
+                            <div>
+                                <h4 class="text-h4" :class="{ 'text-grey': loading }">
+                                    {{ loading ? '...' : formattedSummary.area }}
+                                </h4>
+                                <p class="text-subtitle-1 text-grey-darken-1 mt-1">พื้นที่ใช้สอย (รวม)</p>
+                            </div>
+                        </div>
+                    </v-card-text>
+                </v-card>
+            </v-col>
 
-                <v-card-text>
-                    <TheActivityTimeline />
-                </v-card-text>
-            </VCard>
-        </v-col>
-    </v-row>
+            <v-col cols="12" sm="6" md="3">
+                <v-card
+                    class="clickable-card"
+                    :variant="activeMetric === 'valuePerSqm' ? 'tonal' : 'elevated'"
+                    elevation="2"
+                    @click="activeMetric = 'valuePerSqm'"
+                    :color="activeMetric === 'valuePerSqm' ? 'primary' : undefined"
+                >
+                    <v-card-text class="pa-5">
+                        <div class="d-flex align-center ga-4">
+                            <v-btn icon color="warning" variant="elevated" elevation="0" density="default">
+                                <v-icon icon="mdi-chart-bar" size="24"></v-icon>
+                            </v-btn>
+                            <div>
+                                <h4 class="text-h4" :class="{ 'text-grey': loading }">
+                                    {{ loading ? '...' : formattedSummary.valuePerSqm }}
+                                </h4>
+                                <p class="text-subtitle-1 text-grey-darken-1 mt-1">มูลค่าเฉลี่ย / ตร.ม.</p>
+                            </div>
+                        </div>
+                    </v-card-text>
+                </v-card>
+            </v-col>
+        </v-row>
+
+        <v-row class="mt-4">
+            <v-col cols="12">
+                <v-card elevation="2">
+                    <v-card-title class="pa-4">
+                        <h3 class="card-title mb-1">
+                            {{ mainGraphTitle }}
+                        </h3>
+                        <h5 class="card-subtitle" style="text-align: left">
+                            {{ chartUnitSubtitle }}
+                        </h5>
+                    </v-card-title>
+
+                    <v-divider></v-divider>
+
+                    <v-card-text style="min-height: 365px">
+                        <v-skeleton-loader v-if="loading" type="image" height="350"></v-skeleton-loader>
+
+                        <VueApexCharts
+                            v-else-if="!loading && monthlyChartLabels.length > 0"
+                            :options="chartOptions"
+                            :series="mainGraphSeries"
+                            height="350"
+                            :key="activeMetric"
+                        />
+                        <div
+                            v-else-if="!loading && monthlyChartLabels.length === 0"
+                            class="d-flex align-center justify-center text-grey-darken-1"
+                            style="height: 350px"
+                        >
+                            ไม่พบข้อมูลสำหรับตัวกรองที่คุณเลือก
+                        </div>
+                    </v-card-text>
+                </v-card>
+            </v-col>
+        </v-row>
+        
+        <v-row class="mt-4">
+            <v-col cols="12">
+                <v-card elevation="2">
+                   <v-card-title class="pa-4">
+                        <h3 class="card-title mb-1">
+                            ข้อมูลเปรียบเทียบรายภูมิภาค
+                        </h3>
+                        <h5 class="card-subtitle" style="text-align: left;">
+                            {{ regionalTableSubtitle }}
+                        </h5>
+                    </v-card-title>
+                    <v-divider></v-divider>
+
+                    <v-card-text>
+                       <v-data-table-virtual
+    :headers="regionalTableHeaders"
+    :items="regionalTableData"
+    :loading="loadingRegional"
+    :items-per-page="10"
+    class="elevation-0"
+    density="compact"
+    
+
+   
+>
+  
+                            <template v-slot:item.current_period="{ item }">
+                                <span class="text-end d-block">{{ item.current_period.toLocaleString('th-TH', { 
+                                    maximumFractionDigits: (activeMetric === 'units' || activeMetric === 'area') ? 0 : 2 
+                                }) }}</span>
+                            </template>
+                            <template v-slot:item.cytd="{ item }">
+                                <span class="text-end d-block">{{ item.cytd.toLocaleString('th-TH', { 
+                                    maximumFractionDigits: (activeMetric === 'units' || activeMetric === 'area') ? 0 : 2 
+                                }) }}</span>
+                            </template>
+                            <template v-slot:item.pytd="{ item }">
+                                <span class="text-end d-block">{{ item.pytd.toLocaleString('th-TH', { 
+                                    maximumFractionDigits: (activeMetric === 'units' || activeMetric === 'area') ? 0 : 2 
+                                }) }}</span>
+                            </template>
+
+                            <template v-slot:item.yoy_change="{ item }">
+                                <span :class="['font-weight-bold', getPercentageColor(item.yoy_change)]">
+                                    {{ formatPercentage(item.yoy_change) }}
+                                </span>
+                            </template>
+                            
+                            <template v-slot:item.mom_change="{ item }">
+                                <span :class="['font-weight-bold', getPercentageColor(item.mom_change)]">
+                                    {{ formatPercentage(item.mom_change) }}
+                                </span>
+                            </template>
+
+                            <template v-slot:item.ytd_change="{ item }">
+                                <span :class="['font-weight-bold', getPercentageColor(item.ytd_change)]">
+                                    {{ formatPercentage(item.ytd_change) }}
+                                </span>
+                            </template>
+                            
+                            <template v-slot:no-data>
+                                <div class="pa-4 text-center text-grey">
+                                    ไม่พบข้อมูลรายภูมิภาคสำหรับตัวกรองที่คุณเลือก
+                                </div>
+                            </template>
+
+                        </v-data-table-virtual>
+                    </v-card-text>
+                </v-card>
+            </v-col>
+        </v-row>
+
+    </v-container>
 </template>
 
+<style scoped>
+.clickable-card {
+    cursor: pointer;
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+/* นี่คือ effect ตอน hover ครับ */
+.clickable-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+</style>

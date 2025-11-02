@@ -81,6 +81,16 @@ const MainRoutes = {
             path:'/ui/repost_admin',
             component: () => import('@/views/components/repost_admin.vue')
         }
+        , {
+            name:'repost_hba',
+            path:'/ui/repost_hba',
+            component: () => import('@/views/components/repost_hba.vue')
+        }
+            , {
+            name:'Quarterly_Value_Report',
+            path:'/ui/quarterly_value_report',
+            component: () => import('@/components/dashboard/Quarterly_Value_Report.vue')
+        }
 
 
 

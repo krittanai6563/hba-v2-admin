@@ -1,16 +1,15 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 
-const currentYear = new Date().getFullYear() + 543;
+const currentDate = new Date();
+const currentYear = currentDate.getFullYear() + 543;
 
 const userId = localStorage.getItem('user_id');
 const userRole = localStorage.getItem('user_role') || 'user'; 
 
-const summaryData = ref<Record<string, Record<string, Record<string, number>>>>({});
-
-const visibleYears = computed(
-    () => Array.from({ length: 4 }, (_, i) => (currentYear - 3 + i).toString()) 
-);
+// แก้ไขปัญหา TSX Ambiguity โดยเพิ่มเครื่องหมาย ,
+type SummaryData = Record<string, Record<string, Record<string, number>>>; 
+const summaryData = ref<SummaryData>({});
 
 const priceRanges = ['ไม่เกิน 2.50 ล้านบาท', '2.51 - 5 ล้านบาท', '5.01 - 10 ล้านบาท', '10.01 - 20 ล้านบาท', '20.01 ล้านขึ้นไป'];
 
@@ -23,16 +22,72 @@ const typeMap: Record<(typeof dataTypes)[number], 'unit' | 'value' | 'area' | 'p
     'ราคาเฉลี่ย/ตร.ม.': 'price_per_sqm'
 };
 
+const monthsThaiFull = [
+    "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+    "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
+];
+
+type VisibleMonth = {
+    header: string;
+    dataKey: string;
+    year: string;
+    month: string;
+};
+
+const visibleMonths = computed((): VisibleMonth[] => {
+    const monthsArray: VisibleMonth[] = [];
+    const numMonths = 4;
+    const currentMonthIndex = currentDate.getMonth(); 
+    
+    for (let i = numMonths - 1; i >= 0; i--) {
+        const date = new Date(currentDate.getFullYear(), currentMonthIndex - i, 1);
+        const year = date.getFullYear() + 543;
+        const monthNum = date.getMonth(); 
+        const yearKey = year.toString();
+        const monthKey = (monthNum + 1).toString();
+        
+        monthsArray.push({
+            header: `${monthsThaiFull[monthNum]} ${yearKey}`, 
+            dataKey: `${yearKey}-${monthKey}`, 
+            year: yearKey,
+            month: monthKey
+        });
+    }
+    return monthsArray;
+});
+
+const tableTitleRange = computed(() => {
+    const range = visibleMonths.value;
+    if (range.length < 4) return 'ข้อมูลสรุป 4 เดือนล่าสุด';
+    
+    const start = range[0];
+    const end = range[3];
+
+    if (start.year !== end.year) {
+         return `ข้อมูลรวมย้อนหลัง (${start.header} - ${end.header})`;
+    }
+
+    return `ข้อมูลรวมย้อนหลัง (${start.header.split(' ')[0]} - ${end.header})`;
+});
+
+
 const fetchSummary = async () => {
     if (!userId) return;
+    
+    const firstMonth = visibleMonths.value[0];
+    const lastMonth = visibleMonths.value[3];
+    
     try {
         const res = await fetch(' https://uat.hba-sales.org/backend/sales_overview.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 user_id: userId,
-                year: currentYear,
-                role: userRole
+                role: userRole,
+                start_month: firstMonth.month, 
+                start_year: firstMonth.year,
+                end_month: lastMonth.month,
+                end_year: lastMonth.year,
             })
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -53,14 +108,22 @@ const formatNumber = (value: number, isDecimal: boolean = false): string => {
 };
 
 const getRowTotal = (label: string, type: 'unit' | 'value' | 'area' | 'price_per_sqm'): string => {
-    let total = visibleYears.value.reduce((sum: number, year: string) => {
-        return sum + (summaryData.value[year]?.[label]?.[type] || 0);
+    let total = visibleMonths.value.reduce((sum: number, monthObj) => {
+        return sum + (summaryData.value[monthObj.dataKey]?.[label]?.[type] || 0);
     }, 0);
 
     const isDecimal = type === 'price_per_sqm';
 
     if (isDecimal) {
-        total = Math.floor(total * 100) / 100;
+        if (type === 'price_per_sqm') {
+             const totalValue = visibleMonths.value.reduce((sum, monthObj) => sum + (summaryData.value[monthObj.dataKey]?.[label]?.['value'] || 0), 0);
+             const totalArea = visibleMonths.value.reduce((sum, monthObj) => sum + (summaryData.value[monthObj.dataKey]?.[label]?.['area'] || 0), 0);
+             
+             total = totalArea > 0 ? totalValue / totalArea : 0;
+
+        } else {
+             total = Math.floor(total * 100) / 100;
+        }
     }
 
     return formatNumber(total, isDecimal);
@@ -75,8 +138,8 @@ const getRowTotal = (label: string, type: 'unit' | 'value' | 'area' | 'price_per
         <v-col cols="12">
             <div class="v-row">
                 <div class="v-col-md-8 text-left">
-                    <h3 class="card-title">สรุปยอดเซ็นสัญญารวมย้อนหลัง</h3>
-                    <h5 class="card-subtitle">ข้อมูลรวมทั้งปี แสดงย้อนหลัง 4 ปี</h5>
+                    <h3 class="card-title">สรุปยอดเซ็นสัญญารวมย้อนหลัง 4 เดือน</h3>
+                    <h5 class="card-subtitle">{{ tableTitleRange }}</h5>
                 </div>
             </div>
 
@@ -88,15 +151,15 @@ const getRowTotal = (label: string, type: 'unit' | 'value' | 'area' | 'price_per
                                 <th class="text-h6">Financial Summary</th>
                                 <th
                                     class="text-h6"
-                                    :colspan="visibleYears.length + 1"
+                                    :colspan="visibleMonths.length + 1"
                                     style="text-align: center; border-bottom: 2px solid #00a6d4"
                                 >
-                                    รวมข้อมูลรายปีย้อนหลัง 4 ปี
+                                    รวมข้อมูลรายเดือนย้อนหลัง 4 เดือน
                                 </th>
                             </tr>
                             <tr>
                                 <th class="text-h6"></th>
-                                <th v-for="year in visibleYears" :key="year" class="text-h6" style="text-align: center">{{ year }}</th>
+                                <th v-for="monthObj in visibleMonths" :key="monthObj.dataKey" class="text-h6" style="text-align: center">{{ monthObj.header }}</th>
                                 <th class="text-h6" style="background-color: #fff3e0">รวม</th>
                             </tr>
                         </thead>
@@ -114,9 +177,9 @@ const getRowTotal = (label: string, type: 'unit' | 'value' | 'area' | 'price_per
                                     <td>
                                         <h6 class="text-subtitle-1">{{ type }}</h6>
                                     </td>
-                                    <td v-for="year in visibleYears" :key="year + '-' + type">
+                                    <td v-for="monthObj in visibleMonths" :key="monthObj.dataKey + '-' + type">
                                         <h6 class="text-subtitle-1 text-center">
-                                            {{ formatNumber(summaryData[year]?.[label]?.[typeMap[type]] || 0) }}
+                                            {{ formatNumber(summaryData[monthObj.dataKey]?.[label]?.[typeMap[type]] || 0) }}
                                         </h6>
                                     </td>
                                     <td style="background-color: #fff3e0">
@@ -147,5 +210,3 @@ const getRowTotal = (label: string, type: 'unit' | 'value' | 'area' | 'price_per
     font-size: 13px;
 }
 </style>
-
-

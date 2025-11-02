@@ -9,6 +9,11 @@ const props = defineProps<{
   quarter: number
 }>()
 
+// เพิ่ม ref 3 ตัวนี้เข้าไป
+const snackbar = ref(false);
+const snackbarText = ref('');
+const snackbarColor = ref('success');
+
 const tab = ref(0);
 
 const userId = localStorage.getItem('user_id');
@@ -211,9 +216,9 @@ function validateRowValue(row: any) {
     }
 
     // ตรวจสอบข้อผิดพลาดในช่องพื้นที่ใช้สอย
-    if (row.touched && row.area !== null && row.area !== undefined && row.area !== 0 && (row.area < 10000 || row.area > 50000)) {
-        messages.push('พื้นที่ใช้สอยต้องอยู่ระหว่าง 10,000 - 50,000 ตร.ม.');
-    }
+    // if (row.touched && row.area !== null && row.area !== undefined && row.area !== 0 && (row.area < 10000 || row.area > 50000)) {
+    //     messages.push('พื้นที่ใช้สอยต้องอยู่ระหว่าง 10,000 - 50,000 ตร.ม.');
+    // }
 
     return messages;
 
@@ -243,15 +248,36 @@ function validateUnit(row: any) {
 function validateArea(row: any) {
     const messages: string[] = [];
 
-    if (row.touched && row.area !== null && row.area !== undefined && row.area !== 0 && (row.area < 10000 || row.area > 50000)) {
-        messages.push('โปรดตรวจสอบข้อมูลอีกครั้ง');
+    if (row.touched && row.area !== null && row.area !== undefined && row.area !== 0) {
+        if (row.label.includes('ไม่เกิน 2.50 ล้านบาท')) {
+            if (row.area < 50 || row.area > 3000) {
+                messages.push('พื้นที่ใช้สอยต้องอยู่ระหว่าง 50 - 3,000 ตร.ม.');
+            }
+        } else if (row.label.includes('2.51 - 5 ล้านบาท')) {
+            if (row.area < 100 || row.area > 6000) {
+                messages.push('พื้นที่ใช้สอยต้องอยู่ระหว่าง 100 - 6,000 ตร.ม.');
+            }
+        } else if (row.label.includes('5.01 - 10 ล้านบาท')) {
+            if (row.area < 150 || row.area > 12000) {
+                messages.push('พื้นที่ใช้สอยต้องอยู่ระหว่าง 150 - 12,000 ตร.ม.');
+            }
+        } else if (row.label.includes('10.01 - 20 ล้านบาท')) {
+            if (row.area < 200 || row.area > 24000) {
+                messages.push('พื้นที่ใช้สอยต้องอยู่ระหว่าง 200 - 24,000 ตร.ม.');
+            }
+        } else if (row.label.includes('20.01 ล้านขึ้นไป')) {
+            if (row.area < 40 || row.area > 8000) {
+                messages.push('พื้นที่ใช้สอยต้องอยู่ระหว่าง 40 - 8,000 ตร.ม.');
+            }
+        }
     }
 
     return messages;
 }
 
 function isFormCompleted() {
-    return regionsData.value.every((region) => {
+    // ตรวจสอบว่ามีอย่างน้อยหนึ่งภูมิภาคที่กรอกข้อมูลแล้ว
+    return regionsData.value.some((region) => {
         return region.contractStatus === 'none' || region.rows.some((row) => row.unit > 0 && row.value > 0 && row.area > 0);
     });
 }
@@ -289,7 +315,7 @@ const saveContractData = async () => {
     };
 
     try {
-        const response = await fetch('https://uat.hba-sales.org/package//backend/submit_contract.php', {
+        const response = await fetch('https://uat.hba-sales.org/backend/submit_contract.php', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -300,17 +326,25 @@ const saveContractData = async () => {
         const result = await response.json();
         console.log('Backend response:', result);
 
-        alert('บันทึกข้อมูลสำเร็จ!');
+      
         dialogOpen.value = false;
+        snackbarText.value = 'บันทึกข้อมูลสำเร็จ!';
+        snackbarColor.value = 'success';
+        snackbar.value = true;
 
-        // ทำการรีเฟรชหน้าเว็บไซต์เพื่อแสดงข้อมูลที่อัปเดต
-        window.location.reload(); // รีเฟรชหน้า
+       
+        setTimeout(() => {
+            window.location.reload();
+        }, 2000);
+
     } catch (error) {
-        alert('เกิดข้อผิดพลาดขณะบันทึกข้อมูล');
+       
+        snackbarText.value = 'เกิดข้อผิดพลาดขณะบันทึกข้อมูล';
+        snackbarColor.value = 'error';
+        snackbar.value = true;
         console.error(error);
     }
 };
-
 const isEditMode = ref(false);
 
 const loadContractData = async (month: MonthItem) => {
@@ -404,99 +438,22 @@ function formatNumberOnBlur(event: any, row: any, field: string) {
 
 function clearComma(event: any) {
     event.target.value = event.target.value.replace(/,/g, '');
-}
-
-
-// ดึงข้อมูล รายงานยอดเซ็นสัญญา มาแสดง
-
-
-
-// // ประกาศ priceRanges และ dataTypes ใน setup()
-// const priceRanges = ['ไม่เกิน 2.50 ล้านบาท', '2.51 - 5 ล้านบาท', '5.01 - 10 ล้านบาท', '10.01 - 20 ล้านบาท', '20.01 ล้านขึ้นไป'];
-// const dataTypes = ['จำนวนหลัง', 'มูลค่ารวม', 'พื้นที่ใช้สอย', 'ราคาเฉลี่ย/ตร.ม.'] as const;
-
-// const typeMap: Record<(typeof dataTypes)[number], 'unit' | 'value' | 'area' | 'price_per_sqm'> = {
-//   'จำนวนหลัง': 'unit',
-//   'มูลค่ารวม': 'value',
-//   'พื้นที่ใช้สอย': 'area',
-//   'ราคาเฉลี่ย/ตร.ม.': 'price_per_sqm'
-// };
-
-// // ฟังก์ชัน exportToExcel
-// const exportToExcel = () => {
-//   const wb = XLSX.utils.book_new();
-
-//   // สร้างหัวตาราง
-//   const headers = ['ประเภท', 'กรุงเทพปริมณฑล', 'ภาคเหนือ', 'ภาคตะวันออกเฉียงเหนือ', 'ภาคกลาง', 'ภาคตะวันตก', 'ภาคใต้', 'ภาคตะวันตก', 'รวม'];
-//   const aoa: (string | number)[][] = [headers];
-
-//   // ฟังก์ชันสำหรับการสร้างแผ่นงานตามเดือน
-//   monthsList.value.forEach((month) => {
-//     const monthData = regionsData.value;
-
-//     // สร้างแผ่นงานใหม่สำหรับเดือน
-//     let sheetName = `${month.label} ไตรมาส ${month.quarter} ปี ${selectedBuddhistYear.value}`;
-
-//     // ตัดชื่อแผ่นงานให้ไม่เกิน 31 ตัวอักษร
-//     sheetName = sheetName.length > 31 ? sheetName.substring(0, 31) : sheetName;
-
-//     const monthSheet: (string | number)[][] = [];
-
-//     // เพิ่มหัวตารางสำหรับแผ่นงาน
-//     monthSheet.push(headers);
-
-//     // เพิ่มหมวดหมู่และข้อมูลแต่ละหมวดหมู่ในเดือนนั้น
-//     priceRanges.forEach((priceRange) => {
-//       monthSheet.push([`${priceRange}`, ...Array(headers.length - 2).fill('')]); // ผสานเซลล์หัวข้อหมวดหมู่
-
-//       // เพิ่มข้อมูลสำหรับแต่ละประเภท (จำนวนหลัง, มูลค่ารวม, พื้นที่ใช้สอย, ราคาเฉลี่ย)
-//       dataTypes.forEach((type) => {
-//         const row = [type];
-//         monthData.forEach((region) => {
-//           const val = region.rows.find((row) => row.label === priceRange);
-//           row.push(val ? val[typeMap[type]] : 0);
-//         });
-//         row.push(row.slice(1).reduce((sum, val) => sum + (val || 0), 0)); // รวมคอลัมน์
-//         monthSheet.push(row);
-//       });
-
-//       monthSheet.push([]); 
-//     });
-
-//     // สร้างแผ่นงาน
-//     const sheet = XLSX.utils.aoa_to_sheet(monthSheet);
-
-//     // กำหนดการผสานเซลล์
-//     sheet['!merges'] = [
-//       { s: { r: 1, c: 0 }, e: { r: 1, c: headers.length - 1 } } // ผสานเซลล์หมวดหมู่
-//     ];
-
-  
-//     XLSX.utils.book_append_sheet(wb, sheet, sheetName);
-//   });
-
-//   XLSX.writeFile(wb, `ContractData_${selectedBuddhistYear.value}.xlsx`);
-// };
- 
- 
+} 
 </script>
 
 
 <template>
+    <v-snackbar v-model="snackbar" :color="snackbarColor" :timeout="3000" location="top right">
+        {{ snackbarText }}
+        <template v-slot:actions>
+            <v-btn color="white" variant="text" @click="snackbar = false">
+                ปิด
+            </v-btn>
+        </template>
+    </v-snackbar>
     <v-row>
         <v-card elevation="10">
             <v-card-text>
-                <!-- <div class="v-row">
-                    <div class="v-col-md-0 v-col-lg-8 v-col-2">
-                        <div class="v-col-md-0 text-left">
-                            <h3 class="card-title">บันทึกข้อมูลยอดเซ็นสัญญา</h3>
-                            <h5 class="card-subtitle">ข้อมูลแสดงเป็นรายเดือน</h5>
-                        </div>
-                    </div>
-                    <div class="v-col-md-2 v-col-lg-4 v-col-2 text-right">
-                        <v-select label="เลือกปี" :items="yearOptions" v-model="selectedBuddhistYear" />
-                    </div>
-                </div> -->
 
                  <div class="v-row">
             <div class="v-col-md-6 v-col-12">
@@ -511,9 +468,6 @@ function clearComma(event: any) {
             <div class="v-col-md-6 v-col-12 text-right">
               <div class="d-flex  justify-end v-col-md-12 v-col-lg-12 v-col-12 ">
                 <v-select v-model="selectedBuddhistYear" label="เลือกปี" :items="yearOptions" class="mr-4"></v-select>
-                <!-- <v-btn class=" text-primary   v-btn--size-large ">
-                  <div class="text-none font-weight-regular muted">Export to CSV</div>
-                </v-btn> -->
               </div>
             </div>
           </div>
@@ -526,8 +480,8 @@ function clearComma(event: any) {
                         ยอดเซ็นสัญญาไตรมาส {{ quarter }}
                     </h3>
 
-                    <v-expansion-panels accordion :model-value="getPanelModel(quarter)[0]"
-                        @update:model-value="(val) => updatePanelModel(quarter, val)">
+                   <v-expansion-panels accordion :model-value="getPanelModel(quarter)[0]"
+    @update:model-value="(val: unknown) => updatePanelModel(quarter, val)">
                         <v-expansion-panel v-for="month in monthsList.filter((m) => m.quarter === quarter)"
                             :key="month.index"
                             :hide-actions="month.monthNumber === currentMonthNumber && selectedBuddhistYear === currentYear">

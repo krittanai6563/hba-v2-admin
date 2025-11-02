@@ -3,42 +3,41 @@ import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 const checkbox = ref(true);
-
 const email = ref(''); 
 const password = ref('');
 const errorMessage = ref(''); 
-
 const router = useRouter();
 
+const mainAlert = ref(false);
+const mainAlertType = ref<'success' | 'error'>('success');
+const mainAlertText = ref('');
+
+const forgotDialog = ref(false);
+const email_reset = ref('');
+const loading_reset = ref(false);
+const message_reset = ref(''); 
+
+
 const handleLogin = async () => {
+  mainAlert.value = false;
   errorMessage.value = ''; 
-
   try {
-const response = await fetch('https://uat.hba-sales.org/backend/login.php', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ email: email.value, password: password.value })
-});
-
-const raw = await response.text();
-console.log('RAW Response:', raw);
-
-const data = JSON.parse(raw); 
-
-  if (data.message === 'Login successful') {
-  sessionStorage.setItem('user', JSON.stringify({
-    ...data.user,
-    loginTime: Date.now()
-  }));
-
-  localStorage.setItem('user_id', data.user.id);
-  localStorage.setItem('user_role', data.user.role); 
-  await new Promise(resolve => setTimeout(resolve, 300));
-
-  router.push({ name: 'Dashboard' });
-}
-else {
-    
+    const response = await fetch('https://uat.hba-sales.org/backend/login.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email.value, password: password.value })
+    });
+    const raw = await response.text();
+    console.log('RAW Response:', raw);
+    const data = JSON.parse(raw); 
+    if (data.message === 'Login successful') {
+      sessionStorage.setItem('user', JSON.stringify({ ...data.user, loginTime: Date.now() }));
+      localStorage.setItem('user_id', data.user.id);
+      localStorage.setItem('user_role', data.user.role); 
+      await new Promise(resolve => setTimeout(resolve, 300));
+      router.push({ name: 'Dashboard' });
+    } else {
+      
       if (data.message === 'Invalid username' || data.message === 'Invalid credentials') { 
         errorMessage.value = 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง';
       } else if (data.message === 'Incorrect password') {
@@ -63,38 +62,86 @@ const isAdmin = (): boolean => {
 };
 
 
+
+const openForgotDialog = () => {
+  mainAlert.value = false;
+  message_reset.value = '';
+  email_reset.value = email.value; 
+  forgotDialog.value = true;
+};
+
+
+const handleRequestReset = async () => {
+  loading_reset.value = true;
+  message_reset.value = ''; 
+
+  try {
+    const response = await fetch('https://uat.hba-sales.org/backend/request_password_reset.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    
+      body: JSON.stringify({ email: email_reset.value })
+    });
+    
+    const data = await response.json();
+
+    if (data.status === 'success') {
+      forgotDialog.value = false; 
+      
+      mainAlertType.value = 'success';
+      mainAlertText.value = 'เราได้ส่งลิงก์สำหรับตั้งรหัสผ่านใหม่ไปที่อีเมลของคุณแล้ว';
+      mainAlert.value = true;
+
+    } else {
+      message_reset.value = data.message || 'ไม่สามารถดำเนินการได้';
+    }
+  } catch (error) {
+    console.error('Error requesting reset:', error);
+    message_reset.value = 'เกิดข้อผิดพลาดในการเชื่อมต่อ (อาจเกิดจาก Debugging)';
+  } finally {
+    loading_reset.value = false;
+  }
+};
 </script>
 
 <template>
   
+  <v-alert
+    v-model="mainAlert"
+    :type="mainAlertType"
+    closable
+    class="mb-4"
+    density="comfortable"
+  >
+    {{ mainAlertText }}
+  </v-alert>
+
   <form @submit.prevent="handleLogin" autocomplete="on">
-   
     <v-row class="d-flex mb-3">
       <v-col cols="12">
         <v-label class="mb-1">Email</v-label>
         <v-text-field
-  v-model="email"
-  id="email"
-  autocomplete="username"
-  required
-  variant="outlined"
-  hide-details
-  color="primary"
-  type="email"
-/>
+          v-model="email"
+          id="email"
+          autocomplete="username"
+          required
+          variant="outlined"
+          hide-details
+          color="primary"
+          type="email"
+        />
       </v-col>
       <v-col cols="12">
         <v-label class="mb-1">Password</v-label>
-      <v-text-field
-  v-model="password"
-  id="password"
-  autocomplete="current-password"
-  variant="outlined"
-  type="password"
-  hide-details
-  color="primary"
-/>
-
+        <v-text-field
+          v-model="password"
+          id="password"
+          autocomplete="current-password"
+          variant="outlined"
+          type="password"
+          hide-details
+          color="primary"
+        />
       </v-col>
       <v-col cols="12" class="pt-0">
         <div class="d-flex flex-wrap align-center ml-n2">
@@ -102,17 +149,84 @@ const isAdmin = (): boolean => {
             <template v-slot:label class="text-body-1">จำรหัสผ่านฉันไว้</template>
           </v-checkbox>
           <div class="ml-sm-auto">
-            <RouterLink to="/"
-              class="text-primary text-decoration-none text-body-1 opacity-1 font-weight-medium">ลืมรหัสผ่าน</RouterLink>
+            <a 
+              href="#"
+              @click.prevent="openForgotDialog"
+              class="text-primary text-decoration-none text-body-1 opacity-1 font-weight-medium"
+            >
+              ลืมรหัสผ่าน
+            </a>
           </div>
         </div>
       </v-col>
       <v-col cols="12" class="pt-0">
-        <v-btn type="submit" color="primary" size="large" block flat  class="w-100">เข้าสู่ระบบ</v-btn>
+        <v-btn type="submit" color="primary" size="large" block flat class="w-100">เข้าสู่ระบบ</v-btn>
         <p v-if="errorMessage" class="error mt-2">{{ errorMessage }}</p>
       </v-col>
     </v-row>
   </form>
+
+  <v-dialog v-model="forgotDialog" max-width="500px">
+    <v-card>
+      <v-card-title class="pa-4">
+        <span class="text-h5">ลืมรหัสผ่าน</span>
+      </v-card-title>
+
+      <v-card-text class="pa-4">
+        <p class="mb-6">
+          กรุณากรอกอีเมลที่ใช้ลงทะเบียน
+          เราจะส่งลิงก์สำหรับตั้งรหัสผ่านใหม่ไปให้
+        </p>
+        <v-form @submit.prevent="handleRequestReset">
+          <v-row>
+            <v-col cols="12">
+              <v-label class="mb-1">Email</v-label>
+              <v-text-field
+                v-model="email_reset"
+                required
+                variant="outlined"
+                type="email"
+                color="primary"
+                hide-details="auto"
+                autofocus
+              />
+            </v-col>
+          </v-row>
+
+          <v-alert
+            v-if="message_reset"
+            type="error"
+            density="compact"
+            class="mt-4"
+          >
+            {{ message_reset }}
+          </v-alert>
+
+        </v-form>
+      </v-card-text>
+
+      <v-card-actions class="pa-4">
+        <v-spacer></v-spacer>
+        <v-btn 
+          color="grey-darken-1" 
+          variant="text" 
+          @click="forgotDialog = false"
+        >
+          ยกเลิก
+        </v-btn>
+        <v-btn
+          color="primary"
+          variant="flat"
+          :loading="loading_reset"
+          :disabled="loading_reset"
+          @click="handleRequestReset"
+        >
+          ส่งคำขอ
+        </v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
+
 </template>
 
 
@@ -122,3 +236,5 @@ const isAdmin = (): boolean => {
   font-size: 0.875rem; 
 }
 </style>
+
+
