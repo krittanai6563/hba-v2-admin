@@ -13,10 +13,12 @@ const fetchErrorContractStatus = ref(''); // (!!! ใหม่ !!!)
 const userId = localStorage.getItem('user_id');
 const userRole = ref(localStorage.getItem('user_role') || 'user');
 
+const isAdmin = computed(() => userRole.value === 'admin' || userRole.value === 'master');
+
 // --- (!!! เพิ่ม: ส่วนคำนวณวันที่ Notification !!!) ---
 const months = [
-    "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
-    "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
+    "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+    "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
 ];
 const currentDate = new Date();
 const currentYear = currentDate.getFullYear() + 543; // ปีพุทธศักราช
@@ -26,15 +28,15 @@ const currentMonthName = months[currentMonth];
 
 const nextMonthDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1);
 const nextMonthName = months[nextMonthDate.getMonth()];
-const nextMonthYearDisplay = nextMonthDate.getFullYear() + 543; 
+const nextMonthYearDisplay = nextMonthDate.getFullYear() + 543;
 
 const deadlineDay = 10;
 
 const remainingDays = computed(() => {
-    if (currentDay > deadlineDay) {
-        return 0;
-    }
-    return deadlineDay - currentDay;
+    if (currentDay > deadlineDay) {
+        return 0;
+    }
+    return deadlineDay - currentDay;
 });
 // --- (!!! สิ้นสุดส่วนที่เพิ่ม: วันที่ !!!) ---
 
@@ -42,94 +44,94 @@ const remainingDays = computed(() => {
 // --- (!!! เพิ่ม: Computed Property สำหรับ Notification ข้อมูล !!!) ---
 const userNotification = computed(() => {
     // แสดงเฉพาะสำหรับบทบาท 'user'
-    if (userRole.value !== 'user') {
-        return { message: '', type: '', title: '' }; 
-    }
+    if (userRole.value !== 'user') {
+        return { message: '', type: '', title: '' };
+    }
 
     // 1. Submitted
-   if (statusMessage.value === 'กรอกข้อมูลเรียบร้อย') {
-        return {
-            message: `คุณได้ทำการกรอกข้อมูลประจำเดือน ${currentMonthName} ${currentYear} เรียบร้อยแล้ว`,
-            type: 'success',
-            title: 'สถานะการกรอกข้อมูล'
-        };
-    }
+    if (statusMessage.value === 'กรอกข้อมูลเรียบร้อย') {
+        return {
+            message: `คุณได้ทำการกรอกข้อมูลประจำเดือน ${currentMonthName} ${currentYear} เรียบร้อยแล้ว`,
+            type: 'success',
+            title: 'สถานะการกรอกข้อมูล'
+        };
+    }
 
     // 2. Not Submitted (ก่อนหรือตรงกับวันที่ 10)
-    if (currentDay <= deadlineDay) {
-        const days = remainingDays.value;
-        let message = '';
-        let type = 'warning'; 
-        if (days > 0) {
-            message = `เหลืออีก ${days} วัน ในการกรอกข้อมูล ก่อนวันที่ ${deadlineDay} ${currentMonthName} ${currentYear}`;
-            if (days <= 2) {
-                type = 'error';
-            }
-        } else { // วันที่ 10 พอดี
-            message = `ถึงกำหนดส่งข้อมูลวันนี้! กรุณากรอกข้อมูลก่อนสิ้นสุดวันที่ ${deadlineDay} ${currentMonthName} ${currentYear}`;
-            type = 'error'; 
-        }
-        return { message: message, type: type as 'warning' | 'error', title: 'กรุณากรอกข้อมูล' };
-    }
+    if (currentDay <= deadlineDay) {
+        const days = remainingDays.value;
+        let message = '';
+        let type = 'warning';
+        if (days > 0) {
+            message = `เหลืออีก ${days} วัน ในการกรอกข้อมูล ก่อนวันที่ ${deadlineDay} ${currentMonthName} ${currentYear}`;
+            if (days <= 2) {
+                type = 'error';
+            }
+        } else { // วันที่ 10 พอดี
+            message = `ถึงกำหนดส่งข้อมูลวันนี้! กรุณากรอกข้อมูลก่อนสิ้นสุดวันที่ ${deadlineDay} ${currentMonthName} ${currentYear}`;
+            type = 'error';
+        }
+        return { message: message, type: type as 'warning' | 'error', title: 'กรุณากรอกข้อมูล' };
+    }
 
     // 3. Not Submitted (หลังวันที่ 10)
-    if (currentDay > deadlineDay) {
-        const message = `เดือนนี้คุณไม่ได้กรอกข้อมูล กรุณายกยอดไปกรอกในเดือนถัดไป (${nextMonthName} ${nextMonthYearDisplay})`;
-        return { message: message, type: 'error',  title: 'การกรอกข้อมูลล่าช้า' };
-    }
+    if (currentDay > deadlineDay) {
+        const message = `เดือนนี้คุณไม่ได้กรอกข้อมูล กรุณายกยอดไปกรอกในเดือนถัดไป (${nextMonthName} ${nextMonthYearDisplay})`;
+        return { message: message, type: 'error', title: 'การกรอกข้อมูลล่าช้า' };
+    }
 
     // Fallback/Error
-    if (fetchErrorUserStatus.value) {
-         return { message: `ไม่สามารถตรวจสอบสถานะได้: ${fetchErrorUserStatus.value}`, type: 'error',  title: 'ข้อผิดพลาด' };
-    }
-    return { message: '', type: '', title: '' }; // Default
+    if (fetchErrorUserStatus.value) {
+        return { message: `ไม่สามารถตรวจสอบสถานะได้: ${fetchErrorUserStatus.value}`, type: 'error', title: 'ข้อผิดพลาด' };
+    }
+    return { message: '', type: '', title: '' }; // Default
 });
 
 // --- (!!! เพิ่ม: Computed Property สำหรับ Notification สัญญา !!!) ---
 const contractNotification = computed(() => {
-    // แสดงเฉพาะสำหรับบทบาท 'user'
-    if (userRole.value !== 'user') {
-        return { message: '', type: '', title: '' }; 
-    }
+    // แสดงเฉพาะสำหรับบทบาท 'user'
+    if (userRole.value !== 'user') {
+        return { message: '', type: '', title: '' };
+    }
 
     // 1. Submitted (สมมติว่าสถานะคือ 'กรอกสัญญาเรียบร้อย')
     // *** คุณต้องปรับ 'กรอกสัญญาเรียบร้อย' ให้ตรงกับค่าที่ Backend ส่งมา ***
-    if (contractStatusMessage.value === 'กรอกสัญญาเรียบร้อย') { 
-        return {
-            message: `คุณได้ทำการกรอกข้อมูลสัญญาประจำเดือน ${currentMonthName} ${currentYear} เรียบร้อยแล้ว`,
-            type: 'success',
-            title: 'สถานะการกรอกสัญญา'
-        };
-    }
+    if (contractStatusMessage.value === 'กรอกสัญญาเรียบร้อย') {
+        return {
+            message: `คุณได้ทำการกรอกข้อมูลสัญญาประจำเดือน ${currentMonthName} ${currentYear} เรียบร้อยแล้ว`,
+            type: 'success',
+            title: 'สถานะการกรอกสัญญา'
+        };
+    }
 
     // 2. Not Submitted (ก่อนหรือตรงกับวันที่ 10)
-    if (currentDay <= deadlineDay) {
-        const days = remainingDays.value;
-        let message = '';
-        let type = 'warning'; 
-        if (days > 0) {
-            message = `เหลืออีก ${days} วัน ในการกรอกข้อมูลสัญญา ก่อนวันที่ ${deadlineDay} ${currentMonthName} ${currentYear}`;
-            if (days <= 2) {
-                type = 'error';
-            }
-        } else { // วันที่ 10 พอดี
-            message = `ถึงกำหนดส่งข้อมูลสัญญาวันนี้! กรุณากรอกข้อมูลสัญญาก่อนสิ้นสุดวันที่ ${deadlineDay} ${currentMonthName} ${currentYear}`;
-            type = 'error'; 
-        }
-        return { message: message, type: type as 'warning' | 'error', title: 'กรุณากรอกข้อมูลสัญญา' };
-    }
+    if (currentDay <= deadlineDay) {
+        const days = remainingDays.value;
+        let message = '';
+        let type = 'warning';
+        if (days > 0) {
+            message = `เหลืออีก ${days} วัน ในการกรอกข้อมูลสัญญา ก่อนวันที่ ${deadlineDay} ${currentMonthName} ${currentYear}`;
+            if (days <= 2) {
+                type = 'error';
+            }
+        } else { // วันที่ 10 พอดี
+            message = `ถึงกำหนดส่งข้อมูลสัญญาวันนี้! กรุณากรอกข้อมูลสัญญาก่อนสิ้นสุดวันที่ ${deadlineDay} ${currentMonthName} ${currentYear}`;
+            type = 'error';
+        }
+        return { message: message, type: type as 'warning' | 'error', title: 'กรุณากรอกข้อมูลสัญญา' };
+    }
 
     // 3. Not Submitted (หลังวันที่ 10)
-    if (currentDay > deadlineDay) {
-        const message = `เดือนนี้คุณไม่ได้กรอกข้อมูลสัญญา กรุณายกยอดไปกรอกในเดือนถัดไป (${nextMonthName} ${nextMonthYearDisplay})`;
-        return { message: message, type: 'error',  title: 'การกรอกสัญญาล่าช้า' };
-    }
+    if (currentDay > deadlineDay) {
+        const message = `เดือนนี้คุณไม่ได้กรอกข้อมูลสัญญา กรุณายกยอดไปกรอกในเดือนถัดไป (${nextMonthName} ${nextMonthYearDisplay})`;
+        return { message: message, type: 'error', title: 'การกรอกสัญญาล่าช้า' };
+    }
 
     // Fallback/Error
-    if (fetchErrorContractStatus.value) {
-         return { message: `ไม่สามารถตรวจสอบสถานะสัญญาได้: ${fetchErrorContractStatus.value}`, type: 'error',  title: 'ข้อผิดพลาด' };
-    }
-    return { message: '', type: '', title: '' }; // Default
+    if (fetchErrorContractStatus.value) {
+        return { message: `ไม่สามารถตรวจสอบสถานะสัญญาได้: ${fetchErrorContractStatus.value}`, type: 'error', title: 'ข้อผิดพลาด' };
+    }
+    return { message: '', type: '', title: '' }; // Default
 });
 // --- (!!! สิ้นสุดส่วนที่เพิ่ม: Computed Notifications !!!) ---
 
@@ -147,12 +149,12 @@ const allMonthItems = [
     { title: 'กันยายน', value: 9 }, { title: 'ตุลาคม', value: 10 },
     { title: 'พฤศจิกายน', value: 11 }, { title: 'ธันวาคม', value: 12 }
 ];
-const selectedYear = ref(currentJsYear + 543); 
+const selectedYear = ref(currentJsYear + 543);
 const selectedQuarter = ref('all');
 const selectedMonths = ref<number[]>([]);
 const yearOptions = ref(
     Array.from({ length: 5 }, (_, i) => currentJsYear + 543 - i)
-); 
+);
 const quarterOptions = ref([
     { title: 'ทุกไตรมาส / ทุกเดือน', value: 'all' },
     { title: 'ไตรมาส 1 (ม.ค. - มี.ค.)', value: 'Q1' },
@@ -169,59 +171,59 @@ const monthlyValueData = ref<number[]>([]);
 const monthlyAreaData = ref<number[]>([]);
 const monthlyValuePerSqmData = ref<number[]>([]);
 const loadingRegional = ref(false);
-const regionalData = ref<any[]>([]); 
+const regionalData = ref<any[]>([]);
 type Metric = 'units' | 'value' | 'area' | 'valuePerSqm';
-const activeMetric = ref<Metric>('value'); 
+const activeMetric = ref<Metric>('value');
 // (--- จบส่วนโค้ดเดิม ---)
 
 
 // --- (!!! เพิ่ม: ฟังก์ชันดึงสถานะผู้ใช้ (ข้อมูลและสัญญา) !!!) ---
 // (ฟังก์ชันนี้จะเรียก API ที่ต่างจาก fetchData หลักของคุณ)
 const fetchUserStatus = async () => {
-    if (!userId) {
-        fetchErrorUserStatus.value = 'ไม่พบข้อมูลผู้ใช้';
-        statusMessage.value = ''; 
-        fetchErrorContractStatus.value = 'ไม่พบข้อมูลผู้ใช้';
-        contractStatusMessage.value = ''; 
-        return;
-    }
+    if (!userId) {
+        fetchErrorUserStatus.value = 'ไม่พบข้อมูลผู้ใช้';
+        statusMessage.value = '';
+        fetchErrorContractStatus.value = 'ไม่พบข้อมูลผู้ใช้';
+        contractStatusMessage.value = '';
+        return;
+    }
 
-    try {
-        const payload = {
-            user_id: userId,
-            buddhist_year: currentYear.toString(),
-            month_number: (currentMonth + 1).toString() // (1-12)
-        };
+    try {
+        const payload = {
+            user_id: userId,
+            buddhist_year: currentYear.toString(),
+            month_number: (currentMonth + 1).toString() // (1-12)
+        };
 
         // (!!! เรียก API เดิมที่ใช้เช็คสถานะ !!!)
-        const res = await fetch('https://uat.hba-sales.org/backend/data_and_email.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-        });
+        const res = await fetch('https://uat.hba-sales.org/backend/data_and_email.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
 
-        const data = await res.json();
-        console.log('API Response Data (Status):', data);
+        const data = await res.json();
+        console.log('API Response Data (Status):', data);
 
-        if (data.error) {
-            statusMessage.value = '';
-            fetchErrorUserStatus.value = data.error;
-            contractStatusMessage.value = '';
-            fetchErrorContractStatus.value = data.error;
-        } else {
-            statusMessage.value = data.status || 'กรอกข้อมูลเรียบร้อย'; 
-            fetchErrorUserStatus.value = '';
+        if (data.error) {
+            statusMessage.value = '';
+            fetchErrorUserStatus.value = data.error;
+            contractStatusMessage.value = '';
+            fetchErrorContractStatus.value = data.error;
+        } else {
+            statusMessage.value = data.status || 'กรอกข้อมูลเรียบร้อย';
+            fetchErrorUserStatus.value = '';
             // (!!! ใหม่: ดึงสถานะสัญญา (สมมติชื่อ field คือ 'contract_status') !!!)
-            contractStatusMessage.value = data.contract_status || ''; 
-            fetchErrorContractStatus.value = '';
-        }
-    } catch (err) {
-        console.error('Error fetching user status:', err);
-        fetchErrorUserStatus.value = 'ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้';
-        statusMessage.value = ''; 
-        fetchErrorContractStatus.value = 'ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้';
-        contractStatusMessage.value = '';
-    }
+            contractStatusMessage.value = data.contract_status || '';
+            fetchErrorContractStatus.value = '';
+        }
+    } catch (err) {
+        console.error('Error fetching user status:', err);
+        fetchErrorUserStatus.value = 'ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้';
+        statusMessage.value = '';
+        fetchErrorContractStatus.value = 'ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้';
+        contractStatusMessage.value = '';
+    }
 };
 // --- (!!! สิ้นสุดส่วนที่เพิ่ม: fetchUserStatus !!!) ---
 
@@ -234,30 +236,46 @@ const fetchData = async () => {
         monthlyChartLabels.value = []; monthlyUnitsData.value = [];
         monthlyValueData.value = []; monthlyAreaData.value = [];
         monthlyValuePerSqmData.value = [];
-        
-        regionalData.value = []; // (!!! เพิ่ม: เคลียร์ค่าตารางด้วย !!!)
-        return; 
+
+        regionalData.value = [];
+        return;
     }
-    
+
     // (B. สั่ง loading ทั้งคู่)
     loading.value = true;
     loadingRegional.value = true;
 
     try {
-        const yearAD = selectedYear.value - 543; 
-        const bodyPayload = JSON.stringify({
+        const yearAD = selectedYear.value - 543;
+
+        // --- (!!! นี่คือส่วนที่แก้ไข) ---
+
+        // 1. สร้าง payload เป็น Object (ยังไม่ stringify)
+        const payload: any = {
             year: yearAD,
-            months: selectedMonths.value.sort((a,b) => a - b) 
-        });
+            months: selectedMonths.value.sort((a, b) => a - b),
+            role: userRole.value
+        };
+
+        // 2. ตรวจสอบสิทธิ์ และ *เพิ่ม* user_id เข้าไปใน Object
+        if (!isAdmin.value && userId) {
+            payload.user_id = userId; // ถ้าไม่ใช่ Admin ให้ส่ง user_id ของตัวเอง
+        }
+
+        // 3. Stringify Object ที่สมบูรณ์แล้ว
+        const bodyPayload = JSON.stringify(payload);
         
+        // --- (!!! สิ้นสุดส่วนแก้ไข) ---
+
+
         // (C. สร้าง Promise สำหรับ API ทั้งสองตัว)
         const chartApiUrl = 'https://uat.hba-sales.org/backend/get_dashboard_data.php';
-        const regionalApiUrl = 'https://uat.hba-sales.org/backend/get_regional_comparison.php'; // (!!! API ใหม่ !!!)
+        const regionalApiUrl = 'https://uat.hba-sales.org/backend/get_regional_comparison.php';
 
         const fetchOptions = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: bodyPayload
+            body: bodyPayload // (ตอนนี้ bodyPayload จะมี user_id ถ้าจำเป็น)
         };
 
         const chartPromise = fetch(chartApiUrl, fetchOptions).then(res => res.json());
@@ -294,7 +312,6 @@ const fetchData = async () => {
         loadingRegional.value = false;
     }
 };
-
 // --- 4. Logic Filters & onMounted (!!! อัปเดต onMounted !!!) ---
 watch(selectedQuarter, (newQuarter) => {
     if (newQuarter === 'all') updateToAllMonths();
@@ -305,7 +322,7 @@ watch(selectedQuarter, (newQuarter) => {
 });
 watch(selectedYear, () => {
     if (selectedQuarter.value === 'all') updateToAllMonths();
-    else fetchData(); 
+    else fetchData();
 });
 watch(selectedMonths, () => {
     const sortedMonths = [...selectedMonths.value].sort((a, b) => a - b).join(',');
@@ -322,7 +339,7 @@ watch(selectedMonths, () => {
     fetchData();
 }, { deep: true });
 const updateToAllMonths = () => {
-    const yearAD = selectedYear.value - 543; 
+    const yearAD = selectedYear.value - 543;
     if (yearAD === currentJsYear) {
         selectedMonths.value = allMonthItems.map(m => m.value).filter(m => m <= currentJsMonth);
     } else if (yearAD > currentJsYear) {
@@ -332,17 +349,11 @@ const updateToAllMonths = () => {
     }
 };
 
-onMounted(() => { 
-    updateToAllMonths(); 
+onMounted(() => {
+    updateToAllMonths();
     fetchUserStatus(); // (!!! เพิ่มบรรทัดนี้ เพื่อเรียกเช็คสถานะตอนเปิดหน้า !!!)
 });
-// --- (จบส่วน Logic Filters) ---
 
-
-// --- 6. Computed Properties (โค้ดเดิมของคุณ) ---
-// ... (โค้ด computed เดิมทั้งหมดของคุณ) ...
-
-// (A) สำหรับการ์ดสรุป 4 ใบ (เหมือนเดิม)
 const formattedSummary = computed(() => ({
     units: summaryData.value.total_units.toLocaleString('th-TH') + ' หลัง',
     value: (summaryData.value.total_value / 1000000).toLocaleString('th-TH', { maximumFractionDigits: 2 }) + ' ล้าน',
@@ -357,24 +368,40 @@ const showMomColumn = computed(() => {
 
 // (C) Master List 7 ภูมิภาค (เหมือนเดิม)
 const allRegionsMasterList = [
-    'กรุงเทพปริมณฑล', 
-    'ภาคเหนือ', 
-    'ภาคตะวันออกเฉียงเหนือ', 
-    'ภาคกลาง', 
-    'ภาคตะวันออก', 
-    'ภาคใต้', 
+    'กรุงเทพปริมณฑล',
+    'ภาคเหนือ',
+    'ภาคตะวันออกเฉียงเหนือ',
+    'ภาคกลาง',
+    'ภาคตะวันออก',
+    'ภาคใต้',
     'ภาคตะวันตก'
 ];
 
+const buildTotalPayload = () => {
+    const payload: any = {
+        buddhist_year: selectedYear.value,
+        role: userRole.value,
+    };
+
+    // 👇 --- นี่คือส่วนสำคัญ --- 👇
+    if (!isAdmin.value && userId) {
+        payload.user_id = userId;
+    }
+    // 👆 --- ----------------- 👆
+    return payload;
+};
+
+// (ใน buildPreviousMonthPayload ก็มี Logic เดียวกัน)
+
 // (!!! D. อัปเดต: computed สำหรับตารางใหม่ (รองรับ 4 Metrics) !!!)
 const regionalTableData = computed(() => {
-    
+
     // 1. สร้าง Map จากข้อมูล API
     const dataMap = new Map(regionalData.value.map(row => [row.region, row]));
 
     // 2. วนลูปจาก "Master List"
     return allRegionsMasterList.map(regionName => {
-        
+
         const row = dataMap.get(regionName) || null;
 
         // 3. ถ้าไม่พบข้อมูล (row === null) -> คืนค่า 0
@@ -391,7 +418,7 @@ const regionalTableData = computed(() => {
             cp_units: parseFloat(row.cp_units),
             cp_value: parseFloat(row.cp_value),
             cp_area: parseFloat(row.cp_area),
-            
+
             pyp_units: parseFloat(row.pyp_units),
             pyp_value: parseFloat(row.pyp_value),
             pyp_area: parseFloat(row.pyp_area),
@@ -423,7 +450,7 @@ const regionalTableData = computed(() => {
             metricData = { cp: raw.cp_units, pyp: raw.pyp_units, cytd: raw.cytd_units, pytd: raw.pytd_units };
             // (!!! MoM เทียบ lsm (ล่าสุด) กับ mom (เดือนก่อน) !!!)
             momMetricData = { latest: raw.lsm_units, prev: raw.mom_units };
-        
+
         } else if (activeMetric.value === 'area') {
             metricData = { cp: raw.cp_area, pyp: raw.pyp_area, cytd: raw.cytd_area, pytd: raw.pytd_area };
             momMetricData = { latest: raw.lsm_area, prev: raw.mom_area };
@@ -448,14 +475,14 @@ const regionalTableData = computed(() => {
 
         // 6. (!!! อัปเดต !!!) คำนวณ %
         // (YoY และ YTD เหมือนเดิม - ใช้ metricData.cp)
-        const yoy_change = (metricData.pyp > 0) 
-            ? ((metricData.cp - metricData.pyp) / metricData.pyp) * 100 
+        const yoy_change = (metricData.pyp > 0)
+            ? ((metricData.cp - metricData.pyp) / metricData.pyp) * 100
             : (metricData.cp > 0 ? 100 : 0);
 
         const ytd_change = (metricData.pytd > 0)
             ? ((metricData.cytd - metricData.pytd) / metricData.pytd) * 100
             : (metricData.cytd > 0 ? 100 : 0);
-            
+
         // (!!! MoM ใช้ตรรกะใหม่: latest vs prev !!!)
         const mom_change = (momMetricData.prev > 0)
             ? ((momMetricData.latest - momMetricData.prev) / momMetricData.prev) * 100
@@ -481,7 +508,7 @@ const regionalTableHeaders = computed(() => {
     if (activeMetric.value === 'units') metricName = 'จำนวน (หลัง)';
     else if (activeMetric.value === 'area') metricName = 'พื้นที่ (ตร.ม.)';
     else if (activeMetric.value === 'valuePerSqm') metricName = 'มูลค่า/ตร.ม. (บาท)';
-    
+
     // (!!! ดึงปี พ.ศ. ปัจจุบันและปีที่แล้วมาใช้ !!!)
     const currentYearBE = selectedYear.value;     // เช่น 2568
     const previousYearBE = selectedYear.value - 1; // เช่น 2567
@@ -489,13 +516,13 @@ const regionalTableHeaders = computed(() => {
     const headers = [
         { title: 'ภูมิภาค', key: 'region', align: 'start', sortable: true, width: '25%' },
         // { title: `ยอดรวม (${metricName})`, key: 'current_period', align: 'end', sortable: true },
-        
+
         { title: 'MoM %', key: 'mom_change', align: 'end', sortable: true },
         { title: 'YoY %', key: 'yoy_change', align: 'end', sortable: true },
 
         { title: `YTD ${currentYearBE} `, key: 'cytd', align: 'end', sortable: true },
         { title: `YTD ${previousYearBE} `, key: 'pytd', align: 'end', sortable: true },
-        
+
         { title: 'YTD %', key: 'ytd_change', align: 'end', sortable: true },
     ] as const; // (!!! <-- เพิ่ม 'as const' ตรงนี้ครับ !!!)
 
@@ -517,7 +544,7 @@ const getPercentageColor = (value: number) => {
 // (!!! G. X-Axis Title (Dynamic) (เหมือนเดิม) !!!)
 const xaxisTitleText = computed(() => {
     if (selectedQuarter.value !== 'all') {
-        return 'เดือน'; 
+        return 'เดือน';
     }
     const yearAD = selectedYear.value - 543;
     let totalMonthsInSelectedYear;
@@ -538,100 +565,184 @@ const tableKey = computed(() => {
     return `${activeMetric.value}-${showMomColumn.value}`;
 });
 
-// (!!! H. Chart Options (เหมือนเดิม) !!!)
+// (!!! H. Chart Options (อัปเดต: กราฟผสม 2 แกน Y) !!!)
 const chartOptions = computed(() => {
-    
     let yAxisTitle = '';
-    let barColor = '#5D87FF'; 
-    
+    let barColor = '#43ced7';
+
     if (activeMetric.value === 'units') {
-         yAxisTitle = 'จำนวน (หลัง)';
-         barColor = '#5D87FF'; 
+        yAxisTitle = 'จำนวน (หลัง)';
+        barColor = '#1b84ff'; 
     }
     else if (activeMetric.value === 'area') {
-         yAxisTitle = 'พื้นที่ (ตร.ม.)';
-         barColor = '#E53935'; 
+        yAxisTitle = 'พื้นที่ (ตร.ม.)';
+        barColor = '#f8285a';
     }
     else if (activeMetric.value === 'valuePerSqm') {
-         yAxisTitle = 'มูลค่า/ตร.ม. (บาท)';
-         barColor = '#FFB22B'; 
+        yAxisTitle = 'มูลค่า/ตร.ม. (บาท)';
+        barColor = '#f6c000';
     }
     else if (activeMetric.value === 'value') {
         yAxisTitle = 'มูลค่า (บาท)';
-        barColor = '#5D87FF'; 
+        barColor = '#43ced7';
     }
-    
+
     return {
-        chart: { 
-            type: 'bar', 
-            height: 350, 
-            stacked: false,  
+        chart: {
+            type: 'line', 
+            height: 350,
+            stacked: false,
             fontFamily: 'inherit',
-            foreColor: '#adb0bb',
-            toolbar: { show: true } 
+            foreColor: '#6c757d',
+            toolbar: {
+                show: true,
+                tools: { download: true }
+            }
         },
-        stroke: { show: true, width: 2, colors: ['transparent'] },
+        
+        colors: [barColor, '#E53935'], 
+
+        plotOptions: {
+            bar: {
+                borderRadius: 4,
+                columnWidth: '70%',
+                dataLabels: {
+                    position: 'top',
+                },
+            },
+            line: {
+                curve: 'smooth',
+            }
+        },
+
+        dataLabels: {
+            enabled: true,
+            enabledOnSeries: [0], 
+            offsetY: -13,
+            style: {
+                fontSize: '10px',
+                
+            },
+            formatter: (val: number) => {
+                const value = Number(val);
+                if (value === 0) return ''; 
+                if (activeMetric.value === 'units') {
+                    return value.toLocaleString('th-TH', {
+                        minimumFractionDigits: 0,
+                        maximumFractionDigits: 0
+                    });
+                }
+                return value.toLocaleString('th-TH', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                });
+            },
+        },
+        
+        stroke: {
+            width: [0, 4], 
+            curve: 'smooth'
+        },
         grid: {
-            borderColor: '#e0e0e0',
-            strokeDashArray: 4
+            show: true,
+            strokeDashArray: 4,
+            borderColor: 'rgba(0, 0, 0, 0.1)'
         },
-        dataLabels: { 
-            enabled: false
-        },
-        xaxis: { 
+        xaxis: {
             categories: monthlyChartLabels.value,
-            title: { text: xaxisTitleText.value } 
+          
         },
-        yaxis: {
-            title: { text: yAxisTitle, show: false },
-            labels: {
-                formatter: (val: number) => {
-                    if (val >= 1000000) return (val / 1000000).toFixed(1) + 'M';
-                    if (val >= 1000) return (val / 1000).toFixed(0) + 'K';
-                    return val.toFixed(0);
+        
+        // (!!! 7. ตั้งค่า 2 แกน Y (อัปเดต labels) !!!)
+        yaxis: [
+            {
+                // (แกน Y ที่ 1 - สำหรับแท่ง)
+                seriesName: 'Data',
+               
+                labels: {
+                    show: false, // (!!! 1. เพิ่มบรรทัดนี้เพื่อปิดตัวเลขฝั่งซ้าย !!!)
+                    formatter: (val: number) => {
+                        if (val >= 1000000) return (val / 1000000).toFixed(1) + 'M';
+                        if (val >= 1000) return (val / 1000).toFixed(0) + 'K';
+                        return val.toFixed(0);
+                    }
+                }
+            },
+            {
+                // (แกน Y ที่ 2 - สำหรับเส้น %)
+                seriesName: '% เปลี่ยนแปลง (MoM)',
+                opposite: true, 
+            
+                labels: {
+                    show: false, // (!!! 2. เพิ่มบรรทัดนี้เพื่อปิดตัวเลขฝั่งขวา !!!)
+                    formatter: (val: number) => (val ? val.toFixed(0) + '%' : '0%')
+                }
+            }
+        ],
+        tooltip: {
+            theme: 'dark',
+            y: {
+                formatter: (val: number, { seriesIndex }: { seriesIndex: number }) => {
+                    if (val === undefined || val === null) return 'N/A';
+                    
+                    if (seriesIndex === 0) { // (Tooltip สำหรับแท่ง)
+                         return val.toLocaleString('th-TH', { maximumFractionDigits: 2 });
+                    }
+                    if (seriesIndex === 1) { // (Tooltip สำหรับเส้น)
+                        return val.toFixed(1) + ' %';
+                    }
+                    return val.toString();
                 }
             }
         },
-        tooltip: { 
-            y: { 
-                formatter: (val: number) => {
-                    if (val === undefined || val === null) return 'N/A';
-                    if (activeMetric.value === 'units') {
-                        return val.toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-                    }
-                    return val.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                }
-            } 
-        },
-        plotOptions: { 
-            bar: { 
-                horizontal: false, 
-                columnWidth: '60%', 
-                borderRadius: 4,
-            } 
-        },
         legend: {
-            show: true,
-            position: 'bottom', 
             horizontalAlign: 'center',
-            offsetY: 5 
+            position: 'bottom',
+            offsetY: 0
         }
     };
 });
 
+// (!!! K. (ใหม่) สร้างข้อมูลสำหรับเส้น % เปลี่ยนแปลง !!!)
+const monthlyPercentChangeData = computed(() => {
+    let sourceData: number[] = [];
+    
+    // เลือกข้อมูลดิบตาม Metric ที่ใช้งาน
+    if (activeMetric.value === 'units') sourceData = monthlyUnitsData.value;
+    else if (activeMetric.value === 'value') sourceData = monthlyValueData.value;
+    else if (activeMetric.value === 'area') sourceData = monthlyAreaData.value;
+    else if (activeMetric.value === 'valuePerSqm') sourceData = monthlyValuePerSqmData.value;
+
+    const changes: (number | null)[] = [null]; // เดือนแรกไม่มี % เทียบ
+    
+    for (let i = 1; i < sourceData.length; i++) {
+        const prev = sourceData[i - 1];
+        const curr = sourceData[i];
+        
+        if (prev > 0) {
+            const change = ((curr - prev) / prev) * 100;
+            changes.push(parseFloat(change.toFixed(1)));
+        } else if (curr > 0) {
+            changes.push(100); // ถ้าจาก 0 เป็นค่าบวก
+        } else {
+            changes.push(0); // ถ้าจาก 0 เป็น 0
+        }
+    }
+    return changes;
+});
 
 // (!!! I. Main Graph Title (เหมือนเดิม) !!!)
 const mainGraphTitle = computed(() => {
-    
+
     let baseTitle = '';
     switch (activeMetric.value) {
-        case 'units': 
+        case 'units':
             baseTitle = 'กราฟจำนวนหลัง';
             break;
-        case 'area': 
+        case 'area':
             baseTitle = 'กราฟพื้นที่ใช้สอย';
             break;
-        case 'valuePerSqm': 
+        case 'valuePerSqm':
             baseTitle = 'กราฟมูลค่าเฉลี่ย / ตร.ม.';
             break;
         case 'value':
@@ -656,7 +767,7 @@ const mainGraphTitle = computed(() => {
     if (selectedMonths.value.length === totalMonthsInSelectedYear || selectedMonths.value.length === 0) {
         return `${baseTitle}${yearText}`;
     }
-    
+
     if (selectedMonths.value.length > 0) {
         const sortedMonths = [...selectedMonths.value].sort((a, b) => a - b);
         const firstMonthValue = sortedMonths[0];
@@ -670,7 +781,7 @@ const mainGraphTitle = computed(() => {
         const lastMonthValue = sortedMonths[sortedMonths.length - 1];
         const lastMonth = monthOptions.value.find(m => m.value === lastMonthValue);
         const lastMonthName = lastMonth ? lastMonth.title : '';
-        
+
         return `${baseTitle} ประจำเดือน ${firstMonthName} - ${lastMonthName}${yearText}`;
     }
 
@@ -689,32 +800,41 @@ const chartUnitSubtitle = computed(() => {
         case 'value':
         default:
             // (!!! แก้ไขเล็กน้อยให้ตรงกับ Chart)
-            return '(หน่วย : บาท)'; 
+            return '(หน่วย : บาท)';
     }
 });
 
 // (!!! K. Main Graph Series (เหมือนเดิม) !!!)
+// (!!! K. Main Graph Series (ปรับปรุงใหม่) !!!)
+// (!!! K. Main Graph Series (อัปเดต: ส่ง 2 ซีรีส์) !!!)
 const mainGraphSeries = computed(() => {
+    let barSeries: { name: string; type: 'bar'; data: number[] } | null = null;
+
     switch (activeMetric.value) {
-        
         case 'units':
-            return [{ name: 'จำนวน (หลัง)', type: 'bar', data: monthlyUnitsData.value, color: '#5D87FF' }]; 
+            barSeries = { name: 'จำนวน (หลัง)', type: 'bar', data: monthlyUnitsData.value };
+            break;
         case 'area':
-            return [{ name: 'พื้นที่ (ตร.ม.)', type: 'bar', data: monthlyAreaData.value, color: '#E53935' }]; 
+            barSeries = { name: 'พื้นที่ (ตร.ม.)', type: 'bar', data: monthlyAreaData.value };
+            break;
         case 'valuePerSqm':
-            return [{ name: 'มูลค่า/ตร.ม. (บาท)', type: 'bar', data: monthlyValuePerSqmData.value, color: '#FFB22B' }]; 
-        
+            barSeries = { name: 'มูลค่า/ตร.ม. (บาท)', type: 'bar', data: monthlyValuePerSqmData.value };
+            break;
         case 'value':
         default:
-            return [
-                {
-                    name: 'มูลค่า (บาท)',
-                    type: 'bar', 
-                    data: monthlyValueData.value,
-                    color: '#5D87FF' // (สีฟ้า)
-                }
-            ];
+            barSeries = { name: 'มูลค่า (บาท)', type: 'bar', data: monthlyValueData.value };
+            break;
     }
+
+    // (!!! คืนค่า 2 ซีรีส์พร้อมกัน !!!)
+    return [
+        barSeries, // ซีรีส์ที่ 1 (แท่ง)
+        {
+            name: '% เปลี่ยนแปลง (MoM)', // ซีรีส์ที่ 2 (เส้น)
+            type: 'line',
+            data: monthlyPercentChangeData.value
+        }
+    ];
 });
 
 const regionalTableSubtitle = computed(() => {
@@ -733,61 +853,38 @@ const regionalTableSubtitle = computed(() => {
 </script>
 
 <template>
-    
+
     <v-container fluid>
-    
-         <v-row v-if="userNotification.message">
-        <v-col cols="12" sm="12" lg="12" class="pb-0">
-            <v-alert density="compact" :type="userNotification.type" :text="userNotification.message"
-                :title="userNotification.title"></v-alert>
-        </v-col>
-    </v-row>
+
+        <v-row v-if="userNotification.message">
+            <v-col cols="12" sm="12" lg="12" class="pb-0">
+                <v-alert density="compact" :type="userNotification.type" :text="userNotification.message"
+                    :title="userNotification.title"></v-alert>
+            </v-col>
+        </v-row>
 
 
         <v-row>
-           
-        
-            
+
+
+
             <v-col cols="12" sm="12" lg="12">
                 <v-card elevation="10">
                     <v-card-text>
                         <v-row>
                             <v-col cols="12" md="4">
-                                <v-select
-                                    v-model="selectedYear"
-                                    :items="yearOptions"
-                                    label="ปี (พ.ศ.)"
-                                    density="compact"
-                                    variant="outlined"
-                                    hide-details
-                                ></v-select>
+                                <v-select v-model="selectedYear" :items="yearOptions" label="ปี (พ.ศ.)"
+                                    density="compact" variant="outlined" hide-details></v-select>
                             </v-col>
                             <v-col cols="12" md="4">
-                                <v-select
-                                    v-model="selectedQuarter"
-                                    :items="quarterOptions"
-                                    item-title="title"
-                                    item-value="value"
-                                    label="ไตรมาส"
-                                    density="compact"
-                                    variant="outlined"
-                                    hide-details
-                                ></v-select>
+                                <v-select v-model="selectedQuarter" :items="quarterOptions" item-title="title"
+                                    item-value="value" label="ไตรมาส" density="compact" variant="outlined"
+                                    hide-details></v-select>
                             </v-col>
                             <v-col cols="12" md="4">
-                                <v-select
-                                    v-model="selectedMonths"
-                                    :items="monthOptions"
-                                    item-title="title"
-                                    item-value="value"
-                                    label="เดือน (เลือกได้หลายเดือน)"
-                                    multiple
-                                    chips
-                                    closable-chips
-                                    density="compact"
-                                    variant="outlined"
-                                    hide-details
-                                ></v-select>
+                                <v-select v-model="selectedMonths" :items="monthOptions" item-title="title"
+                                    item-value="value" label="เดือน (เลือกได้หลายเดือน)" multiple chips closable-chips
+                                    density="compact" variant="outlined" hide-details></v-select>
                             </v-col>
                         </v-row>
                     </v-card-text>
@@ -797,13 +894,8 @@ const regionalTableSubtitle = computed(() => {
 
         <v-row class="mt-4">
             <v-col cols="12" sm="6" md="3">
-                <v-card
-                    class="clickable-card"
-                    :variant="activeMetric === 'units' ? 'tonal' : 'elevated'"
-                    elevation="2"
-                    @click="activeMetric = 'units'"
-                    :color="activeMetric === 'units' ? 'primary' : undefined"
-                >
+                <v-card class="clickable-card" :variant="activeMetric === 'units' ? 'tonal' : 'elevated'" elevation="2"
+                    @click="activeMetric = 'units'" :color="activeMetric === 'units' ? 'primary' : undefined">
                     <v-card-text class="pa-5">
                         <div class="d-flex align-center ga-4">
                             <v-btn icon color="primary" variant="elevated" elevation="0" density="default">
@@ -821,13 +913,9 @@ const regionalTableSubtitle = computed(() => {
             </v-col>
 
             <v-col cols="12" sm="6" md="3">
-                <v-card
-                    class="clickable-card"
-                    :color="activeMetric === 'value' ? 'primary' : undefined"
-                    :variant="activeMetric === 'value' ? 'tonal' : 'elevated'"
-                    elevation="2"
-                    @click="activeMetric = 'value'"
-                >
+                <v-card class="clickable-card" :color="activeMetric === 'value' ? 'primary' : undefined"
+                    :variant="activeMetric === 'value' ? 'tonal' : 'elevated'" elevation="2"
+                    @click="activeMetric = 'value'">
                     <v-card-text class="pa-5">
                         <div class="d-flex align-center ga-4">
                             <v-btn icon color="secondary" variant="elevated" elevation="0" density="default">
@@ -845,13 +933,8 @@ const regionalTableSubtitle = computed(() => {
             </v-col>
 
             <v-col cols="12" sm="6" md="3">
-                <v-card
-                    class="clickable-card"
-                    :variant="activeMetric === 'area' ? 'tonal' : 'elevated'"
-                    elevation="2"
-                    @click="activeMetric = 'area'"
-                    :color="activeMetric === 'area' ? 'primary' : undefined"
-                >
+                <v-card class="clickable-card" :variant="activeMetric === 'area' ? 'tonal' : 'elevated'" elevation="2"
+                    @click="activeMetric = 'area'" :color="activeMetric === 'area' ? 'primary' : undefined">
                     <v-card-text class="pa-5">
                         <div class="d-flex align-center ga-4">
                             <v-btn icon color="error" variant="elevated" elevation="0" density="default">
@@ -869,13 +952,9 @@ const regionalTableSubtitle = computed(() => {
             </v-col>
 
             <v-col cols="12" sm="6" md="3">
-                <v-card
-                    class="clickable-card"
-                    :variant="activeMetric === 'valuePerSqm' ? 'tonal' : 'elevated'"
-                    elevation="2"
-                    @click="activeMetric = 'valuePerSqm'"
-                    :color="activeMetric === 'valuePerSqm' ? 'primary' : undefined"
-                >
+                <v-card class="clickable-card" :variant="activeMetric === 'valuePerSqm' ? 'tonal' : 'elevated'"
+                    elevation="2" @click="activeMetric = 'valuePerSqm'"
+                    :color="activeMetric === 'valuePerSqm' ? 'primary' : undefined">
                     <v-card-text class="pa-5">
                         <div class="d-flex align-center ga-4">
                             <v-btn icon color="warning" variant="elevated" elevation="0" density="default">
@@ -910,29 +989,21 @@ const regionalTableSubtitle = computed(() => {
                     <v-card-text style="min-height: 365px">
                         <v-skeleton-loader v-if="loading" type="image" height="350"></v-skeleton-loader>
 
-                        <VueApexCharts
-                            v-else-if="!loading && monthlyChartLabels.length > 0"
-                            :options="chartOptions"
-                            :series="mainGraphSeries"
-                            height="350"
-                            :key="activeMetric"
-                        />
-                        <div
-                            v-else-if="!loading && monthlyChartLabels.length === 0"
-                            class="d-flex align-center justify-center text-grey-darken-1"
-                            style="height: 350px"
-                        >
+                        <VueApexCharts v-else-if="!loading && monthlyChartLabels.length > 0" :options="chartOptions"
+                            :series="mainGraphSeries" height="350" :key="activeMetric" />
+                        <div v-else-if="!loading && monthlyChartLabels.length === 0"
+                            class="d-flex align-center justify-center text-grey-darken-1" style="height: 350px">
                             ไม่พบข้อมูลสำหรับตัวกรองที่คุณเลือก
                         </div>
                     </v-card-text>
                 </v-card>
             </v-col>
         </v-row>
-        
+
         <v-row class="mt-4">
             <v-col cols="12">
                 <v-card elevation="2">
-                   <v-card-title class="pa-4">
+                    <v-card-title class="pa-4">
                         <h3 class="card-title mb-1">
                             ข้อมูลเปรียบเทียบรายภูมิภาค
                         </h3>
@@ -943,28 +1014,22 @@ const regionalTableSubtitle = computed(() => {
                     <v-divider></v-divider>
 
                     <v-card-text>
-                       <v-data-table-virtual
-                            :headers="regionalTableHeaders"
-                            :items="regionalTableData"
-                            :loading="loadingRegional"
-                            :items-per-page="10"
-                            class="elevation-0"
-                            density="compact"
-                        >
-  
+                        <v-data-table-virtual :headers="regionalTableHeaders" :items="regionalTableData"
+                            :loading="loadingRegional" :items-per-page="10" class="elevation-0" density="compact">
+
                             <template v-slot:item.current_period="{ item }">
-                                <span class="text-end d-block">{{ item.current_period.toLocaleString('th-TH', { 
-                                    maximumFractionDigits: (activeMetric === 'units' || activeMetric === 'area') ? 0 : 2 
+                                <span class="text-end d-block">{{ item.current_period.toLocaleString('th-TH', {
+                                    maximumFractionDigits: (activeMetric === 'units' || activeMetric === 'area') ? 0 : 2
                                 }) }}</span>
                             </template>
                             <template v-slot:item.cytd="{ item }">
-                                <span class="text-end d-block">{{ item.cytd.toLocaleString('th-TH', { 
-                                    maximumFractionDigits: (activeMetric === 'units' || activeMetric === 'area') ? 0 : 2 
+                                <span class="text-end d-block">{{ item.cytd.toLocaleString('th-TH', {
+                                    maximumFractionDigits: (activeMetric === 'units' || activeMetric === 'area') ? 0 : 2
                                 }) }}</span>
                             </template>
                             <template v-slot:item.pytd="{ item }">
-                                <span class="text-end d-block">{{ item.pytd.toLocaleString('th-TH', { 
-                                    maximumFractionDigits: (activeMetric === 'units' || activeMetric === 'area') ? 0 : 2 
+                                <span class="text-end d-block">{{ item.pytd.toLocaleString('th-TH', {
+                                    maximumFractionDigits: (activeMetric === 'units' || activeMetric === 'area') ? 0 : 2
                                 }) }}</span>
                             </template>
 
@@ -973,7 +1038,7 @@ const regionalTableSubtitle = computed(() => {
                                     {{ formatPercentage(item.yoy_change) }}
                                 </span>
                             </template>
-                            
+
                             <template v-slot:item.mom_change="{ item }">
                                 <span :class="['font-weight-bold', getPercentageColor(item.mom_change)]">
                                     {{ formatPercentage(item.mom_change) }}
@@ -985,7 +1050,7 @@ const regionalTableSubtitle = computed(() => {
                                     {{ formatPercentage(item.ytd_change) }}
                                 </span>
                             </template>
-                            
+
                             <template v-slot:no-data>
                                 <div class="pa-4 text-center text-grey">
                                     ไม่พบข้อมูลรายภูมิภาคสำหรับตัวกรองที่คุณเลือก
@@ -1006,6 +1071,7 @@ const regionalTableSubtitle = computed(() => {
     cursor: pointer;
     transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
 }
+
 /* นี่คือ effect ตอน hover ครับ */
 .clickable-card:hover {
     transform: translateY(-4px);

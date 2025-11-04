@@ -9,6 +9,10 @@ const currentMonth = new Date().getMonth() + 1;
 const selectedYear = ref(currentYear.toString());
 const yearOptions = Array.from({ length: 7 }, (_, i) => (currentYear - i).toString());
 
+// 👇 เพิ่มตัวแปรสำหรับเลือกพื้นที่
+const regions = ['ทั้งหมด', 'กรุงเทพปริมณฑล', 'ภาคเหนือ', 'ภาคตะวันออกเฉียงเหนือ', 'ภาคกลาง', 'ภาคตะวันออก', 'ภาคใต้', 'ภาคตะวันตก'];
+const selectedRegion = ref('ทั้งหมด'); 
+
 const summaryData = ref<Record<string, Record<string, Record<string, number>>>>({});
 const userId = localStorage.getItem('user_id');
 const userRole = localStorage.getItem('user_role') || 'user';
@@ -41,7 +45,8 @@ const fetchSummary = async () => {
       body: JSON.stringify({
         user_id: userId,
         year: selectedYear.value,
-        role: userRole
+        role: userRole,
+        region: selectedRegion.value 
       })
 
 
@@ -54,6 +59,8 @@ const fetchSummary = async () => {
 };
 
 watch(selectedYear, fetchSummary);
+// 👇 เพิ่ม Watcher สำหรับ selectedRegion
+watch(selectedRegion, fetchSummary);
 onMounted(fetchSummary);
 
 const visibleQuarters = computed(() => {
@@ -61,7 +68,16 @@ const visibleQuarters = computed(() => {
   return ['Q1', 'Q2', 'Q3', 'Q4'].filter((_, i) => i < maxQ).map(q => `${q} ${selectedYear.value}`);
 });
 
+// ✅ STRUCTURAL FIX: 1. สร้าง Categories ใหม่ที่มีช่องว่างหน้า/หลัง
+const chartCategories = computed(() => {
+    return ['', ...visibleQuarters.value, '']; 
+});
 
+// ✅ STRUCTURAL FIX: 2. Helper function สำหรับการเพิ่ม null หน้า/หลังให้กับชุดข้อมูล (แท่งกราฟจะถูกซ่อน)
+const padSeries = (data: number[]) => [null, ...data, null];
+
+
+// 👇 โค้ด chartOptions ที่ปรับปรุงแล้ว
 const chartOptions = ref({
     chart: {
         height: 350,
@@ -86,11 +102,18 @@ const chartOptions = ref({
                 },
             },
         ],
+        offsetX: 0, 
+        padding: {
+            left: 0,  
+            right: 0, 
+            top: 0,
+            bottom: 0,
+        },
     },
     plotOptions: {
         bar: {
             borderRadius: 4,
-            columnWidth: '40%', 
+            columnWidth: '50%', 
             dataLabels: {
                 position: 'top',
                 offsetY: 0,
@@ -111,12 +134,17 @@ const chartOptions = ref({
         style: {
             fontSize: '10px',
         },
-        formatter: (value: number) => {  
-            return value >= 1000 ? value.toLocaleString('th-TH') : value.toString();
+        // ✅ FIX: ตรวจสอบ null ก่อนเรียกใช้ toLocaleString
+        formatter: (value: any) => {  
+            if (value === null) return ''; // <-- แก้ไข: ถ้าเป็น null ให้คืนค่าว่าง
+            
+            if (value >= 1000000) return (value / 1000000).toFixed(1) + 'M';
+            if (value >= 1000) return (value / 1000).toFixed(1) + 'K';
+            return value.toLocaleString('th-TH', { maximumFractionDigits: 1 });
         }
     },
     stroke: {
-        width: [2, 2, 4],  
+        width: 2,  
         curve: 'smooth',
     },
     grid: {
@@ -125,62 +153,101 @@ const chartOptions = ref({
         borderColor: 'rgba(0, 0, 0, 0.1)',  
     },
     xaxis: {
-        categories: visibleQuarters.value,  
+        categories: chartCategories.value,  
         labels: {
             rotate: -45, 
             style: {
                 fontSize: '12px', 
                 colors: '#6c757d',  
             },
+            formatter: (val: any) => { 
+                if (!val || typeof val !== 'string') {
+                    return '';
+                }
+                return val.startsWith('Q') ? val : ''; 
+            },
         },
+        axisBorder: {
+            show: true,
+            color: '#6c757d',
+            height: 1,
+            width: '100%',
+            offsetX: 0, 
+            offsetY: 0
+        },
+        axisTicks: {
+            show: true,
+            borderType: 'solid',
+            color: '#6c757d',
+            height: 6,
+            offsetX: 0, 
+            offsetY: 0
+        }
     },
-    yaxis: [
+    
+   yaxis: [
         {
             seriesName: 'จำนวนหลัง',
-            axisTicks: { show: false },
-            axisBorder: {
-                show: false,
-                color: '#008FFB',
-            },
+            axisTicks: { show: true },
+            axisBorder: { show: false },
+            offsetX: -40, 
             labels: {
-                show: false,  
-                style: {
-                    colors: '#008FFB',  
+                show: false, 
+                // ✅ FIX: ตรวจสอบ null ก่อนเรียกใช้ toLocaleString
+                formatter: (val: any) => {
+                    if (val === null) return ''; 
+                    return Math.round(val).toLocaleString();
                 },
             },
-            tooltip: {
-                enabled: false,
-            },
-        },
-        {
-            seriesName: 'พื้นที่ใช้สอย',
-            opposite: false,
-            axisTicks: { show: false },
-            axisBorder: {
-                show: false,
-                color: '#00E396',
-            },
-            labels: {
-                show: false,  
-                style: {
-                    colors: '#00E396',  
-                },
-            },
+          
         },
         {
             seriesName: 'มูลค่ารวม',
-            opposite: false,
+            opposite: true, 
             axisTicks: { show: true },
-            axisBorder: {
-                show: false,
-                color: '#FEB019',
-            },
+            axisBorder: { show: false },
+            offsetX: 0, 
             labels: {
-                show: false,  
-                style: {
-                    colors: '#FEB019',  
+                show: false, 
+                // ✅ FIX: ตรวจสอบ null ก่อนเรียกใช้ toLocaleString
+                formatter: (val: any) => {
+                    if (val === null) return '';
+                    return (val / 1000000).toLocaleString('th-TH', { maximumFractionDigits: 1 }) + 'M';
                 },
             },
+           
+        },
+        {
+            seriesName: 'พื้นที่ใช้สอย',
+            opposite: false, 
+            axisTicks: { show: true },
+            axisBorder: { show: false },
+            offsetX: -80, 
+            labels: {
+                show: false, 
+                // ✅ FIX: ตรวจสอบ null ก่อนเรียกใช้ toLocaleString
+                formatter: (val: any) => {
+                    if (val === null) return '';
+                    return val.toLocaleString();
+                },
+            },
+            
+        },
+        {
+            seriesName: 'ราคาเฉลี่ย/ตร.ม.',
+            opposite: true, 
+            axisTicks: { show: false },
+            axisBorder: { show: false},
+            offsetX: 0, 
+            labels: {
+                show: false, 
+                // ✅ FIX: ตรวจสอบ null ก่อนเรียกใช้ toLocaleString
+                formatter: (val: any) => {
+                    if (val === null) return '';
+                    return val.toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+                },
+            },
+           
         },
     ],
     tooltip: {
@@ -197,58 +264,68 @@ const chartOptions = ref({
     },
 });
 
-
 const chartSeries = computed(() => {
+
+    const avgPricePerSqmData = visibleQuarters.value.map((q) => {
+        const [quarter] = q.split(' ');
+        
+        const totalValue = priceRanges.reduce((sum, price) => {
+            return sum + (summaryData.value[quarter]?.[price]?.['value'] || 0);
+        }, 0);
+
+        const totalArea = priceRanges.reduce((sum, price) => {
+            return sum + (summaryData.value[quarter]?.[price]?.['area'] || 0);
+        }, 0);
+
+        return totalArea > 0 ? parseFloat((totalValue / totalArea).toFixed(2)) : 0;
+    });
+
     return [
         {
             name: 'จำนวนหลัง',
             type: 'column',
-            data: visibleQuarters.value.map((q) => {
+            // ✅ ใช้ padSeries หุ้มข้อมูลด้วย nulls
+            data: padSeries(visibleQuarters.value.map((q) => {
                 const [quarter] = q.split(' ');
                 return parseFloat(
-                    priceRanges.reduce((sum, price) => {
-                        const value = summaryData.value[quarter]?.[price]?.['unit'] || 0;
-                        return sum + value;
-                    }, 0).toFixed(2)
+                    priceRanges.reduce((sum, price) => sum + (summaryData.value[quarter]?.[price]?.['unit'] || 0), 0).toFixed(2)
                 );
-            }),
+            })),
             color: '#F9C80E',
+        },
+        {
+            name: 'มูลค่ารวม',
+            type: 'column', 
+            // ✅ ใช้ padSeries หุ้มข้อมูลด้วย nulls
+            data: padSeries(visibleQuarters.value.map((q) => {
+                const [quarter] = q.split(' ');
+                return parseFloat(
+                    priceRanges.reduce((sum, price) => sum + (summaryData.value[quarter]?.[price]?.['value'] || 0), 0).toFixed(2)
+                );
+            })),
+            color: '#D7263D', 
         },
         {
             name: 'พื้นที่ใช้สอย',
             type: 'column',
-            data: visibleQuarters.value.map((q) => {
+            // ✅ ใช้ padSeries หุ้มข้อมูลด้วย nulls
+            data: padSeries(visibleQuarters.value.map((q) => {
                 const [quarter] = q.split(' ');
                 return parseFloat(
-                    priceRanges.reduce((sum, price) => {
-                        const value = summaryData.value[quarter]?.[price]?.['area'] || 0;
-                        return sum + value;
-                    }, 0).toFixed(2)
+                    priceRanges.reduce((sum, price) => sum + (summaryData.value[quarter]?.[price]?.['area'] || 0), 0).toFixed(2)
                 );
-            }),
+            })),
             color: '#2983FF',
         },
         {
-            name: 'มูลค่ารวม',
-            type: 'line',
-            data: visibleQuarters.value.map((q) => {
-                const [quarter] = q.split(' ');
-                return parseFloat(
-                    priceRanges.reduce((sum, price) => {
-                        const value = summaryData.value[quarter]?.[price]?.['value'] || 0;
-                        return sum + value;
-                    }, 0).toFixed(2)
-                );
-            }),
-            color: '#D7263D',
+            name: 'ราคาเฉลี่ย/ตร.ม.',
+            type: 'column', 
+            // ✅ ใช้ padSeries หุ้มข้อมูลด้วย nulls
+            data: padSeries(avgPricePerSqmData),
+            color: '#00D9E9', 
         },
-
-        
     ];
 });
-
-
-
 
 
 const formatNumber = (value: number, isDecimal = false) => {
@@ -271,7 +348,8 @@ const getRowTotal = (label: string, type: 'unit' | 'value' | 'area' | 'price_per
   return formatNumber(
     visibleQuarters.value.reduce((sum, q) => {
       const [quarter] = q.split(' ');
-      return sum + (summaryData.value[quarter]?.[label]?.[type] || 0);
+      // แก้ไขปัญหา Type error
+      return sum + (summaryData.value[quarter]?.[label]?.[type] || 0); 
     }, 0)
   );
 };
@@ -366,8 +444,6 @@ const exportToExcel = () => {
 
 </script>
 
-
-
 <template>
   <v-row>
     <v-col cols="12">
@@ -399,24 +475,22 @@ const exportToExcel = () => {
             <div class="v-col-md-8 v-col-12">
               <div class="d-flex align-center">
                 <div>
-                  <h3 class="card-title mb-1">รายงานยอดเซ็นสัญญาแบ่งตามไตรมาส ประจำปี {{ selectedYear }}</h3>
+                  <h3 class="card-title mb-1">รายงานแบ่งตามไตรมาส ประจำปี {{ selectedYear }} (พื้นที่: {{ selectedRegion }})</h3>
                   <h5 class="card-subtitle" style="text-align: left;">(หน่วย : ล้านบาท)</h5>
                 </div>
               </div>
             </div>
 
             <div class="v-col-md-4 v-col-12 text-right">
-              <div class="d-flex  justify-end v-col-md-12 v-col-lg-12 v-col-12 ">
+              <div class="d-flex justify-end v-col-md-12 v-col-lg-12 v-col-12 ">
                 <v-select v-model="selectedYear" label="เลือกปี" :items="yearOptions" class="mr-4"></v-select>
-              
+                <v-select v-model="selectedRegion" label="เลือกพื้นที่" :items="regions" class="mr-4"></v-select>
               </div>
             </div>
           </div>
 
 
-
           <div class="mt-5">
-            <!-- <apexchart type="bar" height="320" :options="chartOptions" :series="chartSeries"></apexchart> -->
             <apexchart  height="350" :options="chartOptions" :series="chartSeries"></apexchart>
           </div>
         </v-card-text>
@@ -427,16 +501,16 @@ const exportToExcel = () => {
       <VCard elevation="10">
         <v-card-text>
             <div class="v-row">
-            <div class="v-col-md-6 v-col-12">
+            <div class="v-col-md-8 v-col-12">
               <div class="d-flex align-center">
                 <div>
-                  <h3 class="card-title mb-1">ตารางยอดเซ็นสัญญาแบ่งตามไตรมาส ประจำปี {{ selectedYear }}</h3>
+                   <h3 class="card-title mb-1">ตารางแบ่งตามไตรมาส ประจำปี {{ selectedYear }} (พื้นที่: {{ selectedRegion }})</h3>
                   <h5 class="card-subtitle" style="text-align: left;">(หน่วย : ล้านบาท)</h5>
                 </div>
               </div>
             </div>
 
-            <div class="v-col-md-6 v-col-12 text-right">
+            <div class="v-col-md-4 v-col-12 text-right">
               <div class="d-flex  justify-end v-col-md-12 v-col-lg-12 v-col-12 ">
                
                 <v-btn class=" text-primary   v-btn--size-large " @click="exportToExcel">
@@ -489,55 +563,7 @@ const exportToExcel = () => {
                   </template>
 
                   
-                  <!-- <tr style="background-color: #fcf8ff;">
-                    <td>
-                      <h6 class="text-p" style="font-size: 13px; font-weight: 600; color: #F8285A;">จำนวนหลัง (รวม)</h6>
-                    </td>
-                    <td v-for="q in visibleQuarters" :key="'unit-total-' + q">
-                      <h6 class="text-p" style="font-size: 14px; font-weight: 600; color: #F8285A;">
-                        {{ getQuarterTotal(q, 'unit') }}
-                      </h6>
-                    </td>
-                    <td style="background-color: #FFF3E0;">
-                      <h6 class="text-p" style="font-size: 14px; font-weight: 600; color: #F8285A;">
-                        {{ getTotalYearTotal('unit') }}
-                      </h6>
-                    </td>
-                  </tr>
-
-                  <tr style="background-color: #fcf8ff;">
-                    <td>
-                      <h6 class="text-p" style="font-size: 13px; font-weight: 600; color: #F8285A;">มูลค่ารวม (รวม)</h6>
-                    </td>
-                    <td v-for="q in visibleQuarters" :key="'value-total-' + q">
-                      <h6 class="text-p" style="font-size: 14px; font-weight: 600; color: #F8285A;">
-                        {{ getQuarterTotal(q, 'value') }}
-                      </h6>
-                    </td>
-                    <td style="background-color: #FFF3E0;">
-                      <h6 class="text-p" style="font-size: 14px; font-weight: 600; color: #F8285A;">
-                        {{ getTotalYearTotal('value') }}
-                      </h6>
-                    </td>
-                  </tr>
-
-                  <tr style="background-color: #fcf8ff;">
-                    <td>
-                      <h6 class="text-p" style="font-size: 13px; font-weight: 600; color: #F8285A;">พื้นที่ใช้สอย (รวม)
-                      </h6>
-                    </td>
-                    <td v-for="q in visibleQuarters" :key="'area-total-' + q">
-                      <h6 class="text-p" style="font-size: 14px; font-weight: 600; color: #F8285A;">
-                        {{ getQuarterTotal(q, 'area') }}
-                      </h6>
-                    </td>
-                    <td style="background-color: #FFF3E0;">
-                      <h6 class="text-p" style="font-size: 14px; font-weight: 600; color: #F8285A;">
-                        {{ getTotalYearTotal('area') }}
-                      </h6>
-                    </td>
-                  </tr> -->
-                </tbody>
+                  </tbody>
               </table>
             </div>
           </div>
