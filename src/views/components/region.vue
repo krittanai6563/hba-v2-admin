@@ -456,17 +456,16 @@ function getMonthlyGrandTotal(month: number, field: keyof RegionMetrics): number
 }
 
 
-// (6.C) Format ตัวเลขสำหรับแสดงผล
-// ⭐️ [แก้ไข]
+// ⭐️ [แก้ไขตามคำขอ]
 function formatValue(value: number, field: keyof RegionMetrics): string {
-    if (field === 'price_per_sqm') {
-        // ⭐️ price_per_sqm เท่านั้นที่แสดงทศนิยม 2 ตำแหน่ง
-        return value.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (field === 'unit') {
+        // ⭐️ 'จำนวนหลัง' (unit) เท่านั้นที่ไม่ต้องมีทศนิยม (ปัดเศษ)
+        return value.toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
     }
-    // ⭐️ ที่เหลือ (unit, value, area) ไม่ต้องมีทศนิยม (ปัดเศษ)
-    return value.toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    
+    // ⭐️ ที่เหลือ (value, area, price_per_sqm) แสดงทศนิยม 2 ตำแหน่ง
+    return value.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
-
 // ⭐️ (6.D) [ใหม่] Helpers สำหรับ MoM% ⭐️
 // ===================================
 
@@ -602,11 +601,15 @@ const polarAreaOptions = computed(() => ({
 }));
 
 // (7.2) ⭐️ [ปรับปรุง] ข้อมูลการ์ดสรุป
+// (7.2) ⭐️ [ปรับปรุง] ข้อมูลการ์ดสรุป (แก้ไขตามที่คุณต้องการ)
 const summaryCardData = computed(() => {
-    // ⭐️ [ปรับปรุง] ถ้าเลือก 1 เดือน ให้ใช้ข้อมูลจาก getMonthlyGrandTotal
-    // ⭐️ เพื่อให้ตัวเลขตรงกับตารางรายเดือนที่กำลังดู
-    if (selectedMonths.value.length === 1) {
-        const currentMonth = selectedMonths.value[0];
+    
+    // ⭐️ [ใหม่] ตรวจสอบว่าแท็บที่เลือกเป็นรายเดือนหรือไม่
+    // (ถ้า activeTab ไม่ใช่ 'summary' และเป็นตัวเลขเดือน)
+    if (activeTab.value !== 'summary' && typeof activeTab.value === 'number') {
+        const currentMonth = activeTab.value;
+        
+        // ⭐️ ถ้าเป็นแท็บรายเดือน ให้ใช้ข้อมูลสรุปของเดือนนั้น
         return {
             unit: getMonthlyGrandTotal(currentMonth, 'unit'),
             value: getMonthlyGrandTotal(currentMonth, 'value'),
@@ -615,7 +618,8 @@ const summaryCardData = computed(() => {
         };
     }
 
-    // ⭐️ ถ้าเลือกหลายเดือน (หรือ "สรุปภาพรวม") ให้ใช้ getSummaryGrandTotal
+    // ⭐️ ถ้าเป็นแท็บ "สรุปภาพรวม" (default)
+    // ⭐️ ให้ใช้ข้อมูลสรุปของ "ทุกเดือนที่เลือก" (จาก rawData)
     return {
         unit: getSummaryGrandTotal('unit'),
         value: getSummaryGrandTotal('value'),
@@ -624,15 +628,19 @@ const summaryCardData = computed(() => {
     };
 });
 
-
 // ⭐️ [ใหม่] (7.3) Computed สำหรับ MoM% ของ Summary Cards
+// ⭐️ [ใหม่] (7.3) Computed สำหรับ MoM% ของ Summary Cards (แก้ไขตามที่คุณต้องการ)
+// ⭐️ [ใหม่] (7.3) Computed สำหรับ MoM% ของ Summary Cards (แก้ไขตามที่คุณต้องการ)
 const summaryCardMoMData = computed(() => {
-    // เราจะแสดง MoM% บนการ์ด ก็ต่อเมื่อผู้ใช้เลือก "เดือนเดียว" เท่านั้น
-    if (selectedMonths.value.length !== 1) {
+    
+    // ⭐️ [ใหม่] MoM% จะแสดงก็ต่อเมื่อ "แท็บรายเดือน" ถูกเลือก
+    // (ถ้าเป็นแท็บ 'summary' หรือค่า activeTab ไม่ใช่ตัวเลข ให้ซ่อน MoM%)
+    if (activeTab.value === 'summary' || typeof activeTab.value !== 'number') {
         return { unit: null, value: null, area: null, price_per_sqm: null };
     }
 
-    const currentMonth = selectedMonths.value[0];
+    // ⭐️ ถ้าเป็นแท็บรายเดือน ให้ใช้ activeTab.value เป็นเดือนปัจจุบัน
+    const currentMonth = activeTab.value;
     const priorMonth = currentMonth - 1;
 
     // ตรวจสอบว่ามีข้อมูลเดือนก่อนหน้าหรือไม่ (และไม่คำนวณข้ามปี)
@@ -660,7 +668,8 @@ const summaryCardMoMData = computed(() => {
             } else if (percent < 0) {
                 momValues[field] = `(${percentStr}%)`;
             } else {
-                momValues[field] = `(0%)`; // ⭐️ บนการ์ด เรายังแสดง 0% ไว้นะครับ
+                 // ⭐️ [แก้ไข] ถ้าเป็น 0% ให้ไม่แสดง (null)
+                momValues[field] = null;
             }
         }
     }
@@ -824,6 +833,43 @@ const filterSubtitle = computed(() => {
     return `(${yearText} - ยังไม่ได้เลือกเดือน)`;
 });
 
+
+// ⭐️ (6.A.6) [ใหม่] คำนวณ % สัดส่วนเทียบกับยอดรวม (สำหรับตารางสรุป)
+function getSummaryContributionPercent(region: string, field: keyof RegionMetrics): string {
+    // ⭐️ เราจะคำนวณสัดส่วนเฉพาะ 'unit', 'value', และ 'area'
+    if (field === 'price_per_sqm') {
+        return "";
+    }
+
+    const regionTotal = getSummaryVerticalTotal(region, field);
+    const grandTotal = getSummaryGrandTotal(field);
+
+    if (grandTotal === 0 || regionTotal === 0) {
+        return ""; // ไม่แสดงถ้าไม่มีข้อมูล
+    }
+
+    const percent = (regionTotal / grandTotal) * 100;
+    
+    // ⭐️ แสดงเป็น (XX.X%)
+    return `<span class="contribution-percent" style="font-size: 10px; color: ##28a745; font-weight: 400; margin-left: 4px; white-space: nowrap;">(${percent.toFixed(1)}%)</span>`;
+}
+
+// ⭐️ (6.A.7) [ใหม่] คำนวณ % สัดส่วนเทียบกับยอดรวม (สำหรับแถว Grand Total)
+function getSummaryGrandTotalContributionPercent(field: keyof RegionMetrics): string {
+    // ⭐️ เราจะคำนวณสัดส่วนเฉพาะ 'unit', 'value', และ 'area'
+     if (field === 'price_per_sqm') {
+        return "";
+    }
+    
+    const grandTotal = getSummaryGrandTotal(field);
+    if (grandTotal === 0) {
+        return "";
+    }
+    return `<span class="contribution-percent" style="font-size: 10px; color: #f8285a; font-weight: 600; margin-left: 4px; white-space: nowrap;">(100.0%)</span>`;
+}
+
+
+
 </script>
 
 <template>
@@ -948,62 +994,73 @@ const filterSubtitle = computed(() => {
                                 <!-- ⭐️ [ใหม่] เริ่มต้น Layout สรุป ⭐️ -->
                                 <v-row>
                                     <!-- (ตารางสรุปตามภูมิภาค) -->
-                                    <v-col cols="12" lg="12">
-                                       
-                                        <div class="v-table v-theme--BLUE_THEME v-table--density-default month-table">
-                                            <div class="v-table__wrapper" style="overflow-x: auto">
-                                                <table>
-                                                    <thead style="background-color: #f5f5f5">
-                                                        <tr>
-                                                            <th style="text-align: left;">ภูมิภาค</th>
-                                                            <th style="text-align: right;">จำนวนหลัง</th>
-                                                            <th style="text-align: right;">มูลค่ารวม</th>
-                                                            <th style="text-align: right;">พื้นที่ใช้สอย</th>
-                                                            <th style="text-align: right;">ราคา/ตร.ม.</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        <tr v-for="region in regions" :key="region">
-                                                            <td style="text-align: left;">
-                                                                <h6 class="text-p" style="font-size: 12px; font-weight: 600; color: #725af2">{{ region }}</h6>
-                                                            </td>
-                                                            <td style="text-align: right;">
-                                                                {{ formatValue(getSummaryVerticalTotal(region, 'unit'), 'unit') }}
-                                                            </td>
-                                                            <td style="text-align: right;">
-                                                                {{ formatValue(getSummaryVerticalTotal(region, 'value'), 'value') }}
-                                                            </td>
-                                                            <td style="text-align: right;">
-                                                                {{ formatValue(getSummaryVerticalTotal(region, 'area'), 'area') }}
-                                                            </td>
-                                                             <td style="text-align: right;">
-                                                                {{ formatValue(getSummaryVerticalTotal(region, 'price_per_sqm'), 'price_per_sqm') }}
-                                                            </td>
-                                                        </tr>
-                                                    </tbody>
-                                                    <tfoot style="background-color: #fcf8ff;">
-                                                        <tr class="month-item">
-                                                            <td style="text-align: left;">
-                                                                <h6 class="text-p" style="font-size: 13px; font-weight: 600; color: #f8285a">รวมทั้งหมด</h6>
-                                                            </td>
-                                                            <td style="text-align: right;">
-                                                                <h6 class="text-p" style="font-size: 14px; font-weight: 600; color: #f8285a">{{ formatValue(getSummaryGrandTotal('unit'), 'unit') }}</h6>
-                                                            </td>
-                                                            <td style="text-align: right;">
-                                                                <h6 class="text-p" style="font-size: 14px; font-weight: 600; color: #f8285a">{{ formatValue(getSummaryGrandTotal('value'), 'value') }}</h6>
-                                                            </td>
-                                                            <td style="text-align: right;">
-                                                                <h6 class="text-p" style="font-size: 14px; font-weight: 600; color: #f8285a">{{ formatValue(getSummaryGrandTotal('area'), 'area') }}</h6>
-                                                            </td>
-                                                            <td style="text-align: right;">
-                                                                <h6 class="text-p" style="font-size: 14px; font-weight: 600; color: #f8285a">{{ formatValue(getSummaryGrandTotal('price_per_sqm'), 'price_per_sqm') }}</h6>
-                                                            </td>
-                                                        </tr>
-                                                    </tfoot>
-                                                </table>
-                                            </div>
-                                        </div>
-                                    </v-col>
+                                   <v-col cols="12" lg="12">
+    <div class="v-table v-theme--BLUE_THEME v-table--density-default month-table">
+        <div class="v-table__wrapper" style="overflow-x: auto">
+            <table>
+                <thead style="background-color: #f5f5f5">
+                    <tr>
+                        <th style="text-align: left;">ภูมิภาค</th>
+                        <th style="text-align: right;">จำนวนหลัง</th>
+                        <th style="text-align: right;">มูลค่ารวม</th>
+                        <th style="text-align: right;">พื้นที่ใช้สอย</th>
+                        <th style="text-align: right;">ราคา/ตร.ม.</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr v-for="region in regions" :key="region">
+                        <td style="text-align: left;">
+                            <h6 class="text-p" style="font-size: 12px; font-weight: 600; color: #725af2">{{ region }}</h6>
+                        </td>
+                        <td style="text-align: right;">
+                            {{ formatValue(getSummaryVerticalTotal(region, 'unit'), 'unit') }}
+                            <span style="font-size: 10px; color: #28a745;"  v-html="getSummaryContributionPercent(region, 'unit')"></span>
+                        </td>
+                        <td style="text-align: right;">
+                            {{ formatValue(getSummaryVerticalTotal(region, 'value'), 'value') }}
+                            <span style="font-size: 10px; color: #28a745;" v-html="getSummaryContributionPercent(region, 'value')"></span>
+                        </td>
+                        <td style="text-align: right;">
+                            {{ formatValue(getSummaryVerticalTotal(region, 'area'), 'area') }}
+                            <span style="font-size: 10px; color: #28a745;" v-html="getSummaryContributionPercent(region, 'area')"></span>
+                        </td>
+                        <td style="text-align: right; ">
+                            {{ formatValue(getSummaryVerticalTotal(region, 'price_per_sqm'), 'price_per_sqm') }}
+                            </td>
+                    </tr>
+                </tbody>
+                <!-- <tfoot style="background-color: #fcf8ff;">
+                    <tr class="month-item">
+                        <td style="text-align: left;">
+                            <h6 class="text-p" style="font-size: 13px; font-weight: 600; color: #f8285a">รวมทั้งหมด</h6>
+                        </td>
+                        <td style="text-align: right;">
+                            <h6 class="text-p" style="font-size: 14px; font-weight: 600; color: #f8285a">
+                                {{ formatValue(getSummaryGrandTotal('unit'), 'unit') }}
+                                <span v-html="getSummaryGrandTotalContributionPercent('unit')"></span>
+                            </h6>
+                        </td>
+                        <td style="text-align: right;">
+                            <h6 class="text-p" style="font-size: 14px; font-weight: 600; color: #f8285a">
+                                {{ formatValue(getSummaryGrandTotal('value'), 'value') }}
+                                <span v-html="getSummaryGrandTotalContributionPercent('value')"></span>
+                            </h6>
+                        </td>
+                        <td style="text-align: right;">
+                            <h6 class="text-p" style="font-size: 14px; font-weight: 600; color: #f8285a">
+                                {{ formatValue(getSummaryGrandTotal('area'), 'area') }}
+                                <span v-html="getSummaryGrandTotalContributionPercent('area')"></span>
+                            </h6>
+                        </td>
+                        <td style="text-align: right;">
+                            <h6 class="text-p" style="font-size: 14px; font-weight: 600; color: #f8285a">{{ formatValue(getSummaryGrandTotal('price_per_sqm'), 'price_per_sqm') }}</h6>
+                        </td>
+                    </tr>
+                </tfoot> -->
+            </table>
+        </div>
+    </div>
+</v-col>
                                     
                                     <!-- (ตารางสรุปตามมูลค่า) -->
                                     <!-- (โค้ดส่วนนี้ถูกคอมเมนต์ไว้อยู่แล้วในไฟล์เดิม) -->
@@ -1138,7 +1195,7 @@ const filterSubtitle = computed(() => {
                                         </h2>
                                         
                                         <!-- ⭐️ [ใหม่] ส่วนแสดง MoM% ⭐️ -->
-                                        <span 
+                                        <span style="font-size: 10px;"
                                             v-if="summaryCardMoMData[field]" 
                                             class="mom-card" 
                                             :class="{

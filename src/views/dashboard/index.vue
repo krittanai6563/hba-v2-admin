@@ -153,7 +153,7 @@ const selectedYear = ref(currentJsYear + 543);
 const selectedQuarter = ref('all');
 const selectedMonths = ref<number[]>([]);
 const yearOptions = ref(
-    Array.from({ length: 5 }, (_, i) => currentJsYear + 543 - i)
+    Array.from({ length: 2 }, (_, i) => currentJsYear + 543 - i)
 );
 const quarterOptions = ref([
     { title: 'ทุกไตรมาส / ทุกเดือน', value: 'all' },
@@ -162,7 +162,27 @@ const quarterOptions = ref([
     { title: 'ไตรมาส 3 (ก.ค. - ก.ย.)', value: 'Q3' },
     { title: 'ไตรมาส 4 (ต.ค. - ธ.ค.)', value: 'Q4' }
 ]);
-const monthOptions = ref(allMonthItems);
+
+// (!!! อัปเดต: ลบ selectedPeriod ออก !!!)
+// type Period = '1M' | '3M' | '6M' | 'YTD'; // ลบ
+// const selectedPeriod = ref<Period>('YTD'); // ลบ
+
+// (!!! อัปเดต: เพิ่ม isUpdatingFromMonths (เหมือน region.vue) !!!)
+const isUpdatingFromMonths = ref(false);
+
+// (!!! อัปเดต: เปลี่ยน monthOptions เป็น computed (เหมือน region.vue) !!!)
+const monthOptions = computed(() => {
+    const yearAD = selectedYear.value - 543;
+    if (yearAD === currentJsYear) {
+        return allMonthItems.filter((m) => m.value <= currentJsMonth);
+    } else if (yearAD > currentJsYear) {
+        return [];
+    } else {
+        return allMonthItems;
+    }
+});
+
+
 const loading = ref(false);
 const summaryData = ref({ total_units: 0, total_value: 0, total_area: 0, value_per_sqm: 0 });
 const monthlyChartLabels = ref<string[]>([]);
@@ -312,32 +332,88 @@ const fetchData = async () => {
         loadingRegional.value = false;
     }
 };
-// --- 4. Logic Filters & onMounted (!!! อัปเดต onMounted !!!) ---
+
+// (!!! อัปเดต: ลบฟังก์ชัน setPeriod ออก !!!)
+// const setPeriod = (period: Period) => { ... }; // ลบ
+
+// --- (!!! อัปเดต: Logic Filters & onMounted (ยกมาจาก region.vue) !!!) ---
 watch(selectedQuarter, (newQuarter) => {
-    if (newQuarter === 'all') updateToAllMonths();
-    else if (newQuarter === 'Q1') selectedMonths.value = [1, 2, 3];
-    else if (newQuarter === 'Q2') selectedMonths.value = [4, 5, 6];
-    else if (newQuarter === 'Q3') selectedMonths.value = [7, 8, 9];
-    else if (newQuarter === 'Q4') selectedMonths.value = [10, 11, 12];
-});
-watch(selectedYear, () => {
-    if (selectedQuarter.value === 'all') updateToAllMonths();
-    else fetchData();
-});
-watch(selectedMonths, () => {
-    const sortedMonths = [...selectedMonths.value].sort((a, b) => a - b).join(',');
-    if (sortedMonths === '1,2,3') selectedQuarter.value = 'Q1';
-    else if (sortedMonths === '4,5,6') selectedQuarter.value = 'Q2';
-    else if (sortedMonths === '7,8,9') selectedQuarter.value = 'Q3';
-    else if (sortedMonths === '10,11,12') selectedQuarter.value = 'Q4';
-    else {
-        const allMonthsCurrentYear = allMonthItems.map(m => m.value).slice(0, currentJsMonth).join(',');
-        const allMonthsPastYear = allMonthItems.map(m => m.value).join(',');
-        if (sortedMonths === allMonthsCurrentYear || sortedMonths === allMonthsPastYear) selectedQuarter.value = 'all';
-        else if (selectedQuarter.value !== 'all') selectedQuarter.value = 'all';
+    if (isUpdatingFromMonths.value) {
+        isUpdatingFromMonths.value = false;
+        return;
     }
-    fetchData();
-}, { deep: true });
+    // ดึงเดือนที่ "มีสิทธิ์" เลือกได้ในปีนั้นๆ
+    const validMonthValues = monthOptions.value.map(m => m.value);
+    const filterValidMonths = (months: number[]) => months.filter(m => validMonthValues.includes(m));
+
+    if (newQuarter === 'all') updateToAllMonths();
+    else if (newQuarter === 'Q1') selectedMonths.value = filterValidMonths([1, 2, 3]);
+    else if (newQuarter === 'Q2') selectedMonths.value = filterValidMonths([4, 5, 6]);
+    else if (newQuarter === 'Q3') selectedMonths.value = filterValidMonths([7, 8, 9]);
+    else if (newQuarter === 'Q4') selectedMonths.value = filterValidMonths([10, 11, 12]);
+});
+
+watch(selectedYear, () => {
+    // กรองเดือนที่เลือกไว้ ให้เหลือเฉพาะเดือนที่ "มี" ในปีใหม่
+    const validMonths = monthOptions.value.map((m) => m.value);
+    selectedMonths.value = selectedMonths.value.filter((m) => validMonths.includes(m));
+
+    if (selectedQuarter.value === 'all') {
+        updateToAllMonths(); 
+    } else {
+        // ถ้าเลือก Q1-Q4 ค้างไว้ ให้ re-trigger logic ของ 'watch(selectedQuarter)'
+        // เพื่อเลือกเดือนของไตรมาสนั้นๆ "ในปีใหม่"
+        const currentQuarter = selectedQuarter.value;
+        selectedQuarter.value = ''; // เปลี่ยนค่าชั่วคราว
+        selectedQuarter.value = currentQuarter; // เปลี่ยนกลับเพื่อ trigger watch
+    }
+});
+
+watch(
+    selectedMonths,
+    (newMonths, oldMonths) => {
+        
+        const sortedMonths = [...newMonths].sort((a, b) => a - b).join(',');
+        
+        // ดึงเดือนที่ "มีสิทธิ์" เลือกได้ในปีนั้นๆ
+        const validMonthValues = monthOptions.value.map(m => m.value);
+        
+        // สร้าง key ของไตรมาส (ที่ valid)
+        const q1Months = [1, 2, 3].filter(m => validMonthValues.includes(m)).join(',');
+        const q2Months = [4, 5, 6].filter(m => validMonthValues.includes(m)).join(',');
+        const q3Months = [7, 8, 9].filter(m => validMonthValues.includes(m)).join(',');
+        const q4Months = [10, 11, 12].filter(m => validMonthValues.includes(m)).join(',');
+
+        // 1. ซิงค์ Dropdown 'ไตรมาส'
+        if (sortedMonths === q1Months && q1Months.length > 0) selectedQuarter.value = 'Q1';
+        else if (sortedMonths === q2Months && q2Months.length > 0) selectedQuarter.value = 'Q2';
+        else if (sortedMonths === q3Months && q3Months.length > 0) selectedQuarter.value = 'Q3';
+        else if (sortedMonths === q4Months && q4Months.length > 0) selectedQuarter.value = 'Q4';
+        else {
+            // 2. ถ้าไม่ตรงไตรมาส, เช็คว่าตรงกับ "YTD" (ทุกเดือน) หรือไม่
+            const yearAD = selectedYear.value - 543;
+            const allMonthsCurrentYear = allMonthItems.map((m) => m.value).slice(0, currentJsMonth).join(',');
+            const allMonthsPastYear = allMonthItems.map((m) => m.value).join(',');
+
+            if (sortedMonths === allMonthsCurrentYear || sortedMonths === allMonthsPastYear) {
+                // ถ้าตรง YTD และ Dropdown ยังไม่เป็น 'all'
+                if (selectedQuarter.value !== 'all') {
+                    isUpdatingFromMonths.value = true; // ตั้ง Flag
+                    selectedQuarter.value = 'all'; // สั่งให้ Dropdown เป็น 'all'
+                }
+            } else if (selectedQuarter.value !== 'all') {
+                // 3. ถ้าไม่ตรงไตรมาส และไม่ตรง YTD (เช่น เลือกเอง [1, 5, 9])
+                isUpdatingFromMonths.value = true; // ตั้ง Flag
+                selectedQuarter.value = 'all'; // สั่งให้ Dropdown เป็น 'all'
+            }
+        }
+        
+        // 4. (สำคัญ!) เมื่อเดือนเปลี่ยน ให้ดึงข้อมูล
+        fetchData();
+    },
+    { deep: true }
+);
+
 const updateToAllMonths = () => {
     const yearAD = selectedYear.value - 543;
     if (yearAD === currentJsYear) {
@@ -350,9 +426,12 @@ const updateToAllMonths = () => {
 };
 
 onMounted(() => {
+    // (!!! อัปเดต: เปลี่ยนกลับไปใช้ updateToAllMonths (เหมือน region.vue) !!!)
     updateToAllMonths();
-    fetchUserStatus(); // (!!! เพิ่มบรรทัดนี้ เพื่อเรียกเช็คสถานะตอนเปิดหน้า !!!)
+    fetchUserStatus(); 
 });
+// --- (!!! สิ้นสุดการอัปเดต Logic Filters !!!) ---
+
 
 const formattedSummary = computed(() => ({
     units: summaryData.value.total_units.toLocaleString('th-TH') + ' หลัง',
@@ -703,15 +782,26 @@ const chartOptions = computed(() => {
     };
 });
 
+
+// (!!! ใหม่: computed สำหรับหา data source ปัจจุบัน !!!)
+const currentMetricData = computed(() => {
+    switch (activeMetric.value) {
+        case 'units': return monthlyUnitsData.value;
+        case 'value': return monthlyValueData.value;
+        case 'area': return monthlyAreaData.value;
+        case 'valuePerSqm': return monthlyValuePerSqmData.value;
+        default: return [];
+    }
+});
+
+
 // (!!! K. (ใหม่) สร้างข้อมูลสำหรับเส้น % เปลี่ยนแปลง !!!)
 const monthlyPercentChangeData = computed(() => {
-    let sourceData: number[] = [];
+    // (!!! อัปเดต: ใช้ computed ใหม่ !!!)
+    let sourceData: number[] = currentMetricData.value;
     
     // เลือกข้อมูลดิบตาม Metric ที่ใช้งาน
-    if (activeMetric.value === 'units') sourceData = monthlyUnitsData.value;
-    else if (activeMetric.value === 'value') sourceData = monthlyValueData.value;
-    else if (activeMetric.value === 'area') sourceData = monthlyAreaData.value;
-    else if (activeMetric.value === 'valuePerSqm') sourceData = monthlyValuePerSqmData.value;
+    // (ลบ logic เดิมออก)
 
     const changes: (number | null)[] = [null]; // เดือนแรกไม่มี % เทียบ
     
@@ -731,62 +821,56 @@ const monthlyPercentChangeData = computed(() => {
     return changes;
 });
 
-// (!!! I. Main Graph Title (เหมือนเดิม) !!!)
+// (!!! อัปเดต: mainGraphTitle (ใช้ logic จาก region.vue) !!!)
 const mainGraphTitle = computed(() => {
-
     let baseTitle = '';
     switch (activeMetric.value) {
-        case 'units':
-            baseTitle = 'กราฟจำนวนหลัง';
-            break;
-        case 'area':
-            baseTitle = 'กราฟพื้นที่ใช้สอย';
-            break;
-        case 'valuePerSqm':
-            baseTitle = 'กราฟมูลค่าเฉลี่ย / ตร.ม.';
-            break;
-        case 'value':
-        default:
-            baseTitle = 'กราฟสรุปมูลค่า';
-            break;
+        case 'units': baseTitle = 'กราฟจำนวนหลัง'; break;
+        case 'area': baseTitle = 'กราฟพื้นที่ใช้สอย'; break;
+        case 'valuePerSqm': baseTitle = 'กราฟมูลค่าเฉลี่ย / ตร.ม.'; break;
+        case 'value': default: baseTitle = 'กราฟสรุปมูลค่า'; break;
     }
 
     const yearText = ' ประจำปี ' + selectedYear.value;
 
+    // 1. Check for specific Quarter
     if (selectedQuarter.value !== 'all') {
         const quarter = quarterOptions.value.find(q => q.value === selectedQuarter.value);
         return quarter ? `${baseTitle} ${quarter.title}${yearText}` : `${baseTitle}${yearText}`;
     }
 
+    // 2. Check for "All Months" (YTD)
+    const sortedMonthsKey = [...selectedMonths.value].sort((a, b) => a - b).join(',');
     const yearAD = selectedYear.value - 543;
-    let totalMonthsInSelectedYear;
-    if (yearAD === currentJsYear) totalMonthsInSelectedYear = currentJsMonth;
-    else if (yearAD > currentJsYear) totalMonthsInSelectedYear = 0;
-    else totalMonthsInSelectedYear = 12;
+    const allMonthsCurrentYear = allMonthItems.map((m) => m.value).slice(0, currentJsMonth).join(',');
+    const allMonthsPastYear = allMonthItems.map((m) => m.value).join(',');
 
-    if (selectedMonths.value.length === totalMonthsInSelectedYear || selectedMonths.value.length === 0) {
+    if (sortedMonthsKey === allMonthsCurrentYear || sortedMonthsKey === allMonthsPastYear) {
         return `${baseTitle}${yearText}`;
     }
 
+    // 3. Check for specific month range
     if (selectedMonths.value.length > 0) {
-        const sortedMonths = [...selectedMonths.value].sort((a, b) => a - b);
-        const firstMonthValue = sortedMonths[0];
-        const firstMonth = monthOptions.value.find(m => m.value === firstMonthValue);
-        const firstMonthName = firstMonth ? firstMonth.title : '';
+        const sortedMonthValues = [...selectedMonths.value].sort((a, b) => a - b);
+        const firstMonthValue = sortedMonthValues[0];
+        const lastMonthValue = sortedMonthValues[sortedMonthValues.length - 1];
+        const firstMonth = allMonthItems.find((m) => m.value === firstMonthValue);
+        const lastMonth = allMonthItems.find((m) => m.value === lastMonthValue);
 
-        if (sortedMonths.length === 1) {
-            return `${baseTitle} ประจำเดือน ${firstMonthName}${yearText}`;
+        if (!firstMonth || !lastMonth) {
+            return `${baseTitle}${yearText} (กำลังเลือกเดือน...)`;
         }
-
-        const lastMonthValue = sortedMonths[sortedMonths.length - 1];
-        const lastMonth = monthOptions.value.find(m => m.value === lastMonthValue);
-        const lastMonthName = lastMonth ? lastMonth.title : '';
-
-        return `${baseTitle} ประจำเดือน ${firstMonthName} - ${lastMonthName}${yearText}`;
+        if (firstMonthValue === lastMonthValue) {
+            return `${baseTitle} ประจำเดือน ${firstMonth.title}${yearText}`;
+        } else {
+            return `${baseTitle} ประจำเดือน ${firstMonth.title} - ${lastMonth.title}${yearText}`;
+        }
     }
-
+    
+    // 4. Fallback
     return `${baseTitle}${yearText}`;
 });
+
 
 // (!!! J. Chart Unit Subtitle (เหมือนเดิม) !!!)
 const chartUnitSubtitle = computed(() => {
@@ -809,20 +893,23 @@ const chartUnitSubtitle = computed(() => {
 // (!!! K. Main Graph Series (อัปเดต: ส่ง 2 ซีรีส์) !!!)
 const mainGraphSeries = computed(() => {
     let barSeries: { name: string; type: 'bar'; data: number[] } | null = null;
+    
+    // (!!! อัปเดต: ใช้ computed ใหม่ !!!)
+    const data = currentMetricData.value;
 
     switch (activeMetric.value) {
         case 'units':
-            barSeries = { name: 'จำนวน (หลัง)', type: 'bar', data: monthlyUnitsData.value };
+            barSeries = { name: 'จำนวน (หลัง)', type: 'bar', data: data };
             break;
         case 'area':
-            barSeries = { name: 'พื้นที่ (ตร.ม.)', type: 'bar', data: monthlyAreaData.value };
+            barSeries = { name: 'พื้นที่ (ตร.ม.)', type: 'bar', data: data };
             break;
         case 'valuePerSqm':
-            barSeries = { name: 'มูลค่า/ตร.ม. (บาท)', type: 'bar', data: monthlyValuePerSqmData.value };
+            barSeries = { name: 'มูลค่า/ตร.ม. (บาท)', type: 'bar', data: data };
             break;
         case 'value':
         default:
-            barSeries = { name: 'มูลค่า (บาท)', type: 'bar', data: monthlyValueData.value };
+            barSeries = { name: 'มูลค่า (บาท)', type: 'bar', data: data };
             break;
     }
 
@@ -849,6 +936,70 @@ const regionalTableSubtitle = computed(() => {
         default:
             return '(เปรียบเทียบตาม: มูลค่า)';
     }
+});
+
+
+// (!!! อัปเดต: ลบ computed เก่า (chartAverage, chartTrendPercentage, averageVsLastMonthChange) !!!)
+// const chartAverage = computed(() => { ... }); // ลบ
+// const chartTrendPercentage = computed(() => { ... }); // ลบ
+// const averageVsLastMonthChange = computed(() => { ... }); // ลบ
+
+
+// (!!! ใหม่: Helpers สำหรับ format ตัวเลขสถิติ !!!)
+const formatStatNumber = (val: number) => {
+     if (activeMetric.value === 'units') {
+        return val.toLocaleString('th-TH', { maximumFractionDigits: 0 });
+     }
+     // สำหรับ value, area, valuePerSqm
+     return val.toLocaleString('th-TH', { maximumFractionDigits: 2 });
+};
+
+// (!!! อัปเดต: เปลี่ยนชื่อ formatStatPercentage เป็น formatPercentageHelper
+// (เพื่อไม่ให้ซ้ำกับตัวแปร formatPercentage เดิมที่ใช้ในตาราง)
+const formatPercentageHelper = (val: number) => {
+    if (val === 0 || !val) return '0.0%';
+    const prefix = val > 0 ? '+' : '';
+    return `${prefix}${val.toFixed(1)}%`;
+};
+
+// (!!! ใหม่: computed สำหรับ "ส่วนต่าง" (Value) ของเดือนล่าสุด !!!)
+const latestMonthDifference = computed(() => {
+    const data = currentMetricData.value;
+    
+    // ต้องมีข้อมูลอย่างน้อย 2 เดือน ถึงจะเปรียบเทียบส่วนต่างได้
+    if (data.length < 2) return 0;
+
+    const latest = data[data.length - 1];
+    const previous = data[data.length - 2];
+    
+    // คืนค่า (ยอดล่าสุด - ยอดเดือนก่อนหน้า)
+    return latest - previous;
+});
+
+// (!!! ใหม่: computed สำหรับสถิติบนหัวกราฟ (แบบใหม่) !!!)
+// (เรายังคงต้องใช้ 2 ตัวนี้ แม้ว่าจะเปลี่ยน logic filter แล้ว)
+
+// 1. ดึง "ค่า" ของ "เดือนล่าสุด" ที่แสดงในกราฟ
+const latestMonthValue = computed(() => {
+    const data = currentMetricData.value;
+    if (data.length === 0) return 0;
+    // คืนค่าข้อมูลตัวสุดท้ายใน Array
+    return data[data.length - 1];
+});
+
+// 2. ดึง "ค่า % MoM" ของ "เดือนล่าสุด" (จากเส้นสีแดง)
+const latestMonthMoMChange = computed(() => {
+    // monthlyPercentChangeData คือ Array ที่ใช้สร้างเส้นสีแดง [null, 10.5, -5.2]
+    const momData = monthlyPercentChangeData.value;
+    
+    // ถ้ามีข้อมูลน้อยกว่า 2 เดือน (เช่น เลือก 1M) จะไม่มีค่า MoM
+    if (momData.length < 2) return 0; 
+
+    // คืนค่า % MoM ตัวสุดท้ายใน Array
+    const latestChange = momData[momData.length - 1];
+    
+    // ถ้าค่าเป็น null (อาจเป็นเดือนแรก) ให้คืน 0
+    return latestChange === null ? 0 : latestChange;
 });
 </script>
 
@@ -975,15 +1126,46 @@ const regionalTableSubtitle = computed(() => {
         <v-row class="mt-4">
             <v-col cols="12">
                 <v-card elevation="2">
+                    
                     <v-card-title class="pa-4">
-                        <h3 class="card-title mb-1">
-                            {{ mainGraphTitle }}
-                        </h3>
-                        <h5 class="card-subtitle" style="text-align: left">
-                            {{ chartUnitSubtitle }}
-                        </h5>
-                    </v-card-title>
+                        <v-row align="start">
+                            
+                            <v-col cols="12">
+                                <h3 class="card-title mb-1">
+                                    {{ mainGraphTitle }} </h3>
+                                
+                                <v-row v-if="!loading && currentMetricData.length > 0" align="center" justify="start" class="mt-2">
+                                    
+                                    <v-col cols="auto"> 
+                                        <h3 class="card-title" style="font-size: 1.25rem;"> 
+                                            <span :class="getPercentageColor(latestMonthDifference)">
+                                                
+                                                {{ formatStatNumber(latestMonthDifference) }} 
 
+                                                <v-icon v-if="latestMonthDifference > 0" size="small" class="ml-1">mdi-arrow-up</v-icon>
+                                                <v-icon v-else-if="latestMonthDifference < 0" size="small" class="ml-1">mdi-arrow-down</v-icon>
+                                            </span>
+                                        </h3>
+                                        <h5 class="card-subtitle text-grey-darken-1">เปลี่ยนแปลง (MoM)</h5>
+                                    </v-col>
+
+                                    <v-col cols="auto"> 
+                                        <h3 classs="card-title" :class="getPercentageColor(latestMonthMoMChange)" style="font-size: 1.25rem;">
+                                            {{ formatPercentageHelper(latestMonthMoMChange) }}
+                                        </h3>
+                                        <h5 class="card-subtitle text-grey-darken-1"> % MoM </h5>
+                                    </v-col>
+
+                                </v-row>
+                                
+                                <div v-else-if="!loading" class="text-grey">
+                                    -
+                                </div>
+                           
+                            </v-col>
+                            
+                            </v-row>
+                    </v-card-title>
                     <v-divider></v-divider>
 
                     <v-card-text style="min-height: 365px">
