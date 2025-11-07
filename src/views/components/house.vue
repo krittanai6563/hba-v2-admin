@@ -37,6 +37,8 @@ interface PriceRangeMetrics {
 }
 // key1: month (number), key2: priceRange (string)
 const detailedTableData = ref<Record<number, Record<string, PriceRangeMetrics>>>({});
+// ✅ [เพิ่มใหม่] State สำหรับเก็บข้อมูลปีก่อน (สำหรับเทียบ YoY)
+const previousYearDetailedTableData = ref<Record<number, Record<string, PriceRangeMetrics>>>({});
 
 
 const priceRanges = ['ไม่เกิน 2.50 ล้านบาท', '2.51 - 5 ล้านบาท', '5.01 - 10 ล้านบาท', '10.01 - 20 ล้านบาท', '20.01 ล้านขึ้นไป'];
@@ -96,34 +98,6 @@ const quarterOptions = ref([
     { title: 'ไตรมาส 4 (ต.ค. - ธ.ค.)', value: 'Q4' }
 ]);
 
-
-const polarAreaOptions = ref({
-    // ... (โค้ด options ของกราฟเหมือนเดิม) ...
-    chart: { type: 'polarArea', fontFamily: 'inherit', foreColor: '#6c757d' },
-    labels: priceRanges,
-    legend: { position: 'bottom', horizontalAlign: 'center' },
-    stroke: { colors: ['#fff'] },
-    fill: { opacity: 0.8 },
-    responsive: [{ breakpoint: 480, options: { chart: { width: 200 }, legend: { position: 'bottom' } } }],
-    tooltip: { theme: 'dark', y: { formatter: (val: number) => val.toLocaleString('th-TH') + " บาท" } },
-    dataLabels: {
-        enabled: true,
-        formatter: (val: number, opts: any) => {
-            let percentageText = '0.00%';
-            if (!isNaN(val)) percentageText = (Number(val) || 0).toFixed(2) + '%';
-            if (!summaryData.value || !summaryData.value.total_value) return percentageText;
-            const rangeKey = priceRanges[opts.dataPointIndex];
-            const rawValue = summaryData.value.total_value[rangeKey];
-            if (rawValue === undefined || rawValue === null) return percentageText;
-            const rawValueText = (Number(rawValue) || 0).toLocaleString('th-TH');
-            return [percentageText, `(${rawValueText})`];
-        },
-        style: { fontSize: '10px' },
-        dropShadow: { enabled: false }
-    },
-    noData: { text: 'ไม่พบข้อมูลสำหรับช่วงที่เลือก', align: 'center', verticalAlign: 'middle', offsetY: 0, style: { color: '#6c757d', fontSize: '14px', fontFamily: 'inherit' } },
-});
-
 // (4.1) ♻️ [แก้ไข] เปลี่ยน Options เป็น computed เพื่อให้ Tooltip และ DataLabel เปลี่ยนตาม
 const computedPolarAreaOptions = computed(() => {
     
@@ -159,7 +133,8 @@ const computedPolarAreaOptions = computed(() => {
         tooltip: { 
             theme: 'dark', 
             y: { 
-                formatter: (val: number) => val.toLocaleString('th-TH') + tooltipSuffix 
+                // ♻️ [แก้ไข] เพิ่มทศนิยม 2 ตำแหน่ง
+                formatter: (val: number) => val.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + tooltipSuffix 
             } 
         },
 
@@ -179,7 +154,8 @@ const computedPolarAreaOptions = computed(() => {
                 
                 if (rawValue === undefined || rawValue === null) return percentageText;
                 
-                const rawValueText = (Number(rawValue) || 0).toLocaleString('th-TH');
+                // ♻️ [แก้ไข] เพิ่มทศนิยม 2 ตำแหน่ง
+                const rawValueText = (Number(rawValue) || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                 return [percentageText, `(${rawValueText})`];
             },
             style: { fontSize: '10px' },
@@ -199,11 +175,11 @@ const chartTitle = computed(() => {
 });
 
 // (5) ฟังก์ชันดึงข้อมูล "หลัก" (สำหรับกราฟ/การ์ด/Export)
+// ♻️ [แก้ไข] ปรับการคำนวณ price_per_sqm ให้เก็บทศนิยม
 const fetchSummary = async () => {
     if (!userId && userRole !== 'admin') return;
     if (selectedMonths.value.length === 0 || !selectedYear.value) {
         summaryData.value = { unit: {}, total_value: {}, usable_area: {}, price_per_sqm: {} };
-        // polarAreaSeries.value = []; 
         return;
     }
     try {
@@ -232,8 +208,6 @@ const fetchSummary = async () => {
             for (const range of priceRanges) {
                 if (data[region] && data[region][range]) {
                     const metrics = data[region][range];
-
-                    // ✅ [แก้ไข] ป้องกัน NaN
                     const unitValue = Number(metrics.unit) || 0;
                     const valueValue = Number(metrics.value) || 0;
                     const areaValue = Number(metrics.area) || 0;
@@ -252,34 +226,84 @@ const fetchSummary = async () => {
         }
         for (const range of priceRanges) {
             if (aggregatedData.usable_area[range] > 0) {
-                aggregatedData.price_per_sqm[range] = Math.round(aggregatedData.total_value[range] / aggregatedData.usable_area[range]);
+                // ♻️ [แก้ไข] เปลี่ยนจาก Math.round เป็นการหารปกติ
+                aggregatedData.price_per_sqm[range] = aggregatedData.total_value[range] / aggregatedData.usable_area[range];
             } else { aggregatedData.price_per_sqm[range] = 0; }
         }
         if (totalAreaForAvg > 0) {
-            aggregatedData.price_per_sqm['total'] = Math.round(totalValueForAvg / totalAreaForAvg);
+             // ♻️ [แก้ไข] เปลี่ยนจาก Math.round เป็นการหารปกติ
+            aggregatedData.price_per_sqm['total'] = totalValueForAvg / totalAreaForAvg;
         } else { aggregatedData.price_per_sqm['total'] = 0; }
+        
         summaryData.value = aggregatedData; 
         console.log('✅ ข้อมูลที่ประมวลผลแล้ว (สำหรับกราฟ/การ์ด):', aggregatedData);
-        // const newPolarSeries = priceRanges.map(range => aggregatedData.total_value[range] || 0);
-        // const totalSum = newPolarSeries.reduce((a, b) => a + b, 0);
-        // polarAreaSeries.value = totalSum > 0 ? newPolarSeries : [];
     } catch (err) { console.error('❌ Error fetching summary:', err); }
 };
 
-// (6) ฟังก์ชันสำหรับดึงข้อมูลตาราง "แบบละเอียด"
+// ✅ [เพิ่มใหม่] Helper function (ย้ายมาจากใน fetchDetailed) เพื่อประมวลผลข้อมูลดิบ
+// ♻️ [แก้ไข] ปรับการคำนวณ price_per_sqm ให้เก็บทศนิยม
+function processMonthData(data: any): Record<string, PriceRangeMetrics> {
+    const monthData: Record<string, PriceRangeMetrics> = {};
+    
+    // เริ่มต้นค่าให้ครบทุกช่วงราคา
+    for (const range of priceRanges) {
+        monthData[range] = { unit: 0, total_value: 0, usable_area: 0, price_per_sqm: 0 };
+    }
+
+    if (!data) return monthData; // ถ้า API คืนค่า null (เช่น error)
+
+    const regions = Object.keys(data);
+    for (const region of regions) {
+        for (const range of priceRanges) {
+            if (data[region] && data[region][range]) {
+                const metrics = data[region][range];
+                monthData[range].unit += (Number(metrics.unit) || 0);
+                monthData[range].total_value += (Number(metrics.value) || 0);
+                monthData[range].usable_area += (Number(metrics.area) || 0);
+            }
+        }
+    }
+
+    // คำนวณ price_per_sqm
+    for (const range of priceRanges) {
+        const rangeData = monthData[range];
+        if (rangeData.usable_area > 0) {
+            // ♻️ [แก้ไข] เปลี่ยนจาก Math.round เป็นการหารปกติ เพื่อเก็บทศนิยม
+            rangeData.price_per_sqm = rangeData.total_value / rangeData.usable_area;
+        } else {
+            rangeData.price_per_sqm = 0;
+        }
+    }
+    return monthData;
+}
+
+
+// (6) ♻️ [แก้ไข] ฟังก์ชันสำหรับดึงข้อมูลตาราง "แบบละเอียด" (ปรับปรุงใหม่ทั้งหมด)
 const fetchDetailedTableData = async () => {
     if (!userId && userRole !== 'admin') return;
-    const newData: Record<number, Record<string, PriceRangeMetrics>> = {};
-    const monthsToFetch = [...selectedMonths.value];
+
+    let monthsToFetch = [...selectedMonths.value].sort((a, b) => a - b);
+
     if (monthsToFetch.length === 0 || !selectedYear.value) {
-        detailedTableData.value = newData; 
+        detailedTableData.value = {};
+        previousYearDetailedTableData.value = {}; // ✅ [เพิ่มใหม่] ล้างข้อมูลปีก่อน
         return;
     }
-    for (const month of monthsToFetch) {
-        newData[month] = {};
-        for (const range of priceRanges) {
-            newData[month][range] = { unit: 0, total_value: 0, usable_area: 0, price_per_sqm: 0 };
+
+    // ✅ [เพิ่มใหม่] ตรวจสอบและเพิ่ม "เดือนก่อนหน้า" 1 เดือนสำหรับคำนวณ MoM
+    const firstMonth = monthsToFetch[0];
+    if (firstMonth > 1) {
+        const prevMonth = firstMonth - 1;
+        if (!monthsToFetch.includes(prevMonth)) {
+            monthsToFetch.push(prevMonth); // เพิ่มเดือนก่อนหน้าเข้าไปใน list ที่จะ fetch
         }
+    }
+
+    const currentYear = selectedYear.value;
+    const previousYear = currentYear - 1;
+
+    // ✅ [เพิ่มใหม่] สร้างฟังก์ชันย่อยสำหรับ Fetch API
+    const fetchMonthData = async (year: number, month: number) => {
         try {
             const res = await fetch('https://uat.hba-sales.org/backend/get_contract_summary_main.php', {
                 method: 'POST',
@@ -287,103 +311,111 @@ const fetchDetailedTableData = async () => {
                 credentials: 'include',
                 body: JSON.stringify({
                     user_id: userId,
-                    buddhist_year: selectedYear.value,
-                    months: [month], // ⭐️ ส่งข้อมูลทีละเดือน
+                    buddhist_year: year,
+                    months: [month],
                     role: userRole
                 })
             });
-            if (!res.ok) { console.error(`Error fetching data for month ${month}: Status ${res.status}`); continue; }
-            const data = await res.json(); 
-            const regions = Object.keys(data); 
-            for (const region of regions) {
-                for (const range of priceRanges) { 
-                    if (data[region] && data[region][range]) {
-                        const metrics = data[region][range];
-                        
-                        // ✅ [แก้ไข] ป้องกัน NaN
-                        newData[month][range].unit += (Number(metrics.unit) || 0);
-                        newData[month][range].total_value += (Number(metrics.value) || 0); 
-                        newData[month][range].usable_area += (Number(metrics.area) || 0);   
-                    }
-                }
+            if (!res.ok) {
+                console.error(`Error fetching data for month ${month}/${year}: Status ${res.status}`);
+                return null; // คืนค่า null ถ้า error
             }
-            for (const range of priceRanges) {
-                const monthRangeData = newData[month][range];
-                if (monthRangeData.usable_area > 0) {
-                    monthRangeData.price_per_sqm = Math.round(monthRangeData.total_value / monthRangeData.usable_area);
-                } else { monthRangeData.price_per_sqm = 0; }
-            }
-        } catch (err) { console.error(`❌ Error fetching detailed summary for month ${month}:`, err); }
+            return await res.json();
+        } catch (err) {
+            console.error(`❌ Error fetching detailed summary for month ${month}/${year}:`, err);
+            return null; // คืนค่า null ถ้า error
+        }
+    };
+
+    // ✅ [เพิ่มใหม่] สร้างรายการ Promises ทั้งหมด (ปีปัจจุบัน + ปีก่อน)
+    const promises: Promise<{ month: number; year: number; data: any; }>[] = [];
+    
+    for (const month of monthsToFetch) {
+        // ข้อมูลปีปัจจุบัน
+        promises.push(fetchMonthData(currentYear, month).then(data => ({ month, year: currentYear, data })));
+        // ข้อมูลปีก่อน
+        promises.push(fetchMonthData(previousYear, month).then(data => ({ month, year: previousYear, data })));
     }
-    detailedTableData.value = newData;
-    console.log('✅ ข้อมูลตารางแบบละเอียด (ประมวลผลแล้ว):', newData);
+
+    // ✅ [เพิ่มใหม่] สั่ง Run Promise ทั้งหมดพร้อมกัน
+    const results = await Promise.all(promises);
+
+    const newCurrentYearData: Record<number, Record<string, PriceRangeMetrics>> = {};
+    const newPreviousYearData: Record<number, Record<string, PriceRangeMetrics>> = {};
+
+    // ✅ [เพิ่มใหม่] ประมวลผลข้อมูลที่ได้กลับมา
+    for (const result of results) {
+        if (result.year === currentYear && result.data) {
+            newCurrentYearData[result.month] = processMonthData(result.data);
+        } else if (result.year === previousYear && result.data) {
+            newPreviousYearData[result.month] = processMonthData(result.data);
+        }
+    }
+
+    detailedTableData.value = newCurrentYearData;
+    previousYearDetailedTableData.value = newPreviousYearData; // ✅ [เพิ่มใหม่] เก็บข้อมูลปีก่อน
+    
+    console.log('✅ ข้อมูลตารางแบบละเอียด (ปัจจุบัน):', newCurrentYearData);
+    console.log('✅ ข้อมูลตารางแบบละเอียด (ปีก่อน):', newPreviousYearData);
 };
 
-// (7) ฟังก์ชัน helper สำหรับตารางแบบละเอียด (เหมือน V3)
+// (7) ฟังก์ชัน helper สำหรับตารางแบบละเอียด
+// ♻️ [แก้ไข] ปรับการแสดงผลทศนิยม
 const getDetailedValue = (type: keyof PriceRangeMetrics, monthValue: number, range: string) => {
     const value = detailedTableData.value?.[monthValue]?.[range]?.[type] || 0;
-    return value.toLocaleString('th-TH');
+    
+    if (type === 'unit') {
+        // จำนวนหลังไม่มีทศนิยม
+        return value.toLocaleString('th-TH', { maximumFractionDigits: 0 });
+    }
+    // ที่เหลือ (value, area, price_per_sqm) ให้มี 2 ตำแหน่ง
+    return value.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
 
 
 watch(selectedQuarter, (newQuarter) => {
-
     if (isUpdatingFromMonths.value) {
-        isUpdatingFromMonths.value = false; // เอาธงลง
-        return; // หยุดทำงาน ป้องกัน Loop
+        isUpdatingFromMonths.value = false;
+        return; 
     }
-
-    // (โค้ดเดิมทำงานต่อตามปกติ)
     if (newQuarter === 'all') updateToAllMonths();
     else if (newQuarter === 'Q1') selectedMonths.value = [1, 2, 3];
     else if (newQuarter === 'Q2') selectedMonths.value = [4, 5, 6];
     else if (newQuarter === 'Q3') selectedMonths.value = [7, 8, 9];
     else if (newQuarter === 'Q4') selectedMonths.value = [10, 11, 12];
 });
-watch(selectedYear, () => {
-    // ⭐️ [เพิ่มใหม่] ดึง "เดือนที่ถูกต้อง" ของปีที่เพิ่งเลือก
-    const validMonths = monthOptions.value.map(m => m.value);
-    
-    // ⭐️ [เพิ่มใหม่] ล้างเดือนที่ไม่มีอยู่จริง (เช่น ธ.ค. ของปีปัจจุบัน) ออกจากค่าที่เลือกไว้
-    selectedMonths.value = selectedMonths.value.filter(m => validMonths.includes(m));
 
-    // (โค้ดเดิม)
+watch(selectedYear, () => {
+    const validMonths = monthOptions.value.map(m => m.value);
+    selectedMonths.value = selectedMonths.value.filter(m => validMonths.includes(m));
     if (selectedQuarter.value === 'all') {
         updateToAllMonths();
     } else {
-        // (ถ้าไม่ได้เลือก 'all' เช่น เลือก Q4 ไว้)
-        // ค่า selectedMonths จะถูกกรองเหลือแค่เดือนที่ถูกต้อง (เช่น [10, 11])
-        // แล้วดึงข้อมูลใหม่ตามค่าที่เหลือ
         fetchSummary(); 
         fetchDetailedTableData(); 
     }
 });
+
 watch(selectedMonths, () => {
     const sortedMonths = [...selectedMonths.value].sort((a, b) => a - b).join(',');
     if (sortedMonths === '1,2,3') selectedQuarter.value = 'Q1';
     else if (sortedMonths === '4,5,6') selectedQuarter.value = 'Q2';
     else if (sortedMonths === '7,8,9') selectedQuarter.value = 'Q3';
     else if (sortedMonths === '10,11,12') selectedQuarter.value = 'Q4';
-    // ... (else if ของ Q4) ...
     else {
-        // (ส่วนนี้คือ "ไม่ใช่ไตรมาสใดเลย")
         const allMonthsCurrentYear = allMonthItems.map(m => m.value).slice(0, currentJsMonth).join(',');
         const allMonthsPastYear = allMonthItems.map(m => m.value).join(',');
-
-        // ตรวจสอบว่าเป็น "ทุกเดือน" หรือไม่
         if (sortedMonths === allMonthsCurrentYear || sortedMonths === allMonthsPastYear) {
             if (selectedQuarter.value !== 'all') {
-                isUpdatingFromMonths.value = true; // 👈 [แก้ไข] ยกธง
+                isUpdatingFromMonths.value = true;
                 selectedQuarter.value = 'all';
             }
         } 
-        // ถ้า "ไม่ใช่ทุกเดือน" และ "ไม่ใช่ไตรมาส" = "เลือกเอง"
         else if (selectedQuarter.value !== 'all') { 
-            isUpdatingFromMonths.value = true; // 👈 [แก้ไข] ยกธง
+            isUpdatingFromMonths.value = true;
             selectedQuarter.value = 'all';
         }
     }
-// ...
     fetchSummary();
     fetchDetailedTableData(); 
 }, { deep: true });
@@ -403,10 +435,8 @@ onMounted(() => {
     updateToAllMonths();
 });
 
-// (9) Computed สำหรับหัวตารางรายเดือน (เหมือน V3)
+// (9) Computed สำหรับหัวตารางรายเดือน
 const displayedMonths = computed(() => {
-    // ⭐️ แสดงผลตามค่าใน selectedMonths.value ที่กรองมาดีแล้วเท่านั้น
-    // และเรียงลำดับให้ถูกต้อง
     const selectedMonthValues = selectedMonths.value;
     return allMonthItems
         .filter(m => selectedMonthValues.includes(m.value))
@@ -414,15 +444,26 @@ const displayedMonths = computed(() => {
 });
 
 
-// (10) ฟังก์ชัน getValue (สำหรับกราฟ/การ์ด) (เหมือน V3)
+// (10) ฟังก์ชัน getValue (สำหรับกราฟ/การ์ด)
 const getValue = (type: string, range: string) => {
     // @ts-ignore
     return summaryData.value?.[type]?.[range] || 0;
 };
-// (10.1) Export Excel (เหมือน V3)
+
+// ✅ [เพิ่มใหม่] Helper สำหรับ format ค่าบน Card (ตาม Req 2)
+const formatCardValue = (type: string, range: string): string => {
+    // @ts-ignore
+    const value = summaryData.value?.[type]?.[range] || 0;
+     if (type === 'unit') {
+         return value.toLocaleString('th-TH', { maximumFractionDigits: 0 });
+    }
+    // ♻️ [แก้ไข] แสดงทศนิยม 2 ตำแหน่ง
+    return value.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+
+// (10.1) Export Excel
 const exportToExcel = async () => {
-    // (โค้ด exportToExcel เหมือนเดิม...
-    // ... มันจะ export ข้อมูลแบบ Price Range รวม ซึ่งสอดคล้องกับกราฟ)
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Contract Summary');
     worksheet.addRow([`สรุปข้อมูลรายงานแบ่งตามมูลค่า ประจำปี ${selectedYear.value}`]);
@@ -440,12 +481,16 @@ const exportToExcel = async () => {
     priceRanges.forEach((range) => {
         const row = [
             range,
-            getValue('unit', range), getValue('total_value', range),
-            getValue('usable_area', range), getValue('price_per_sqm', range)
+            getValue('unit', range), // ♻️ Excel ใช้ค่าดิบ (จำนวนเต็ม)
+            getValue('total_value', range), // ♻️ Excel ใช้ค่าดิบ
+            getValue('usable_area', range), // ♻️ Excel ใช้ค่าดิบ
+            getValue('price_per_sqm', range) // ♻️ Excel ใช้ค่าดิบ
         ];
         const dataRow = worksheet.addRow(row);
-        dataRow.getCell(2).numFmt = '#,##0'; dataRow.getCell(3).numFmt = '#,##0.00';
-        dataRow.getCell(4).numFmt = '#,##0.00'; dataRow.getCell(5).numFmt = '#,##0.00';
+        dataRow.getCell(2).numFmt = '#,##0'; // ♻️ unit
+        dataRow.getCell(3).numFmt = '#,##0.00'; // ♻️ total_value
+        dataRow.getCell(4).numFmt = '#,##0.00'; // ♻️ usable_area
+        dataRow.getCell(5).numFmt = '#,##0.00'; // ♻️ price_per_sqm
         dataRow.eachCell((cell: Cell) => {
             cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'D9EAF7' } };
             cell.border = { top: { style: 'thin' as BorderStyle }, left: { style: 'thin' as BorderStyle }, right: { style: 'thin' as BorderStyle }, bottom: { style: 'thin' as BorderStyle } };
@@ -466,7 +511,7 @@ const exportToExcel = async () => {
 
 
 // ----------------------------------------------------------------
-// ✅ [เพิ่มใหม่] (11) ฟังก์ชันสำหรับคำนวณ "ผลรวม" (Totals)
+// (11) ฟังก์ชันสำหรับคำนวณ "ผลรวม" (Totals)
 // ----------------------------------------------------------------
 
 // (ฟังก์ชันนี้เหมือน getDetailedValue แต่คืนค่าเป็นตัวเลข)
@@ -476,7 +521,6 @@ function getNumericDetailedValue(type: keyof PriceRangeMetrics, monthValue: numb
 
 // 1. ผลรวมแนวนอน (รวมทุกเดือน)
 function getHorizontalTotal(priceRange: string, field: keyof PriceRangeMetrics): number {
-    // วนลูปทุกเดือนที่แสดง
     return displayedMonths.value.reduce((total, month) => {
         return total + getNumericDetailedValue(field, month.value, priceRange);
     }, 0);
@@ -484,7 +528,6 @@ function getHorizontalTotal(priceRange: string, field: keyof PriceRangeMetrics):
 
 // 2. ผลรวมแนวตั้ง (รวมทุกช่วงราคา)
 function getMonthTotal(monthValue: number, field: keyof PriceRangeMetrics): number {
-    // วนลูปทุกช่วงราคา
     return priceRanges.reduce((total, range) => {
         return total + getNumericDetailedValue(field, monthValue, range);
     }, 0);
@@ -492,7 +535,6 @@ function getMonthTotal(monthValue: number, field: keyof PriceRangeMetrics): numb
 
 // 3. ผลรวมทั้งหมด (รวมทุกเดือนและทุกช่วงราคา)
 function getGrandTotal(field: keyof PriceRangeMetrics): number {
-    // วนลูปทุกเดือนที่แสดง และรวมยอดของแต่ละเดือน
     return displayedMonths.value.reduce((total, month) => {
         return total + getMonthTotal(month.value, field);
     }, 0);
@@ -501,179 +543,273 @@ function getGrandTotal(field: keyof PriceRangeMetrics): number {
 // 4. ฟังก์ชันสำหรับจัดรูปแบบ (จัดการ 'price_per_sqm' ที่ต้องคำนวณใหม่)
 
 // (ผลรวมแนวนอน)
+// ♻️ [แก้ไข] ปรับการแสดงผลทศนิยม
 function getFormattedHorizontalTotal(priceRange: string, field: keyof PriceRangeMetrics): string {
     if (field === 'price_per_sqm') {
         const totalValue = getHorizontalTotal(priceRange, 'total_value');
         const totalArea = getHorizontalTotal(priceRange, 'usable_area');
         const avg = totalArea > 0 ? totalValue / totalArea : 0;
-        // 🐞 [แก้ไขเล็กน้อย] ให้แสดง 2 ทศนิยมเสมอสำหรับ 'price_per_sqm'
         return avg.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
     const total = getHorizontalTotal(priceRange, field);
-    return total.toLocaleString('th-TH');
+    
+    if (field === 'unit') {
+         return total.toLocaleString('th-TH', { maximumFractionDigits: 0 });
+    }
+    return total.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 // (ผลรวมแนวตั้ง)
+// ♻️ [แก้ไข] ปรับการแสดงผลทศนิยม
 function getFormattedMonthTotal(monthValue: number, field: keyof PriceRangeMetrics): string {
     if (field === 'price_per_sqm') {
         const totalValue = getMonthTotal(monthValue, 'total_value');
         const totalArea = getMonthTotal(monthValue, 'usable_area');
         const avg = totalArea > 0 ? totalValue / totalArea : 0;
-        // 🐞 [แก้ไขเล็กน้อย] ให้แสดง 2 ทศนิยมเสมอสำหรับ 'price_per_sqm'
         return avg.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
     const total = getMonthTotal(monthValue, field);
-    return total.toLocaleString('th-TH');
+    
+    if (field === 'unit') {
+         return total.toLocaleString('th-TH', { maximumFractionDigits: 0 });
+    }
+    return total.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 // (ผลรวมทั้งหมด)
+// ♻️ [แก้ไข] ปรับการแสดงผลทศนิยม
 function getFormattedGrandTotal(field: keyof PriceRangeMetrics): string {
     if (field === 'price_per_sqm') {
         const totalValue = getGrandTotal('total_value');
         const totalArea = getGrandTotal('usable_area');
         const avg = totalArea > 0 ? totalValue / totalArea : 0;
-        // 🐞 [แก้ไขเล็กน้อย] ให้แสดง 2 ทศนิยมเสมอสำหรับ 'price_per_sqm'
         return avg.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
     const total = getGrandTotal(field);
-    return total.toLocaleString('th-TH');
+
+    if (field === 'unit') {
+         return total.toLocaleString('th-TH', { maximumFractionDigits: 0 });
+    }
+    return total.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-// (วางโค้ดนี้ใน <script setup lang="ts">)
 
 const filterSubtitle = computed(() => {
-    // 1. เริ่มต้นด้วยปีที่เลือก
+    // ... (โค้ดส่วนนี้เหมือนเดิม) ...
     const yearText = `ประจำปี ${selectedYear.value}`;
-
-    // 2. สร้าง key จากเดือนที่เลือก (สำหรับใช้เปรียบเทียบ)
     const sortedMonthsKey = [...selectedMonths.value].sort((a, b) => a - b).join(',');
-
-    // 3. ตรวจสอบไตรมาส (✅ อัปเดต: ใช้ชื่อเดือนเต็ม)
     if (sortedMonthsKey === '1,2,3') return `(${yearText} - ไตรมาส 1 (มกราคม - มีนาคม))`;
     if (sortedMonthsKey === '4,5,6') return `(${yearText} - ไตรมาส 2 (เมษายน - มิถุนายน))`;
     if (sortedMonthsKey === '7,8,9') return `(${yearText} - ไตรมาส 3 (กรกฎาคม - กันยายน))`;
     if (sortedMonthsKey === '10,11,12') return `(${yearText} - ไตรมาส 4 (ตุลาคม - ธันวาคม))`;
-
-    // 4. ตรวจสอบ "ทุกเดือน" (All) (คงเดิม)
     const yearAD = selectedYear.value - 543;
     const allMonthsCurrentYear = allMonthItems.map(m => m.value).slice(0, currentJsMonth).join(',');
     const allMonthsPastYear = allMonthItems.map(m => m.value).join(',');
-
     if (sortedMonthsKey === allMonthsCurrentYear || sortedMonthsKey === allMonthsPastYear) {
-        // ใช้ title จาก 'all' ใน quarterOptions
         const allOption = quarterOptions.value.find(q => q.value === 'all');
         return `(${yearText} - ${allOption ? allOption.title : 'ทุกเดือน'})`;
     }
-
-    // 5. กรณีเลือกเอง (Custom Selection) (✅ อัปเดต: แสดงชื่อเต็ม และ เดือนเริ่มต้น - สิ้นสุด)
     if (selectedMonths.value.length > 0) {
-        
-        // 1. เรียงลำดับเดือนที่เลือก
         const sortedMonthValues = [...selectedMonths.value].sort((a, b) => a - b);
-        
-        // 2. หาเดือนแรกสุด และ เดือนท้ายสุด
         const firstMonthValue = sortedMonthValues[0];
         const lastMonthValue = sortedMonthValues[sortedMonthValues.length - 1];
-
-        // 3. ค้นหาชื่อเต็มจาก allMonthItems
         const firstMonth = allMonthItems.find(m => m.value === firstMonthValue);
         const lastMonth = allMonthItems.find(m => m.value === lastMonthValue);
-
-        // 4. ตรวจสอบว่าหาเจอ
         if (!firstMonth || !lastMonth) {
-             return `(${yearText} - กำลังเลือกเดือน...)`; // ข้อความสำรอง
+             return `(${yearText} - กำลังเลือกเดือน...)`;
         }
-
-        // 5. แสดงผล
         if (firstMonthValue === lastMonthValue) {
-            // กรณีเลือกแค่เดือนเดียว
             return `(${yearText} - เดือน ${firstMonth.title})`;
         } else {
-            // กรณีเลือกหลายเดือน (จะแสดงเดือนแรกสุดและท้ายสุด)
             return `(${yearText} - เดือน ${firstMonth.title} - ${lastMonth.title})`;
         }
     }
-
-    // 6. กรณีไม่ได้เลือกเลย
     return `(${yearText} - ยังไม่ได้เลือกเดือน)`;
 });
 
 
 // ----------------------------------------------------------------
-// ✅ [เพิ่มใหม่] (12) State และ Functions สำหรับการไฮไลต์การ์ดและตาราง
-// (เหมือนใน Shadow.vue)
+// (12) State และ Functions สำหรับการไฮไลต์การ์ดและตาราง
 // ----------------------------------------------------------------
 
-// 1. Labels สำหรับการ์ด (ควรตรงกับ v-for ใน template)
 const cardLabels = ['จำนวนหลัง', 'มูลค่ารวม', 'พื้นที่ใช้สอย', 'ราคาเฉลี่ย/ตร.ม.'] as const;
-
-// 2. State สำหรับจำค่าที่เลือก
 const selectedHighlight = ref<(typeof cardLabels)[number] | null>(null);
 
-// 3. ฟังก์ชันสำหรับคลิกการ์ด
 function highlightRow(label: (typeof cardLabels)[number]) {
   if (selectedHighlight.value === label) {
-    selectedHighlight.value = null; // คลิกซ้ำเพื่อยกเลิก
+    selectedHighlight.value = null;
   } else {
     selectedHighlight.value = label;
   }
 }
 
-// (4) กราฟ Polar Area (♻️ [แก้ไข] เปลี่ยนเป็น computed)
 const polarAreaSeries = computed(() => {
-    // 1. ตรวจสอบว่ากำลังเลือก metric ไหน (ค่าเริ่มต้นคือ 'total_value')
     const metricKey = 
         (selectedHighlight.value === 'จำนวนหลัง') ? 'unit' :
         (selectedHighlight.value === 'พื้นที่ใช้สอย') ? 'usable_area' :
         (selectedHighlight.value === 'ราคาเฉลี่ย/ตร.ม.') ? 'price_per_sqm' :
-        'total_value'; // (ค่าเริ่มต้น)
-
-    // 2. ถ้าไม่มีข้อมูล ให้คืนค่าว่าง
+        'total_value'; 
     if (!summaryData.value[metricKey]) return [];
-
-    // 3. สร้าง Series ใหม่จากข้อมูลที่เลือก
     // @ts-ignore
     const newSeries = priceRanges.map(range => summaryData.value[metricKey][range] || 0);
-    
     const totalSum = newSeries.reduce((a, b) => a + b, 0);
-    
-    // 4. คืนค่า series (ถ้าผลรวมเป็น 0 ก็คืนค่าว่างเพื่อให้แสดง "No Data")
     return totalSum > 0 ? newSeries : [];
 });
 
-// 4. ฟังก์ชันสำหรับ v-show ในตาราง
 function isRowVisible(label: string): boolean {
-  // ถ้าไม่ได้เลือกอะไร (null) ให้แสดงทุกแถว
   if (selectedHighlight.value === null) {
     return true;
   }
-  // ถ้ามีปุ่มถูกเลือก ให้แสดงเฉพาะแถวที่ตรงกับปุ่มนั้น
   return selectedHighlight.value === label;
 }
 
-// 5. ฟังก์ชันสำหรับ :style ในตาราง
 function getHighlightStyle(label: string) {
   if (selectedHighlight.value !== label) return null;
-
-  // สีเดียวกับใน Shadow.vue
   if (label === 'จำนวนหลัง') return { backgroundColor: '#E3F2FD' }; 
   if (label === 'มูลค่ารวม') return { backgroundColor: '#EDE7F6' }; 
   if (label === 'พื้นที่ใช้สอย') return { backgroundColor: '#FFEBEE' }; 
   if (label === 'ราคาเฉลี่ย/ตร.ม.') return { backgroundColor: '#FFF8E1' }; 
-
   return null;
 }
 
-// 6. (Bonus) Computed สำหรับเปลี่ยนหน่วยของตาราง
 const tableUnitSubtitle = computed(() => {
   const selected = selectedHighlight.value;
   if (selected === 'จำนวนหลัง') return '(หน่วย : หลัง)';
-  if (selected === 'มูลค่ารวม') return '(หน่วย : บาท)'; // หน้านี้แสดงค่าเต็ม
+  if (selected === 'มูลค่ารวม') return '(หน่วย : บาท)'; 
   if (selected === 'พื้นที่ใช้สอย') return '(หน่วย : ตร.ม.)';
   if (selected === 'ราคาเฉลี่ย/ตร.ม.') return '(หน่วย : บาท / ตร.ม.)';
-  return ''; // ค่าเริ่มต้น (ไม่แสดงหน่วย)
+  return ''; 
 });
 
+
+// ----------------------------------------------------------------
+// ✅ [เพิ่มใหม่] (13) Helpers for MoM% and YoY%
+// ----------------------------------------------------------------
+
+function calculatePercentageChange(currentValue: number, previousValue: number): number | null {
+  if (previousValue > 0) {
+    const change = ((currentValue - previousValue) / previousValue) * 100;
+    return parseFloat(change.toFixed(1));
+  } else if (currentValue > 0) {
+    return 100; 
+  } else if (previousValue === 0 && currentValue === 0) {
+    return 0;
+  }
+  return null;
+}
+
+function formatPercentage(value: number | null): string {
+    if (value === null) return '-'; 
+    if (value === 0) return '0.0%';
+    const prefix = value > 0 ? '+' : '';
+    return `${prefix}${value.toFixed(1)}%`;
+};
+
+function getPercentageColor(value: number | null): string {
+    if (value === null) return 'text-grey';
+    if (value > 0) return 'text-success';
+    if (value < 0) return 'text-error';
+    return 'text-grey';
+};
+
+// ----------------------------------------------------------------
+// ✅ [เพิ่มใหม่] (14) MoM% (Month-over-Month) Calculation
+// ----------------------------------------------------------------
+
+function getMoMCellData(priceRange: string, monthValue: number, metric: keyof PriceRangeMetrics): number | null {
+    const prevMonthValue = monthValue - 1;
+    if (monthValue === 1 || !detailedTableData.value[prevMonthValue]) {
+        return null;
+    }
+    const currentValue = getNumericDetailedValue(metric, monthValue, priceRange);
+    const previousValue = getNumericDetailedValue(metric, prevMonthValue, priceRange);
+    return calculatePercentageChange(currentValue, previousValue);
+}
+
+function getMonthTotalMoM(monthValue: number, metric: keyof PriceRangeMetrics): number | null {
+     const prevMonthValue = monthValue - 1;
+    if (monthValue === 1 || !detailedTableData.value[prevMonthValue]) {
+        return null;
+    }
+    if (metric === 'price_per_sqm') {
+        const currentTotalValue = getMonthTotal(monthValue, 'total_value');
+        const currentTotalArea = getMonthTotal(monthValue, 'usable_area');
+        const currentAvg = currentTotalArea > 0 ? (currentTotalValue / currentTotalArea) : 0;
+        const prevTotalValue = getMonthTotal(prevMonthValue, 'total_value');
+        const prevTotalArea = getMonthTotal(prevMonthValue, 'usable_area');
+        const prevAvg = prevTotalArea > 0 ? (prevTotalValue / prevTotalArea) : 0;
+        return calculatePercentageChange(currentAvg, prevAvg);
+    }
+    const currentValue = getMonthTotal(monthValue, metric);
+    const previousValue = getMonthTotal(prevMonthValue, metric);
+    return calculatePercentageChange(currentValue, previousValue);
+}
+
+
+// ----------------------------------------------------------------
+// ✅ [เพิ่มใหม่] (15) YoY% (Year-over-Year) Calculation
+// ----------------------------------------------------------------
+
+function getRawData(
+  dataSource: Record<number, Record<string, PriceRangeMetrics>>, 
+  monthValue: number, 
+  priceRange: string, 
+  metric: keyof PriceRangeMetrics
+): number {
+    return dataSource?.[monthValue]?.[priceRange]?.[metric] || 0;
+}
+
+function getRowTotalYoY(priceRange: string, metric: keyof PriceRangeMetrics): number | null {
+    if (metric === 'price_per_sqm') {
+        let currentTotalValue = 0;
+        let currentTotalArea = 0;
+        let prevTotalValue = 0;
+        let prevTotalArea = 0;
+        for (const month of displayedMonths.value) {
+            currentTotalValue += getRawData(detailedTableData.value, month.value, priceRange, 'total_value');
+            currentTotalArea += getRawData(detailedTableData.value, month.value, priceRange, 'usable_area');
+            prevTotalValue += getRawData(previousYearDetailedTableData.value, month.value, priceRange, 'total_value');
+            prevTotalArea += getRawData(previousYearDetailedTableData.value, month.value, priceRange, 'usable_area');
+        }
+        const currentAvg = currentTotalArea > 0 ? (currentTotalValue / currentTotalArea) : 0;
+        const previousAvg = prevTotalArea > 0 ? (prevTotalValue / prevTotalArea) : 0;
+        return calculatePercentageChange(currentAvg, previousAvg);
+    }
+
+    let currentValue = 0;
+    let previousValue = 0;
+    for (const month of displayedMonths.value) {
+         currentValue += getRawData(detailedTableData.value, month.value, priceRange, metric);
+         previousValue += getRawData(previousYearDetailedTableData.value, month.value, priceRange, metric);
+    }
+    return calculatePercentageChange(currentValue, previousValue);
+}
+
+function getGrandTotalYoY(metric: keyof PriceRangeMetrics): number | null {
+    if (metric === 'price_per_sqm') {
+        const currentGrandTotalValue = getGrandTotal('total_value');
+        const currentGrandTotalArea = getGrandTotal('usable_area');
+        const currentAvg = currentGrandTotalArea > 0 ? (currentGrandTotalValue / currentGrandTotalArea) : 0;
+        let prevGrandTotalValue = 0;
+        let prevGrandTotalArea = 0;
+        for (const month of displayedMonths.value) {
+            for (const range of priceRanges) {
+                prevGrandTotalValue += getRawData(previousYearDetailedTableData.value, month.value, range, 'total_value');
+                prevGrandTotalArea += getRawData(previousYearDetailedTableData.value, month.value, range, 'usable_area');
+            }
+        }
+        const previousAvg = prevGrandTotalArea > 0 ? (prevGrandTotalValue / prevGrandTotalArea) : 0;
+        return calculatePercentageChange(currentAvg, previousAvg);
+    }
+    const currentValue = getGrandTotal(metric);
+    let previousValue = 0;
+    for (const month of displayedMonths.value) {
+         for (const range of priceRanges) {
+            previousValue += getRawData(previousYearDetailedTableData.value, month.value, range, metric);
+        }
+    }
+    return calculatePercentageChange(currentValue, previousValue);
+}
 </script>
 
 <template>
@@ -706,7 +842,7 @@ const tableUnitSubtitle = computed(() => {
                 </v-card-text>
             </v-card>
         </v-col>
- <v-col cols="12" sm="12" lg="12">
+        <v-col cols="12" sm="12" lg="12">
             <div class="v-row">
                 <div v-for="(label, index) in cardLabels" :key="index" class="v-col-sm-6 v-col-lg-3 v-col-12 py-0 mb-3">
                     
@@ -725,7 +861,7 @@ const tableUnitSubtitle = computed(() => {
                                      <svg v-else-if="label === 'ราคาเฉลี่ย/ตร.ม.'" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4.979 9.685C2.993 8.891 2 8.494 2 8s.993-.89 2.979-1.685l2.808-1.123C9.773 4.397 10.767 4 12 4s2.227.397 4.213 1.192l2.808 1.123C21.007 7.109 22 7.506 22 8s-.993.89-2.979 1.685l-2.808 1.124C14.227 11.603 13.233 12 12 12s-2.227-.397-4.213-1.191z" /><path d="m5.766 10l-.787.315C2.993 11.109 2 11.507 2 12s.993.89 2.979 1.685l2.808 1.124C9.773 15.603 10.767 16 12 16s2.227-.397 4.213-1.191l2.808-1.124C21.007 12.891 22 12.493 22 12s-.993-.89-2.979-1.685L18.234 10" /><path d="m5.766 14l-.787.315C2.993 15.109 2 15.507 2 16s.993.89 2.979 1.685l2.808 1.124C9.773 19.603 10.767 20 12 20s2.227-.397 4.213-1.192l2.808-1.123C21.007 16.891 22 16.494 22 16c0-.493-.993-.89-2.979-1.685L18.234 14" /></g></svg>
                                 </button>
                                 <div class="">
-                                    <h2 class="text-h4">{{ getValue(dataTypes[index], 'total').toLocaleString('th-TH') }}</h2>
+                                    <h2 class="text-h4">{{ formatCardValue(dataTypes[index], 'total') }}</h2>
                                     <p class="textSecondary mt-1 text-15">{{ label }}</p>
                                 </div>
                             </div>
@@ -741,9 +877,9 @@ const tableUnitSubtitle = computed(() => {
                         <div class="v-col-md-8 v-col-12">
                             <div class="d-flex align-center">
                               <div>
-    <h3 class="card-title mb-1">{{ chartTitle }}</h3>
-    <h5 class="card-subtitle" style="text-align: left">{{ filterSubtitle }}</h5>
-</div>
+                                  <h3 class="card-title mb-1">{{ chartTitle }}</h3>
+                                  <h5 class="card-subtitle" style="text-align: left">{{ filterSubtitle }}</h5>
+                              </div>
                             </div>
                         </div>
                     </div>
@@ -759,13 +895,13 @@ const tableUnitSubtitle = computed(() => {
                 <v-card-text>
                     <div class="v-row">
                         <div class="v-col-md-8 v-col-12">
-               <div>
-    <h3 class="card-title mb-1">
-        ตารางสรุปยอดรายเดือน (แยกตามมูลค่า)
-        <span class="text-subtitle-1 text-grey-darken-1 ml-2">{{ tableUnitSubtitle }}</span>
-    </h3>
-    <h5 class="card-subtitle" style="text-align: left">{{ filterSubtitle }}</h5>
-</div>
+                           <div>
+                                <h3 class="card-title mb-1">
+                                    ตารางสรุปยอดรายเดือน (แยกตามมูลค่า)
+                                    <span class="text-subtitle-1 text-grey-darken-1 ml-2">{{ tableUnitSubtitle }}</span>
+                                </h3>
+                                <h5 class="card-subtitle" style="text-align: left">{{ filterSubtitle }}</h5>
+                            </div>
                         </div>
                         <div class="v-col-md-4 v-col-12 text-right">
                             <div class="d-flex justify-end v-col-md-12 v-col-lg-12 v-col-12">
@@ -796,95 +932,304 @@ const tableUnitSubtitle = computed(() => {
                                     </th>
                                 </tr>
                                 </thead>
+                                
                                 <tbody>
-                                <template v-for="range in priceRanges" :key="range">
+                                    <template v-for="range in priceRanges" :key="range">
                                 
-                                    <tr class="month-item" style="background-color: #fcf8ff;">
-                                        <td><h6 class="text-p" style="font-size: 12px; font-weight: 600; color: #725AF2;">{{ range }}</h6></td>
-                                        <td :colspan="displayedMonths.length + 1"></td>
-                                    </tr>
-                        
-                                    <tr class="month-item" v-show="isRowVisible('จำนวนหลัง')" :style="getHighlightStyle('จำนวนหลัง')">
-                                        <td><h6 class="text-p" style="font-size: 12px; font-weight: 400; padding-left: 15px;">จำนวนหลัง</h6></td>
-                                        <td v-for="month in displayedMonths" :key="month.value + '-unit'" style="text-align: right;">
-                                            <h6 class="text-p" style="font-size: 13px; font-weight: 400;" >{{ getDetailedValue('unit', month.value, range) }}</h6>
-                                        </td>
-                                        <td style="background-color: #FFF3E0; text-align: right;" :style="getHighlightStyle('จำนวนหลัง')">
-                                            <h6 class="text-p" style="font-size: 13px; font-weight: 600;">{{ getFormattedHorizontalTotal(range, 'unit') }}</h6>
-                                        </td>
-                                    </tr>
-                        
-                                    <tr class="month-item" v-show="isRowVisible('มูลค่ารวม')" :style="getHighlightStyle('มูลค่ารวม')">
-                                        <td><h6 class="text-p" style="font-size: 12px; font-weight: 400; padding-left: 15px;">มูลค่ารวม</h6></td>
-                                        <td v-for="month in displayedMonths" :key="month.value + '-value'" style="text-align: right;">
-                                            <h6 class="text-p" style="font-size: 13px; font-weight: 400;">{{ getDetailedValue('total_value', month.value, range) }}</h6>
-                                        </td>
-                                        <td style="background-color: #FFF3E0; text-align: right;" :style="getHighlightStyle('มูลค่ารวม')">
-                                            <h6 class="text-p" style="font-size: 13px; font-weight: 600;">{{ getFormattedHorizontalTotal(range, 'total_value') }}</h6>
-                                        </td>
-                                    </tr>
-                        
-                                    <tr class="month-item" v-show="isRowVisible('พื้นที่ใช้สอย')" :style="getHighlightStyle('พื้นที่ใช้สอย')">
-                                        <td><h6 class="text-p" style="font-size: 12px; font-weight: 400; padding-left: 15px;">พื้นที่ใช้สอย</h6></td>
-                                        <td v-for="month in displayedMonths" :key="month.value + '-area'" style="text-align: right;">
-                                            <h6 class="text-p" style="font-size: 13px; font-weight: 400;">{{ getDetailedValue('usable_area', month.value, range) }}</h6>
-                                        </td>
-                                        <td style="background-color: #FFF3E0; text-align: right;" :style="getHighlightStyle('พื้นที่ใช้สอย')">
-                                            <h6 class="text-p" style="font-size: 13px; font-weight: 600;">{{ getFormattedHorizontalTotal(range, 'usable_area') }}</h6>
-                                        </td>
-                                    </tr>
-                        
-                                    <tr class="month-item" v-show="isRowVisible('ราคาเฉลี่ย/ตร.ม.')" :style="getHighlightStyle('ราคาเฉลี่ย/ตร.ม.')">
-                                        <td><h6 class="text-p" style="font-size: 12px; font-weight: 400; padding-left: 15px;">ราคาเฉลี่ย/ตร.ม.</h6></td>
-                                        <td v-for="month in displayedMonths" :key="month.value + '-avg'" style="text-align: right;">
-                                            <h6 class="text-p" style="font-size: 13px; font-weight: 400;">{{ getDetailedValue('price_per_sqm', month.value, range) }}</h6>
-                                        </td>
-                                        <td style="background-color: #FFF3E0; text-align: right;" :style="getHighlightStyle('ราคาเฉลี่ย/ตร.ม.')">
-                                            <h6 class="text-p" style="font-size: 13px; font-weight: 600;">{{ getFormattedHorizontalTotal(range, 'price_per_sqm') }}</h6>
-                                        </td>
-                                    </tr>
-                                </template>
-                        
-                                <tr class="month-item" style="background-color: #fcf8ff;" v-show="isRowVisible('จำนวนหลัง')" :style="getHighlightStyle('จำนวนหลัง')">
-                                    <td><h6 class="text-p" style="font-size: 13px; font-weight: 600; color: #F8285A;">จำนวนหลัง (รวม)</h6></td>
-                                    <td v-for="month in displayedMonths" :key="month.value + '-total-unit'" style="text-align: right;">
-                                        <h6 class="text-p" style="font-size: 14px; font-weight: 600; color: #F8285A;">{{ getFormattedMonthTotal(month.value, 'unit') }}</h6>
-                                    </td>
-                                    <td style="background-color: #FFF3E0; text-align: right;" :style="getHighlightStyle('จำนวนหลัง')">
-                                        <h6 class="text-p" style="font-size: 14px; font-weight: 800; color: #F8285A;">{{ getFormattedGrandTotal('unit') }}</h6>
-                                    </td>
-                                </tr>
-                        
-                                <tr class="month-item" style="background-color: #fcf8ff;" v-show="isRowVisible('มูลค่ารวม')" :style="getHighlightStyle('มูลค่ารวม')">
-                                    <td><h6 class="text-p" style="font-size: 13px; font-weight: 600; color: #F8285A;">มูลค่ารวม (รวม)</h6></td>
-                                    <td v-for="month in displayedMonths" :key="month.value + '-total-value'" style="text-align: right;">
-                                        <h6 class="text-p" style="font-size: 14px; font-weight: 600; color: #F8285A;">{{ getFormattedMonthTotal(month.value, 'total_value') }}</h6>
-                                    </td>
-                                    <td style="background-color: #FFF3E0; text-align: right;" :style="getHighlightStyle('มูลค่ารวม')">
-                                        <h6 class="text-p" style="font-size: 14px; font-weight: 800; color: #F8285A;">{{ getFormattedGrandTotal('total_value') }}</h6>
-                                    </td>
-                                </tr>
-                        
-                                <tr class="month-item" style="background-color: #fcf8ff;" v-show="isRowVisible('พื้นที่ใช้สอย')" :style="getHighlightStyle('พื้นที่ใช้สอย')">
-                                    <td><h6 class="text-p" style="font-size: 13px; font-weight: 600; color: #F8285A;">พื้นที่ใช้สอย (รวม)</h6></td>
-                                    <td v-for="month in displayedMonths" :key="month.value + '-total-area'" style="text-align: right;">
-                                        <h6 class="text-p" style="font-size: 14px; font-weight: 600; color: #F8285A;">{{ getFormattedMonthTotal(month.value, 'usable_area') }}</h6>
-                                    </td>
-                                    <td style="background-color: #FFF3E0; text-align: right;" :style="getHighlightStyle('พื้นที่ใช้สอย')">
-                                        <h6 class="text-p" style="font-size: 14px; font-weight: 800; color: #F8285A;">{{ getFormattedGrandTotal('usable_area') }}</h6>
-                                    </td>
-                                </tr>
+                                        <tr class="month-item" style="background-color: #fcf8ff;">
+                                            <td>
+                                                <h6 class="text-p" style="font-size: 12px; font-weight: 600; color: #725AF2;">{{ range
+                                                }}</h6>
+                                            </td>
+                                            <td :colspan="displayedMonths.length + 1"></td>
+                                        </tr>
                                 
-                                <tr class="month-item" style="background-color: #fcf8ff;" v-show="isRowVisible('ราคาเฉลี่ย/ตร.ม.')" :style="getHighlightStyle('ราคาเฉลี่ย/ตร.ม.')">
-                                    <td><h6 class="text-p" style="font-size: 13px; font-weight: 600; color: #F8285A;">ราคาเฉลี่ย/ตร.ม. (รวม)</h6></td>
-                                    <td v-for="month in displayedMonths" :key="month.value + '-total-avg'" style="text-align: right;">
-                                        <h6 class="text-p" style="font-size: 14px; font-weight: 600; color: #F8285A;">{{ getFormattedMonthTotal(month.value, 'price_per_sqm') }}</h6>
-                                    </td>
-                                    <td style="background-color: #FFF3E0; text-align: right;" :style="getHighlightStyle('ราคาเฉลี่ย/ตร.ม.')">
-                                        <h6 class="text-p" style="font-size: 14px; font-weight: 800; color: #F8285A;">{{ getFormattedGrandTotal('price_per_sqm') }}</h6>
-                                    </td>
-                                </tr>
+                                        <tr class="month-item" v-show="isRowVisible('จำนวนหลัง')" :style="getHighlightStyle('จำนวนหลัง')">
+                                            <td>
+                                                <h6 class="text-p" style="font-size: 12px; font-weight: 400; padding-left: 15px;">
+                                                    จำนวนหลัง</h6>
+                                            </td>
+                                
+                                            <td v-for="month in displayedMonths" :key="month.value + '-unit'"
+                                                style="text-align: right; vertical-align: middle;">
+                                                <div>
+                                                    <h6 class="text-p" style="font-size: 12px; font-weight: 400;">{{ getDetailedValue('unit', month.value, range) }}</h6>
+                                                    <span v-if="getMoMCellData(range, month.value, 'unit') !== null"
+                                                        class="text-caption ml-1"
+                                                        :class="getPercentageColor(getMoMCellData(range, month.value, 'unit'))"
+                                                        style="font-weight: 400; font-size: 11px !important;">
+                                                        ({{ formatPercentage(getMoMCellData(range, month.value, 'unit'))
+                                                        }})
+                                                    </span>
+                                                </div>
+                                            </td>
+                                
+                                            <td style="background-color: #FFF3E0; text-align: right; vertical-align: middle;"
+                                                :style="getHighlightStyle('จำนวนหลัง')">
+                                                <div>
+                                                    <h6 class="text-p" style="font-size: 12px; font-weight: 600;">{{
+                                                        getFormattedHorizontalTotal(range, 'unit') }}</h6>
+                                                    <span class="text-caption ml-1"
+                                                        :class="getPercentageColor(getRowTotalYoY(range, 'unit'))"
+                                                        style="font-weight: 400; font-size: 10px !important;">
+                                                        ({{ formatPercentage(getRowTotalYoY(range, 'unit')) }})
+                                                    </span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                
+                                        <tr class="month-item" v-show="isRowVisible('มูลค่ารวม')" :style="getHighlightStyle('มูลค่ารวม')">
+                                            <td>
+                                                <h6 class="text-p" style="font-size: 12px; font-weight: 400; padding-left: 15px;">
+                                                    มูลค่ารวม</h6>
+                                            </td>
+                                
+                                            <td v-for="month in displayedMonths" :key="month.value + '-value'"
+                                                style="text-align: right; vertical-align: middle;">
+                                                <div>
+                                                    <h6 class="text-p" style="font-size: 12px; font-weight: 400;">{{
+                                                        getDetailedValue('total_value', month.value, range) }}</h6>
+                                                    <span v-if="getMoMCellData(range, month.value, 'total_value') !== null"
+                                                        class="text-caption ml-1"
+                                                        :class="getPercentageColor(getMoMCellData(range, month.value, 'total_value'))"
+                                                        style="font-weight: 400; font-size: 10px !important;">
+                                                        ({{ formatPercentage(getMoMCellData(range, month.value,
+                                                        'total_value')) }})
+                                                    </span>
+                                                </div>
+                                            </td>
+                                
+                                            <td style="background-color: #FFF3E0; text-align: right; vertical-align: middle;"
+                                                :style="getHighlightStyle('มูลค่ารวม')">
+                                                <div>
+                                                    <h6 class="text-p" style="font-size: 12px; font-weight: 600;">{{
+                                                        getFormattedHorizontalTotal(range, 'total_value') }}</h6>
+                                                    <span class="text-caption ml-1"
+                                                        :class="getPercentageColor(getRowTotalYoY(range, 'total_value'))"
+                                                        style="font-weight: 400; font-size: 10px !important;">
+                                                        ({{ formatPercentage(getRowTotalYoY(range, 'total_value')) }})
+                                                    </span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                
+                                        <tr class="month-item" v-show="isRowVisible('พื้นที่ใช้สอย')"
+                                            :style="getHighlightStyle('พื้นที่ใช้สอย')">
+                                            <td>
+                                                <h6 class="text-p" style="font-size: 12px; font-weight: 400; padding-left: 15px;">
+                                                    พื้นที่ใช้สอย</h6>
+                                            </td>
+                                
+                                            <td v-for="month in displayedMonths" :key="month.value + '-area'"
+                                                style="text-align: right; vertical-align: middle;">
+                                                <div>
+                                                    <h6 class="text-p" style="font-size: 12px; font-weight: 400;">{{
+                                                        getDetailedValue('usable_area', month.value, range) }}</h6>
+                                                    <span v-if="getMoMCellData(range, month.value, 'usable_area') !== null"
+                                                        class="text-caption ml-1"
+                                                        :class="getPercentageColor(getMoMCellData(range, month.value, 'usable_area'))"
+                                                        style="font-weight: 400; font-size: 10px !important;">
+                                                        ({{ formatPercentage(getMoMCellData(range, month.value,
+                                                        'usable_area')) }})
+                                                    </span>
+                                                </div>
+                                            </td>
+                                
+                                            <td style="background-color: #FFF3E0; text-align: right; vertical-align: middle;"
+                                                :style="getHighlightStyle('พื้นที่ใช้สอย')">
+                                                <div>
+                                                    <h6 class="text-p" style="font-size: 12px; font-weight: 600;">{{
+                                                        getFormattedHorizontalTotal(range, 'usable_area') }}</h6>
+                                                    <span class="text-caption ml-1"
+                                                        :class="getPercentageColor(getRowTotalYoY(range, 'usable_area'))"
+                                                        style="font-weight: 400; font-size: 10px !important;">
+                                                        ({{ formatPercentage(getRowTotalYoY(range, 'usable_area')) }})
+                                                    </span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                
+                                        <tr class="month-item" v-show="isRowVisible('ราคาเฉลี่ย/ตร.ม.')"
+                                            :style="getHighlightStyle('ราคาเฉลี่ย/ตร.ม.')">
+                                            <td>
+                                                <h6 class="text-p" style="font-size: 12px; font-weight: 400; padding-left: 15px;">
+                                                    ราคาเฉลี่ย/ตร.ม.</h6>
+                                            </td>
+                                
+                                            <td v-for="month in displayedMonths" :key="month.value + '-avg'"
+                                                style="text-align: right; vertical-align: middle;">
+                                                <div>
+                                                    <h6 class="text-p" style="font-size: 12px; font-weight: 400;">{{
+                                                        getDetailedValue('price_per_sqm', month.value, range) }}</h6>
+                                                    <span v-if="getMoMCellData(range, month.value, 'price_per_sqm') !== null"
+                                                        class="text-caption ml-1"
+                                                        :class="getPercentageColor(getMoMCellData(range, month.value, 'price_per_sqm'))"
+                                                        style="font-weight: 400; font-size: 10px !important;">
+                                                        ({{ formatPercentage(getMoMCellData(range, month.value,
+                                                        'price_per_sqm')) }})
+                                                    </span>
+                                                </div>
+                                            </td>
+                                
+                                            <td style="background-color: #FFF3E0; text-align: right; vertical-align: middle;"
+                                                :style="getHighlightStyle('ราคาเฉลี่ย/ตร.ม.')">
+                                                <div>
+                                                    <h6 class="text-p" style="font-size: 12px; font-weight: 600;">{{
+                                                        getFormattedHorizontalTotal(range, 'price_per_sqm') }}</h6>
+                                                    <span class="text-caption ml-1"
+                                                        :class="getPercentageColor(getRowTotalYoY(range, 'price_per_sqm'))"
+                                                        style="font-weight: 400; font-size: 10px !important;">
+                                                        ({{ formatPercentage(getRowTotalYoY(range, 'price_per_sqm')) }})
+                                                    </span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    </template>
+                                
+                                    <tr class="month-item" style="background-color: #fcf8ff;" v-show="isRowVisible('จำนวนหลัง')"
+                                        :style="getHighlightStyle('จำนวนหลัง')">
+                                        <td>
+                                            <h6 class="text-p" style="font-size: 13px; font-weight: 600; color: #F8285A;">จำนวนหลัง
+                                                (รวม)</h6>
+                                        </td>
+                                
+                                        <td v-for="month in displayedMonths" :key="month.value + '-total-unit'"
+                                            style="text-align: right; vertical-align: middle;">
+                                            <div>
+                                                <h6 class="text-p" style="font-size: 12px; font-weight: 600; color: #F8285A;">{{
+                                                    getFormattedMonthTotal(month.value, 'unit') }}</h6>
+                                                <span v-if="getMonthTotalMoM(month.value, 'unit') !== null"
+                                                    class="text-caption ml-1"
+                                                    :class="getPercentageColor(getMonthTotalMoM(month.value, 'unit'))"
+                                                    style="font-weight: 400; font-size: 10px !important;">
+                                                    ({{ formatPercentage(getMonthTotalMoM(month.value, 'unit')) }})
+                                                </span>
+                                            </div>
+                                        </td>
+                                
+                                        <td style="background-color: #FFF3E0; text-align: right; vertical-align: middle;"
+                                            :style="getHighlightStyle('จำนวนหลัง')">
+                                            <div>
+                                                <h6 class="text-p" style="font-size: 12px; font-weight: 800; color: #F8285A;">{{
+                                                    getFormattedGrandTotal('unit') }}</h6>
+                                                <span class="text-caption ml-1"
+                                                    :class="getPercentageColor(getGrandTotalYoY('unit'))"
+                                                    style="font-weight: 600; color: #F8285A; font-size: 10px !important;">
+                                                    ({{ formatPercentage(getGrandTotalYoY('unit')) }})
+                                                </span>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                
+                                    <tr class="month-item" style="background-color: #fcf8ff;" v-show="isRowVisible('มูลค่ารวม')"
+                                        :style="getHighlightStyle('มูลค่ารวม')">
+                                        <td>
+                                            <h6 class="text-p" style="font-size: 13px; font-weight: 600; color: #F8285A;">มูลค่ารวม
+                                                (รวม)</h6>
+                                        </td>
+                                
+                                        <td v-for="month in displayedMonths" :key="month.value + '-total-value'"
+                                            style="text-align: right; vertical-align: middle;">
+                                            <div>
+                                                <h6 class="text-p" style="font-size: 12px; font-weight: 600; color: #F8285A;">{{
+                                                    getFormattedMonthTotal(month.value, 'total_value') }}</h6>
+                                                <span v-if="getMonthTotalMoM(month.value, 'total_value') !== null"
+                                                    class="text-caption ml-1"
+                                                    :class="getPercentageColor(getMonthTotalMoM(month.value, 'total_value'))"
+                                                    style="font-weight: 400; font-size: 10px !important;">
+                                                    ({{ formatPercentage(getMonthTotalMoM(month.value, 'total_value'))
+                                                    }})
+                                                </span>
+                                            </div>
+                                        </td>
+                                
+                                        <td style="background-color: #FFF3E0; text-align: right; vertical-align: middle;"
+                                            :style="getHighlightStyle('มูลค่ารวม')">
+                                            <div>
+                                                <h6 class="text-p" style="font-size: 12px; font-weight: 800; color: #F8285A;">{{
+                                                    getFormattedGrandTotal('total_value') }}</h6>
+                                                <span class="text-caption ml-1"
+                                                    :class="getPercentageColor(getGrandTotalYoY('total_value'))"
+                                                    style="font-weight: 600; color: #F8285A; font-size: 10px !important;">
+                                                    ({{ formatPercentage(getGrandTotalYoY('total_value')) }})
+                                                </span>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                
+                                    <tr class="month-item" style="background-color: #fcf8ff;" v-show="isRowVisible('พื้นที่ใช้สอย')"
+                                        :style="getHighlightStyle('พื้นที่ใช้สอย')">
+                                        <td>
+                                            <h6 class="text-p" style="font-size: 13px; font-weight: 600; color: #F8285A;">พื้นที่ใช้สอย
+                                                (รวม)</h6>
+                                        </td>
+                                
+                                        <td v-for="month in displayedMonths" :key="month.value + '-total-area'"
+                                            style="text-align: right; vertical-align: middle;">
+                                            <div>
+                                                <h6 class="text-p" style="font-size: 12px; font-weight: 600; color: #F8285A;">{{
+                                                    getFormattedMonthTotal(month.value, 'usable_area') }}</h6>
+                                                <span v-if="getMonthTotalMoM(month.value, 'usable_area') !== null"
+                                                    class="text-caption ml-1"
+                                                    :class="getPercentageColor(getMonthTotalMoM(month.value, 'usable_area'))"
+                                                    style="font-weight: 400; font-size: 10px !important;">
+                                                    ({{ formatPercentage(getMonthTotalMoM(month.value, 'usable_area'))
+                                                    }})
+                                                </span>
+                                            </div>
+                                        </td>
+                                
+                                        <td style="background-color: #FFF3E0; text-align: right; vertical-align: middle;"
+                                            :style="getHighlightStyle('พื้นที่ใช้สอย')">
+                                            <div>
+                                                <h6 class="text-p" style="font-size: 12px; font-weight: 800; color: #F8285A;">{{
+                                                    getFormattedGrandTotal('usable_area') }}</h6>
+                                                <span class="text-caption ml-1"
+                                                    :class="getPercentageColor(getGrandTotalYoY('usable_area'))"
+                                                    style="font-weight: 600; color: #F8285A; font-size: 10px !important;">
+                                                    ({{ formatPercentage(getGrandTotalYoY('usable_area')) }})
+                                                </span>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                
+                                    <tr class="month-item" style="background-color: #fcf8ff;"
+                                        v-show="isRowVisible('ราคาเฉลี่ย/ตร.ม.')" :style="getHighlightStyle('ราคาเฉลี่ย/ตร.ม.')">
+                                        <td>
+                                            <h6 class="text-p" style="font-size: 13px; font-weight: 600; color: #F8285A;">
+                                                ราคาเฉลี่ย/ตร.ม. (รวม)</h6>
+                                        </td>
+                                
+                                        <td v-for="month in displayedMonths" :key="month.value + '-total-avg'"
+                                            style="text-align: right; vertical-align: middle;">
+                                            <div>
+                                                <h6 class="text-p" style="font-size: 12px; font-weight: 600; color: #F8285A;">{{
+                                                    getFormattedMonthTotal(month.value, 'price_per_sqm') }}</h6>
+                                                <span v-if="getMonthTotalMoM(month.value, 'price_per_sqm') !== null"
+                                                    class="text-caption ml-1"
+                                                    :class="getPercentageColor(getMonthTotalMoM(month.value, 'price_per_sqm'))"
+                                                    style="font-weight: 400; font-size: 10px !important;">
+                                                    ({{ formatPercentage(getMonthTotalMoM(month.value, 'price_per_sqm'))
+                                                    }})
+                                                </span>
+                                            </div>
+                                        </td>
+                                
+                                        <td style="background-color: #FFF3E0; text-align: right; vertical-align: middle;"
+                                            :style="getHighlightStyle('ราคาเฉลี่ย/ตร.ม.')">
+                                            <div>
+                                                <h6 class="text-p" style="font-size: 12px; font-weight: 800; color: #F8285A;">{{
+                                                    getFormattedGrandTotal('price_per_sqm') }}</h6>
+                                                <span class="text-caption ml-1"
+                                                    :class="getPercentageColor(getGrandTotalYoY('price_per_sqm'))"
+                                                    style="font-weight: 600; color: #F8285A; font-size: 10px !important;">
+                                                    ({{ formatPercentage(getGrandTotalYoY('price_per_sqm')) }})
+                                                </span>
+                                            </div>
+                                        </td>
+                                    </tr>
                                 </tbody>
+
                             </table>
                         </div>
                     </div>
@@ -908,6 +1253,8 @@ const tableUnitSubtitle = computed(() => {
 .month-item td, .month-item th {
   padding: 8px !important;
   border-bottom: 1px solid #eee;
+  /* ♻️ [เพิ่มใหม่] จัดให้ % ที่ขึ้นบรรทัดใหม่ อยู่ชิดขวาเหมือนค่าหลัก */
+  vertical-align: top;
 }
 
 /* ✅ [เพิ่มใหม่] CSS สำหรับการ์ดที่คลิกได้ */
