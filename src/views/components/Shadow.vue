@@ -1108,11 +1108,11 @@ const exportToPDF = async () => {
     // === 1. โหลดทรัพยากร (ฟอนต์ และ โลโก้) ===
 
     // (!!!) 1a. (MODIFIED) โหลดฟอนต์ (ใช้วิธี DataURL แล้วตัดส่วนหัว)
-    const fontUrl = '/fonts/Sarabun-Regular.ttf'; 
+   const fontUrl = '/fonts/THSarabunNew.ttf';
     let fontBase64 = ''; // นี่คือ Base64 ที่ *ไม่* มี prefix
     try {
         const fontResponse = await fetch(fontUrl);
-        if (!fontResponse.ok) throw new Error('Failed to fetch local font: /fonts/Sarabun-Regular.ttf');
+        if (!fontResponse.ok) throw new Error('Failed to fetch local font: /fonts/THSarabunNew.ttf');
         const fontBlob = await fontResponse.blob();
         
         // ใช้วิธี DataURL ที่เสถียร
@@ -1144,24 +1144,24 @@ const exportToPDF = async () => {
 
     // === 2. สร้าง PDF และตั้งค่าฟอนต์ ===
     const pdf = new jsPDF('p', 'mm', 'a4'); 
-    const fontName = 'Sarabun'; 
+    const fontName = 'THSarabunNew';
     const fontStyle = 'normal';
     
     // (!!!) 2a. (MODIFIED) ส่ง Base64 string ที่ถูกต้อง (ไม่มี prefix)
     // (วิธีนี้จะแก้ปัญหา 'No unicode cmap' และ 'vFS error')
-    pdf.addFileToVFS('Sarabun-Regular.ttf', fontBase64); 
-    pdf.addFont('Sarabun-Regular.ttf', fontName, fontStyle);
+    pdf.addFileToVFS('THSarabunNew.ttf', atob(fontBase64)); 
+    pdf.addFont('THSarabunNew.ttf', fontName, fontStyle);
     pdf.setFont(fontName, fontStyle);
     
     // === 3. สร้างหน้าปก (โลโก้ + ข้อความ) ===
     const pageWidth = pdf.internal.pageSize.getWidth();
     const pageCenter = pageWidth / 2;
-    let currentY = 30; 
+    let currentY = 90; // (!!!) ปรับตำแหน่งเริ่มต้นตามที่คุยกัน
 
     // (!!!) 3a. (MODIFIED) เพิ่มโลโก้ (ด้วย Data URL ที่สมบูรณ์)
     if (logoDataURL) {
         const logoWidth = 60; 
-        const logoHeight = 18.5; 
+        const logoHeight = 70; // (!!!) ปรับความสูงโลโก้ตามที่คุยกัน
         const logoX = pageCenter - (logoWidth / 2); 
         
         // (วิธีนี้จะแก้ปัญหา 'wrong PNG signature' เพราะเราส่ง "data:image/png;base64,...")
@@ -1172,14 +1172,29 @@ const exportToPDF = async () => {
         currentY = 100; 
     }
 
-    // (!!!) 3b. & 3c. เพิ่มข้อความ (ส่วนนี้ถูกต้องอยู่แล้ว)
-    // (Error 'widths' จะหายไป เพราะฟอนต์โหลดสำเร็จแล้ว)
-    pdf.setFontSize(22);
+   
+    pdf.setFontSize(30);
     pdf.text('รายงานแบ่งตามไตรมาส', pageCenter, currentY, { align: 'center' });
     currentY += 10; 
-    pdf.setFontSize(18);
+    pdf.setFontSize(20);
     const combinedText = `ประจำปี: ${selectedYear.value}  |  พื้นที่: ${selectedRegion.value}`;
     pdf.text(combinedText, pageCenter, currentY, { align: 'center' });
+
+    // (!!!) 4. (NEW) เพิ่มวันที่อัพเดต
+    const today = new Date();
+    const day = today.getDate();
+    const monthIndex = today.getMonth();
+    const year = today.getFullYear() + 543; // ปี พ.ศ.
+    const thaiMonths = [
+        "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", 
+        "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
+    ];
+    const month = thaiMonths[monthIndex];
+    const dateString = `อัพเดตข้อมูลวันที่ ${day} ${month} ${year}`;
+    
+    currentY += 10; // ขยับลงมาอีก
+    pdf.setFontSize(15); // ตั้งค่าฟอนต์ให้เล็กลง
+    pdf.text(dateString, pageCenter, currentY, { align: 'center' });
     // === จบหน้าปก ===
 
     // 7. ถ่ายรูปตาราง
@@ -1199,19 +1214,22 @@ const exportToPDF = async () => {
     const pdfWidth = pdf.internal.pageSize.getWidth() - (pageMargin * 2); 
     const pdfHeight = pdf.internal.pageSize.getHeight() - (pageMargin * 2); 
 
-    const imgHeight = canvas.height * pdfWidth / canvas.width;
+   
+    const imgHeight = pdfHeight; // <--- 1. ยึดความสูง 100% เป็นหลัก
+    const imgWidth = canvas.width * imgHeight / canvas.height; // <--- 2. คำนวณความกว้างตามสัดส่วน
     
     let heightLeft = imgHeight;
     let position = pageMargin; 
 
-    pdf.addImage(imgData, 'PNG', pageMargin, position, pdfWidth, imgHeight);
-    heightLeft -= pdfHeight; 
+    pdf.addImage(imgData, 'PNG', pageMargin, position, imgWidth, imgHeight); 
+    heightLeft -= pdfHeight;
 
     // 10. วนลูปเพิ่มหน้า (ส่วนนี้ถูกต้องอยู่แล้ว)
     while (heightLeft > 0) {
       position = heightLeft - imgHeight + pageMargin; 
       pdf.addPage();
-      pdf.addImage(imgData, 'PNG', pageMargin, position, pdfWidth, imgHeight);
+      // (!!!) 4. ใช้ imgWidth และ imgHeight ที่คำนวณใหม่
+      pdf.addImage(imgData, 'PNG', pageMargin, position, imgWidth, imgHeight); 
       heightLeft -= pdfHeight;
     }
     
@@ -1234,6 +1252,27 @@ const exportToPDF = async () => {
     exportLoading.value = false;
   }
 };
+
+// (!!!) NEW: Computed สำหรับเปลี่ยนหน่วยของตาราง
+const tableUnitSubtitle = computed(() => {
+  const selected = selectedHighlight.value; // ดึงค่าที่กำลังไฮไลต์อยู่
+
+  if (selected === 'จำนวนหลัง') {
+    return '(หน่วย : หลัง)';
+  }
+  if (selected === 'มูลค่ารวม') {
+    return '(หน่วย : ล้านบาท)';
+  }
+  if (selected === 'พื้นที่ใช้สอย') {
+    return '(หน่วย : ตร.ม.)'; // (คุณอาจต้องปรับถ้าหน่วยเป็นอย่างอื่น)
+  }
+  if (selected === 'ราคาเฉลี่ย/ตร.ม.') {
+    return '(หน่วย : บาท / ตร.ม.)'; // (คุณอาจต้องปรับถ้าหน่วยเป็นอย่างอื่น)
+  }
+
+  // (!!!) ค่าเริ่มต้น เมื่อไม่ได้เลือกอะไร (หรือถ้าต้องการให้แสดงทุกหน่วย)
+  return '(หน่วย : ล้านบาท)'; // กลับไปใช้ค่าเดิม
+});
 </script>
 
 <template>
@@ -1338,9 +1377,9 @@ const exportToPDF = async () => {
             
             <v-col cols="12" md="8">
               <h3 class="card-title mb-1">
-                รายงานแบ่งตามไตรมาส ประจำปี {{ selectedYear }}
+                รายงานแบ่งตามไตรมาส ประจำปี {{ selectedYear }} (พื้นที่: {{ selectedRegion }})
               </h3>
-              <h5 class="card-subtitle" style="text-align: left;">(พื้นที่: {{ selectedRegion }})</h5>
+             <h5 class="card-subtitle" style="text-align: left;">{{ tableUnitSubtitle }}</h5>
             </v-col>
 
             <v-col cols="12" md="4">
@@ -1392,13 +1431,13 @@ const exportToPDF = async () => {
         </v-overlay>
       
         <v-card-text>
-          <div class="v-row">
+          <div class="v-row mt-2">
             <div class="v-col-md-8 v-col-12">
               <div class="d-flex align-center">
                 <div>
                   <h3 class="card-title mb-1">ตารางแบ่งตามไตรมาส ประจำปี {{ selectedYear }} (พื้นที่: {{ selectedRegion
                     }})</h3>
-                  <h5 class="card-subtitle" style="text-align: left;">(หน่วย : ล้านบาท)</h5>
+                  <h5 class="card-subtitle" style="text-align: left;">{{ tableUnitSubtitle }}</h5>
                 </div>
               </div>
             </div>
@@ -1418,7 +1457,7 @@ const exportToPDF = async () => {
             </div>
           </div>
           
-          <div class="v-table v-theme--BLUE_THEME v-table--density-default month-table">
+          <div class="v-table v-theme--BLUE_THEME v-table--density-default month-table mt-12">
             <div class="v-table__wrapper">
               <table id="table-to-export">
                 <thead style="background-color: #F5F5F5;">
