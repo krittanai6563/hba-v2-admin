@@ -713,7 +713,7 @@ const exportToExcel = async () => {
                 dataRow.eachCell((cell: Cell, colNumber) => {
                     if (colNumber > 1) { 
                         // ⭐️ [แก้ไข]
-                        cell.numFmt = (field === 'price_per_sqm') ? '#,##0.00' : '#,##0'; 
+                        cell.numFmt = (field === 'price_per_sqm') ? '#,##0.00' : '#,##0';
                         cell.alignment = { horizontal: 'right' };
                     }
                     cell.border = { top: { style: 'thin' as BorderStyle }, left: { style: 'thin' as BorderStyle }, right: { style: 'thin' as BorderStyle }, bottom: { style: 'thin' as BorderStyle } };
@@ -779,11 +779,6 @@ const exportToExcel = async () => {
     window.URL.revokeObjectURL(url);
 };
 
-// ⭐️ [ลบออก] Helper getGrandTotalByRange (ซ้ำซ้อนกับ getSummaryHorizontalTotal)
-
-
-// --- (9) Subtitle (เหมือน house.vue) ---
-// ⭐️ [ปรับปรุง]
 const filterSubtitle = computed(() => {
     const yearText = `ประจำปี ${selectedYear.value}`;
     const sortedMonthsKey = [...selectedMonths.value].sort((a, b) => a - b).join(',');
@@ -834,9 +829,8 @@ const filterSubtitle = computed(() => {
 });
 
 
-// ⭐️ (6.A.6) [ใหม่] คำนวณ % สัดส่วนเทียบกับยอดรวม (สำหรับตารางสรุป)
 function getSummaryContributionPercent(region: string, field: keyof RegionMetrics): string {
-    // ⭐️ เราจะคำนวณสัดส่วนเฉพาะ 'unit', 'value', และ 'area'
+  
     if (field === 'price_per_sqm') {
         return "";
     }
@@ -845,18 +839,16 @@ function getSummaryContributionPercent(region: string, field: keyof RegionMetric
     const grandTotal = getSummaryGrandTotal(field);
 
     if (grandTotal === 0 || regionTotal === 0) {
-        return ""; // ไม่แสดงถ้าไม่มีข้อมูล
+        return ""; 
     }
 
     const percent = (regionTotal / grandTotal) * 100;
-    
-    // ⭐️ แสดงเป็น (XX.X%)
+   
     return `<span class="contribution-percent" style="font-size: 10px; color: ##28a745; font-weight: 400; margin-left: 4px; white-space: nowrap;">(${percent.toFixed(1)}%)</span>`;
 }
 
-// ⭐️ (6.A.7) [ใหม่] คำนวณ % สัดส่วนเทียบกับยอดรวม (สำหรับแถว Grand Total)
 function getSummaryGrandTotalContributionPercent(field: keyof RegionMetrics): string {
-    // ⭐️ เราจะคำนวณสัดส่วนเฉพาะ 'unit', 'value', และ 'area'
+    
      if (field === 'price_per_sqm') {
         return "";
     }

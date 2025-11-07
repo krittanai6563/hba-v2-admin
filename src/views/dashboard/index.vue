@@ -140,20 +140,27 @@ const contractNotification = computed(() => {
 const jsDate = new Date();
 const currentJsYear = jsDate.getFullYear();
 const currentJsMonth = jsDate.getMonth() + 1;
-// ... (โค้ดเดิมของคุณทั้งหมด) ...
+
+// (!!! อัปเดต: เพิ่ม short (ชื่อย่อ) !!!)
 const allMonthItems = [
-    { title: 'มกราคม', value: 1 }, { title: 'กุมภาพันธ์', value: 2 },
-    { title: 'มีนาคม', value: 3 }, { title: 'เมษายน', value: 4 },
-    { title: 'พฤษภาคม', value: 5 }, { title: 'มิถุนายน', value: 6 },
-    { title: 'กรกฎาคม', value: 7 }, { title: 'สิงหาคม', value: 8 },
-    { title: 'กันยายน', value: 9 }, { title: 'ตุลาคม', value: 10 },
-    { title: 'พฤศจิกายน', value: 11 }, { title: 'ธันวาคม', value: 12 }
+    { title: 'มกราคม', short: 'ม.ค.', value: 1 }, 
+    { title: 'กุมภาพันธ์', short: 'ก.พ.', value: 2 },
+    { title: 'มีนาคม', short: 'มี.ค.', value: 3 }, 
+    { title: 'เมษายน', short: 'เม.ย.', value: 4 },
+    { title: 'พฤษภาคม', short: 'พ.ค.', value: 5 }, 
+    { title: 'มิถุนายน', short: 'มิ.ย.', value: 6 },
+    { title: 'กรกฎาคม', short: 'ก.ค.', value: 7 }, 
+    { title: 'สิงหาคม', short: 'ส.ค.', value: 8 },
+    { title: 'กันยายน', short: 'ก.ย.', value: 9 }, 
+    { title: 'ตุลาคม', short: 'ต.ค.', value: 10 },
+    { title: 'พฤศจิกายน', short: 'พ.ย.', value: 11 }, 
+    { title: 'ธันวาคม', short: 'ธ.ค.', value: 12 }
 ];
 const selectedYear = ref(currentJsYear + 543);
 const selectedQuarter = ref('all');
 const selectedMonths = ref<number[]>([]);
 const yearOptions = ref(
-    Array.from({ length: 2 }, (_, i) => currentJsYear + 543 - i)
+    Array.from({ length: 5 }, (_, i) => currentJsYear + 543 - i)
 );
 const quarterOptions = ref([
     { title: 'ทุกไตรมาส / ทุกเดือน', value: 'all' },
@@ -163,14 +170,13 @@ const quarterOptions = ref([
     { title: 'ไตรมาส 4 (ต.ค. - ธ.ค.)', value: 'Q4' }
 ]);
 
-// (!!! อัปเดต: ลบ selectedPeriod ออก !!!)
-// type Period = '1M' | '3M' | '6M' | 'YTD'; // ลบ
-// const selectedPeriod = ref<Period>('YTD'); // ลบ
+// (!!! ใหม่: เพิ่ม Ref สำหรับปุ่มเลือกช่วงเวลา (และ 'custom') !!!)
+type Period = '1M' | '3M' | '6M' | 'YTD' | 'custom';
+const selectedPeriod = ref<Period>('YTD');
 
-// (!!! อัปเดต: เพิ่ม isUpdatingFromMonths (เหมือน region.vue) !!!)
+
 const isUpdatingFromMonths = ref(false);
 
-// (!!! อัปเดต: เปลี่ยน monthOptions เป็น computed (เหมือน region.vue) !!!)
 const monthOptions = computed(() => {
     const yearAD = selectedYear.value - 543;
     if (yearAD === currentJsYear) {
@@ -185,20 +191,37 @@ const monthOptions = computed(() => {
 
 const loading = ref(false);
 const summaryData = ref({ total_units: 0, total_value: 0, total_area: 0, value_per_sqm: 0 });
-const monthlyChartLabels = ref<string[]>([]);
-const monthlyUnitsData = ref<number[]>([]);
-const monthlyValueData = ref<number[]>([]);
-const monthlyAreaData = ref<number[]>([]);
-const monthlyValuePerSqmData = ref<number[]>([]);
+
+// (!!! อัปเดต: แยก Ref สำหรับ "กราฟ" (Selected) และ "ตาราง" (Full) !!!)
+
+// (1) Refs สำหรับ "กราฟ" (แสดงเฉพาะเดือนที่เลือก)
+const selectedMonthlyChartLabels = ref<string[]>([]);
+const selectedMonthlyUnitsData = ref<number[]>([]);
+const selectedMonthlyValueData = ref<number[]>([]);
+const selectedMonthlyAreaData = ref<number[]>([]);
+const selectedMonthlyValuePerSqmData = ref<number[]>([]);
+
+// (2) Refs สำหรับ "ตาราง" (เก็บข้อมูลเต็มตั้งแต่ ม.ค. ... เดือนล่าสุดที่เลือก)
+const fullMonthlyLabels = ref<string[]>([]);
+// (CY = Current Year)
+const fullMonthlyUnitsData_CY = ref<number[]>([]);
+const fullMonthlyValueData_CY = ref<number[]>([]);
+const fullMonthlyAreaData_CY = ref<number[]>([]);
+const fullMonthlyValuePerSqmData_CY = ref<number[]>([]);
+// (PY = Previous Year)
+const fullMonthlyUnitsData_PY = ref<number[]>([]);
+const fullMonthlyValueData_PY = ref<number[]>([]);
+const fullMonthlyAreaData_PY = ref<number[]>([]);
+const fullMonthlyValuePerSqmData_PY = ref<number[]>([]);
+
+
 const loadingRegional = ref(false);
-const regionalData = ref<any[]>([]);
 type Metric = 'units' | 'value' | 'area' | 'valuePerSqm';
 const activeMetric = ref<Metric>('value');
 // (--- จบส่วนโค้ดเดิม ---)
 
 
 // --- (!!! เพิ่ม: ฟังก์ชันดึงสถานะผู้ใช้ (ข้อมูลและสัญญา) !!!) ---
-// (ฟังก์ชันนี้จะเรียก API ที่ต่างจาก fetchData หลักของคุณ)
 const fetchUserStatus = async () => {
     if (!userId) {
         fetchErrorUserStatus.value = 'ไม่พบข้อมูลผู้ใช้';
@@ -215,7 +238,6 @@ const fetchUserStatus = async () => {
             month_number: (currentMonth + 1).toString() // (1-12)
         };
 
-        // (!!! เรียก API เดิมที่ใช้เช็คสถานะ !!!)
         const res = await fetch('https://uat.hba-sales.org/backend/data_and_email.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -233,7 +255,6 @@ const fetchUserStatus = async () => {
         } else {
             statusMessage.value = data.status || 'กรอกข้อมูลเรียบร้อย';
             fetchErrorUserStatus.value = '';
-            // (!!! ใหม่: ดึงสถานะสัญญา (สมมติชื่อ field คือ 'contract_status') !!!)
             contractStatusMessage.value = data.contract_status || '';
             fetchErrorContractStatus.value = '';
         }
@@ -248,81 +269,122 @@ const fetchUserStatus = async () => {
 // --- (!!! สิ้นสุดส่วนที่เพิ่ม: fetchUserStatus !!!) ---
 
 
-// --- (!!! อัปเดต !!!) 3. ฟังก์ชันหลักในการดึงข้อมูล (โค้ดเดิมของคุณ) ---
+// --- (!!! อัปเดต: 3. ฟังก์ชันหลักในการดึงข้อมูล (FetchData) (อัปเดตครั้งใหญ่) !!!) ---
 const fetchData = async () => {
-    // (A. ส่วน Logic ตรวจสอบค่าว่าง (เหมือนเดิม))
+    // (A. ส่วน Logic ตรวจสอบค่าว่าง)
     if (selectedMonths.value.length === 0 || !selectedYear.value) {
         summaryData.value = { total_units: 0, total_value: 0, total_area: 0, value_per_sqm: 0 };
-        monthlyChartLabels.value = []; monthlyUnitsData.value = [];
-        monthlyValueData.value = []; monthlyAreaData.value = [];
-        monthlyValuePerSqmData.value = [];
-
-        regionalData.value = [];
+        // (รีเซ็ต "กราฟ")
+        selectedMonthlyChartLabels.value = []; selectedMonthlyUnitsData.value = [];
+        selectedMonthlyValueData.value = []; selectedMonthlyAreaData.value = [];
+        selectedMonthlyValuePerSqmData.value = [];
+        // (รีเซ็ต "ตาราง")
+        fullMonthlyLabels.value = [];
+        fullMonthlyUnitsData_CY.value = []; fullMonthlyValueData_CY.value = [];
+        fullMonthlyAreaData_CY.value = []; fullMonthlyValuePerSqmData_CY.value = [];
+        fullMonthlyUnitsData_PY.value = []; fullMonthlyValueData_PY.value = [];
+        fullMonthlyAreaData_PY.value = []; fullMonthlyValuePerSqmData_PY.value = [];
+        
         return;
     }
 
     // (B. สั่ง loading ทั้งคู่)
     loading.value = true;
-    loadingRegional.value = true;
+    loadingRegional.value = true; // (ยังใช้ loadingRegional สำหรับตาราง)
 
     try {
+        // (!!! 1. (ใหม่) หาเดือนทั้งหมดที่ต้องใช้คำนวณ (ตั้งแต่ 1 ถึงเดือนล่าสุดที่เลือก) !!!)
+        const maxMonth = Math.max(...selectedMonths.value);
+        if (maxMonth <= 0) return; // (Safety check)
+        
+        // (!!! (อัปเดต) ถ้า maxMonth < 3 (Q1) เราต้องดึง Q1 ให้ครบเพื่อคำนวณ QoQ !!!)
+        // (!!! (อัปเดต 2) ไม่ เราดึงแค่ 1...maxMonth ก็พอ QoQ จะเริ่มคำนวณที่ Q2)
+        const monthsToFetch = Array.from({ length: maxMonth }, (_, i) => i + 1);
+
+
+        // (!!! 2. เตรียม Payload สำหรับปีปัจจุบัน (CY) (ใช้ monthsToFetch) !!!)
         const yearAD = selectedYear.value - 543;
-
-        // --- (!!! นี่คือส่วนที่แก้ไข) ---
-
-        // 1. สร้าง payload เป็น Object (ยังไม่ stringify)
-        const payload: any = {
+        const payload_CY: any = {
             year: yearAD,
-            months: selectedMonths.value.sort((a, b) => a - b),
+            months: monthsToFetch, // (!!! อัปเดต !!!)
             role: userRole.value
         };
-
-        // 2. ตรวจสอบสิทธิ์ และ *เพิ่ม* user_id เข้าไปใน Object
         if (!isAdmin.value && userId) {
-            payload.user_id = userId; // ถ้าไม่ใช่ Admin ให้ส่ง user_id ของตัวเอง
+            payload_CY.user_id = userId;
         }
-
-        // 3. Stringify Object ที่สมบูรณ์แล้ว
-        const bodyPayload = JSON.stringify(payload);
+        const bodyPayload_CY = JSON.stringify(payload_CY);
         
-        // --- (!!! สิ้นสุดส่วนแก้ไข) ---
-
-
-        // (C. สร้าง Promise สำหรับ API ทั้งสองตัว)
-        const chartApiUrl = 'https://uat.hba-sales.org/backend/get_dashboard_data.php';
-        const regionalApiUrl = 'https://uat.hba-sales.org/backend/get_regional_comparison.php';
-
-        const fetchOptions = {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: bodyPayload // (ตอนนี้ bodyPayload จะมี user_id ถ้าจำเป็น)
+        // (!!! 3. เตรียม Payload สำหรับปีก่อนหน้า (PY) (ใช้ monthsToFetch) !!!)
+        const yearPY_AD = yearAD - 1;
+        const payload_PY: any = {
+            year: yearPY_AD,
+            months: monthsToFetch, // (!!! อัปเดต !!!)
+            role: userRole.value
         };
+         if (!isAdmin.value && userId) {
+            payload_PY.user_id = userId;
+        }
+        const bodyPayload_PY = JSON.stringify(payload_PY);
 
-        const chartPromise = fetch(chartApiUrl, fetchOptions).then(res => res.json());
-        const regionalPromise = fetch(regionalApiUrl, fetchOptions).then(res => res.json());
 
-        // (D. รอให้ทั้งคู่เสร็จสิ้น)
-        const [chartResponse, regionalResponse] = await Promise.all([chartPromise, regionalPromise]);
+        // (!!! 4. สร้าง Promise (เหลือ 2 ตัว ไม่เอา regional แล้ว) !!!)
+        const chartApiUrl = 'https://uat.hba-sales.org/backend/get_dashboard_data.php';
+        
+        const fetchOptions_CY = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: bodyPayload_CY };
+        const fetchOptions_PY = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: bodyPayload_PY };
 
-        // (E. ประมวลผล Chart (เหมือนเดิม))
-        if (chartResponse.status === 'success') {
-            summaryData.value = chartResponse.data.summary;
-            const monthly = chartResponse.data.monthly_data;
-            monthlyChartLabels.value = monthly.labels;
-            monthlyUnitsData.value = monthly.units;
-            monthlyValueData.value = monthly.value;
-            monthlyAreaData.value = monthly.area;
-            monthlyValuePerSqmData.value = monthly.valuePerSqm;
+        const chartPromise_CY = fetch(chartApiUrl, fetchOptions_CY).then(res => res.json());
+        const chartPromise_PY = fetch(chartApiUrl, fetchOptions_PY).then(res => res.json());
+
+        // (!!! 5. รอให้ทั้ง 2 ตัวเสร็จสิ้น !!!)
+        const [chartResponse_CY, chartResponse_PY] = await Promise.all([
+            chartPromise_CY, 
+            chartPromise_PY
+        ]);
+
+        // (!!! 6. ประมวลผล Chart (CY) - (อัปเดต) !!!)
+        if (chartResponse_CY.status === 'success') {
+            summaryData.value = chartResponse_CY.data.summary;
+            const monthly = chartResponse_CY.data.monthly_data;
+            
+            // (6.1 เก็บข้อมูล "เต็ม" สำหรับตาราง)
+            fullMonthlyLabels.value = monthly.labels; // (ได้ ["ม.ค.", "ก.พ.", ... "มิ.ย."])
+            fullMonthlyUnitsData_CY.value = monthly.units;
+            fullMonthlyValueData_CY.value = monthly.value;
+            fullMonthlyAreaData_CY.value = monthly.area;
+            fullMonthlyValuePerSqmData_CY.value = monthly.valuePerSqm;
+            
+            // (6.2 กรองข้อมูล "เฉพาะที่เลือก" สำหรับกราฟ)
+            // (6.2 กรองข้อมูล "เฉพาะที่เลือก" สำหรับกราฟ)
+            const selectedIndexes = selectedMonths.value.map(m => m - 1); // (เช่น Q2 -> [3, 4, 5])
+
+            // (!!! อัปเดต: เพิ่ม (value: unknown, index: number) เพื่อแก้ Error TS(7006) !!!)
+            selectedMonthlyChartLabels.value = monthly.labels.filter((value: unknown, index: number) => selectedIndexes.includes(index));
+            selectedMonthlyUnitsData.value = monthly.units.filter((value: unknown, index: number) => selectedIndexes.includes(index));
+            selectedMonthlyValueData.value = monthly.value.filter((value: unknown, index: number) => selectedIndexes.includes(index));
+            selectedMonthlyAreaData.value = monthly.area.filter((value: unknown, index: number) => selectedIndexes.includes(index));
+            selectedMonthlyValuePerSqmData.value = monthly.valuePerSqm.filter((value: unknown, index: number) => selectedIndexes.includes(index));
+
         } else {
-            console.error('Error fetching chart data:', chartResponse.message);
+            console.error('Error fetching chart data (CY):', chartResponse_CY.message);
+        }
+        
+        // (!!! 7. (ใหม่) ประมวลผล Chart (PY) (เก็บข้อมูล "เต็ม" สำหรับตาราง) !!!)
+         if (chartResponse_PY.status === 'success') {
+            const monthly_PY = chartResponse_PY.data.monthly_data;
+            fullMonthlyUnitsData_PY.value = monthly_PY.units;
+            fullMonthlyValueData_PY.value = monthly_PY.value;
+            fullMonthlyAreaData_PY.value = monthly_PY.area;
+            fullMonthlyValuePerSqmData_PY.value = monthly_PY.valuePerSqm;
+        } else {
+            console.error('Error fetching PY chart data:', chartResponse_PY.message);
+            const monthCount = fullMonthlyLabels.value.length; // (ใช้จำนวนเดือนของ CY เป็นหลัก)
+            fullMonthlyUnitsData_PY.value = Array(monthCount).fill(0);
+            fullMonthlyValueData_PY.value = Array(monthCount).fill(0);
+            fullMonthlyAreaData_PY.value = Array(monthCount).fill(0);
+            fullMonthlyValuePerSqmData_PY.value = Array(monthCount).fill(0);
         }
 
-        // (F. ประมวลผลตาราง (ใหม่))
-        if (regionalResponse.status === 'success') {
-            regionalData.value = regionalResponse.data;
-        } else {
-            console.error('Error fetching regional data:', regionalResponse.message);
-        }
 
     } catch (error) {
         console.error('Fetch error:', error);
@@ -332,21 +394,56 @@ const fetchData = async () => {
         loadingRegional.value = false;
     }
 };
+// (!!! จบการอัปเดต fetchData !!!)
 
-// (!!! อัปเดต: ลบฟังก์ชัน setPeriod ออก !!!)
-// const setPeriod = (period: Period) => { ... }; // ลบ
 
-// --- (!!! อัปเดต: Logic Filters & onMounted (ยกมาจาก region.vue) !!!) ---
+// (!!! ใหม่: เพิ่ม setPeriod (จาก Step 20) !!!)
+const setPeriod = (period: Period) => {
+    selectedPeriod.value = period;
+
+    // 1. Get all available months (Jan...CurrentMonth)
+    const yearAD = selectedYear.value - 543;
+    let availableMonths: number[] = [];
+    if (yearAD === currentJsYear) {
+        availableMonths = allMonthItems.map(m => m.value).filter(m => m <= currentJsMonth);
+    } else if (yearAD > currentJsYear) {
+        availableMonths = [];
+    } else {
+        availableMonths = allMonthItems.map(m => m.value);
+    }
+
+    // 2. Set selectedMonths based on the "rolling" window
+    if (period === '1M') {
+        selectedMonths.value = availableMonths.slice(-1);
+    } else if (period === '3M') {
+        selectedMonths.value = availableMonths.slice(-3);
+    } else if (period === '6M') {
+        selectedMonths.value = availableMonths.slice(-6);
+    } else { // 'YTD'
+        selectedMonths.value = availableMonths;
+        // (!!! อัปเดต: ถ้ากด YTD ให้ซิงค์ Dropdown Q ด้วย !!!)
+        if (selectedQuarter.value !== 'all') {
+            isUpdatingFromMonths.value = true; // (ป้องกัน watch(selectedQuarter) ทำงาน)
+            selectedQuarter.value = 'all';
+        }
+    }
+};
+
+
+// --- (!!! อัปเดต: Logic Filters & onMounted (รวม 2 ระบบ) !!!) ---
 watch(selectedQuarter, (newQuarter) => {
     if (isUpdatingFromMonths.value) {
         isUpdatingFromMonths.value = false;
         return;
     }
-    // ดึงเดือนที่ "มีสิทธิ์" เลือกได้ในปีนั้นๆ
     const validMonthValues = monthOptions.value.map(m => m.value);
     const filterValidMonths = (months: number[]) => months.filter(m => validMonthValues.includes(m));
 
-    if (newQuarter === 'all') updateToAllMonths();
+    if (newQuarter === 'all') {
+         // (ถ้าผู้ใช้ "เลือก" All Q (ไม่ใช่เพราะ sync) ให้ตั้งเป็น YTD)
+         // (ปกติ watch(selectedMonths) จะคุม แต่อันนี้กันไว้)
+         updateToAllMonths(); 
+    }
     else if (newQuarter === 'Q1') selectedMonths.value = filterValidMonths([1, 2, 3]);
     else if (newQuarter === 'Q2') selectedMonths.value = filterValidMonths([4, 5, 6]);
     else if (newQuarter === 'Q3') selectedMonths.value = filterValidMonths([7, 8, 9]);
@@ -354,18 +451,18 @@ watch(selectedQuarter, (newQuarter) => {
 });
 
 watch(selectedYear, () => {
-    // กรองเดือนที่เลือกไว้ ให้เหลือเฉพาะเดือนที่ "มี" ในปีใหม่
-    const validMonths = monthOptions.value.map((m) => m.value);
-    selectedMonths.value = selectedMonths.value.filter((m) => validMonths.includes(m));
-
-    if (selectedQuarter.value === 'all') {
-        updateToAllMonths(); 
+    // (เมื่อปีเปลี่ยน, ให้ใช้ "ปุ่ม" หรือ "Q" ที่เคยเลือกไว้)
+    if(selectedQuarter.value !== 'all') {
+         // (ถ้าเลือก Q ไว้ ให้รัน logic ของ Q ใหม่)
+         const validMonths = monthOptions.value.map((m) => m.value);
+         selectedMonths.value = selectedMonths.value.filter((m) => validMonths.includes(m));
+         
+         const currentQuarter = selectedQuarter.value;
+         selectedQuarter.value = ''; 
+         selectedQuarter.value = currentQuarter;
     } else {
-        // ถ้าเลือก Q1-Q4 ค้างไว้ ให้ re-trigger logic ของ 'watch(selectedQuarter)'
-        // เพื่อเลือกเดือนของไตรมาสนั้นๆ "ในปีใหม่"
-        const currentQuarter = selectedQuarter.value;
-        selectedQuarter.value = ''; // เปลี่ยนค่าชั่วคราว
-        selectedQuarter.value = currentQuarter; // เปลี่ยนกลับเพื่อ trigger watch
+         // (ถ้าไม่ได้เลือก Q (คือใช้ปุ่ม) ให้รัน logic ของปุ่มใหม่)
+         setPeriod(selectedPeriod.value);
     }
 });
 
@@ -375,40 +472,54 @@ watch(
         
         const sortedMonths = [...newMonths].sort((a, b) => a - b).join(',');
         
-        // ดึงเดือนที่ "มีสิทธิ์" เลือกได้ในปีนั้นๆ
         const validMonthValues = monthOptions.value.map(m => m.value);
         
-        // สร้าง key ของไตรมาส (ที่ valid)
         const q1Months = [1, 2, 3].filter(m => validMonthValues.includes(m)).join(',');
         const q2Months = [4, 5, 6].filter(m => validMonthValues.includes(m)).join(',');
         const q3Months = [7, 8, 9].filter(m => validMonthValues.includes(m)).join(',');
         const q4Months = [10, 11, 12].filter(m => validMonthValues.includes(m)).join(',');
 
-        // 1. ซิงค์ Dropdown 'ไตรมาส'
+        // (!!! 1. ซิงค์ Dropdown 'ไตรมาส' !!!)
         if (sortedMonths === q1Months && q1Months.length > 0) selectedQuarter.value = 'Q1';
         else if (sortedMonths === q2Months && q2Months.length > 0) selectedQuarter.value = 'Q2';
         else if (sortedMonths === q3Months && q3Months.length > 0) selectedQuarter.value = 'Q3';
         else if (sortedMonths === q4Months && q4Months.length > 0) selectedQuarter.value = 'Q4';
         else {
-            // 2. ถ้าไม่ตรงไตรมาส, เช็คว่าตรงกับ "YTD" (ทุกเดือน) หรือไม่
             const yearAD = selectedYear.value - 543;
             const allMonthsCurrentYear = allMonthItems.map((m) => m.value).slice(0, currentJsMonth).join(',');
             const allMonthsPastYear = allMonthItems.map((m) => m.value).join(',');
 
             if (sortedMonths === allMonthsCurrentYear || sortedMonths === allMonthsPastYear) {
-                // ถ้าตรง YTD และ Dropdown ยังไม่เป็น 'all'
                 if (selectedQuarter.value !== 'all') {
-                    isUpdatingFromMonths.value = true; // ตั้ง Flag
-                    selectedQuarter.value = 'all'; // สั่งให้ Dropdown เป็น 'all'
+                    isUpdatingFromMonths.value = true;
+                    selectedQuarter.value = 'all';
                 }
             } else if (selectedQuarter.value !== 'all') {
-                // 3. ถ้าไม่ตรงไตรมาส และไม่ตรง YTD (เช่น เลือกเอง [1, 5, 9])
-                isUpdatingFromMonths.value = true; // ตั้ง Flag
-                selectedQuarter.value = 'all'; // สั่งให้ Dropdown เป็น 'all'
+                isUpdatingFromMonths.value = true;
+                selectedQuarter.value = 'all';
             }
         }
+
+        // (!!! 2. ซิงค์ "ปุ่ม" (1M, 3M, ...) !!!)
+        const yearAD = selectedYear.value - 543;
+        let availableMonths: number[] = [];
+        if (yearAD === currentJsYear) availableMonths = allMonthItems.map(m => m.value).filter(m => m <= currentJsMonth);
+        else if (yearAD > currentJsYear) availableMonths = [];
+        else availableMonths = allMonthItems.map(m => m.value);
         
-        // 4. (สำคัญ!) เมื่อเดือนเปลี่ยน ให้ดึงข้อมูล
+        const availableMonthsKey = availableMonths.join(',');
+        const last6MonthsKey = availableMonths.slice(-6).join(',');
+        const last3MonthsKey = availableMonths.slice(-3).join(',');
+        const last1MonthKey = availableMonths.slice(-1).join(',');
+
+        if (sortedMonths === availableMonthsKey) selectedPeriod.value = 'YTD';
+        else if (sortedMonths === last6MonthsKey) selectedPeriod.value = '6M';
+        else if (sortedMonths === last3MonthsKey) selectedPeriod.value = '3M';
+        else if (sortedMonths === last1MonthKey) selectedPeriod.value = '1M';
+        else selectedPeriod.value = 'custom'; // (เช่น ถ้าเลือก Q1, Q2, หรือ [1, 5, 9])
+
+
+        // (!!! 3. ดึงข้อมูล (สำคัญ!) !!!)
         fetchData();
     },
     { deep: true }
@@ -426,8 +537,8 @@ const updateToAllMonths = () => {
 };
 
 onMounted(() => {
-    // (!!! อัปเดต: เปลี่ยนกลับไปใช้ updateToAllMonths (เหมือน region.vue) !!!)
-    updateToAllMonths();
+    // (!!! อัปเดต: กลับไปใช้ setPeriod('YTD') เพื่อเริ่ม !!!)
+    setPeriod('YTD');
     fetchUserStatus(); 
 });
 // --- (!!! สิ้นสุดการอัปเดต Logic Filters !!!) ---
@@ -470,146 +581,9 @@ const buildTotalPayload = () => {
     return payload;
 };
 
-// (ใน buildPreviousMonthPayload ก็มี Logic เดียวกัน)
-
-// (!!! D. อัปเดต: computed สำหรับตารางใหม่ (รองรับ 4 Metrics) !!!)
-const regionalTableData = computed(() => {
-
-    // 1. สร้าง Map จากข้อมูล API
-    const dataMap = new Map(regionalData.value.map(row => [row.region, row]));
-
-    // 2. วนลูปจาก "Master List"
-    return allRegionsMasterList.map(regionName => {
-
-        const row = dataMap.get(regionName) || null;
-
-        // 3. ถ้าไม่พบข้อมูล (row === null) -> คืนค่า 0
-        if (!row) {
-            return {
-                region: regionName,
-                current_period: 0, yoy_change: 0, mom_change: 0,
-                cytd: 0, pytd: 0, ytd_change: 0
-            };
-        }
-
-        // 4. (!!! อัปเดต !!!) ถ้าพบข้อมูล -> ดึงข้อมูลดิบทั้งหมด
-        const raw = {
-            cp_units: parseFloat(row.cp_units),
-            cp_value: parseFloat(row.cp_value),
-            cp_area: parseFloat(row.cp_area),
-
-            pyp_units: parseFloat(row.pyp_units),
-            pyp_value: parseFloat(row.pyp_value),
-            pyp_area: parseFloat(row.pyp_area),
-
-            cytd_units: parseFloat(row.cytd_units),
-            cytd_value: parseFloat(row.cytd_value),
-            cytd_area: parseFloat(row.cytd_area),
-
-            pytd_units: parseFloat(row.pytd_units),
-            pytd_value: parseFloat(row.pytd_value),
-            pytd_area: parseFloat(row.pytd_area),
-
-            // (mom_... ตอนนี้คือ 'เดือนก่อนหน้าเดือนล่าสุด')
-            mom_units: parseFloat(row.mom_units),
-            mom_value: parseFloat(row.mom_value),
-            mom_area: parseFloat(row.mom_area),
-
-            // (!!! ใหม่: ดึงข้อมูลเดือนล่าสุด (LSM) !!!)
-            lsm_units: parseFloat(row.lsm_units),
-            lsm_value: parseFloat(row.lsm_value),
-            lsm_area: parseFloat(row.lsm_area)
-        };
-
-        // 5. (!!! อัปเดต !!!) เลือก metricData (แยก MoM ออกมา)
-        let metricData; // (สำหรับ CP, PYP, CYTD, PYTD)
-        let momMetricData; // (!!! ใหม่: สำหรับ MoM เท่านั้น !!!)
-
-        if (activeMetric.value === 'units') {
-            metricData = { cp: raw.cp_units, pyp: raw.pyp_units, cytd: raw.cytd_units, pytd: raw.pytd_units };
-            // (!!! MoM เทียบ lsm (ล่าสุด) กับ mom (เดือนก่อน) !!!)
-            momMetricData = { latest: raw.lsm_units, prev: raw.mom_units };
-
-        } else if (activeMetric.value === 'area') {
-            metricData = { cp: raw.cp_area, pyp: raw.pyp_area, cytd: raw.cytd_area, pytd: raw.pytd_area };
-            momMetricData = { latest: raw.lsm_area, prev: raw.mom_area };
-
-        } else if (activeMetric.value === 'valuePerSqm') {
-            // (คำนวณ 'ยอดรวม')
-            metricData = {
-                cp: raw.cp_area > 0 ? (raw.cp_value / raw.cp_area) : 0,
-                pyp: raw.pyp_area > 0 ? (raw.pyp_value / raw.pyp_area) : 0,
-                cytd: raw.cytd_area > 0 ? (raw.cytd_value / raw.cytd_area) : 0,
-                pytd: raw.pytd_area > 0 ? (raw.pytd_value / raw.pytd_area) : 0
-            };
-            // (!!! คำนวณ MoM V/Sqm แยก !!!)
-            const lsm_vps = raw.lsm_area > 0 ? (raw.lsm_value / raw.lsm_area) : 0;
-            const mom_vps = raw.mom_area > 0 ? (raw.mom_value / raw.mom_area) : 0;
-            momMetricData = { latest: lsm_vps, prev: mom_vps };
-
-        } else { // Default คือ 'value'
-            metricData = { cp: raw.cp_value, pyp: raw.pyp_value, cytd: raw.cytd_value, pytd: raw.pytd_value };
-            momMetricData = { latest: raw.lsm_value, prev: raw.mom_value };
-        }
-
-        // 6. (!!! อัปเดต !!!) คำนวณ %
-        // (YoY และ YTD เหมือนเดิม - ใช้ metricData.cp)
-        const yoy_change = (metricData.pyp > 0)
-            ? ((metricData.cp - metricData.pyp) / metricData.pyp) * 100
-            : (metricData.cp > 0 ? 100 : 0);
-
-        const ytd_change = (metricData.pytd > 0)
-            ? ((metricData.cytd - metricData.pytd) / metricData.pytd) * 100
-            : (metricData.cytd > 0 ? 100 : 0);
-
-        // (!!! MoM ใช้ตรรกะใหม่: latest vs prev !!!)
-        const mom_change = (momMetricData.prev > 0)
-            ? ((momMetricData.latest - momMetricData.prev) / momMetricData.prev) * 100
-            : (momMetricData.latest > 0 ? 100 : 0);
-
-        // 7. คืนค่า (ใช้ metricData.cp สำหรับ 'ยอดรวม')
-        return {
-            region: regionName,
-            current_period: metricData.cp, // (คอลัมน์นี้ยังคงเป็น 'ยอดรวม' ถูกต้องแล้ว)
-            yoy_change: yoy_change,
-            mom_change: mom_change, // (คอลัมน์นี้คำนวณจาก (LSM vs Prev) ถูกต้องแล้ว)
-            cytd: metricData.cytd,
-            pytd: metricData.pytd,
-            ytd_change: ytd_change
-        };
-    });
-});
-
-// (!!! E. อัปเดต: Headers สำหรับตารางใหม่ (รองรับ 4 Metrics) !!!)
-const regionalTableHeaders = computed(() => {
-    // (!!! ใหม่: เปลี่ยนชื่อ Metric ให้ถูกต้อง !!!)
-    let metricName = 'มูลค่า (บาท)'; // Default
-    if (activeMetric.value === 'units') metricName = 'จำนวน (หลัง)';
-    else if (activeMetric.value === 'area') metricName = 'พื้นที่ (ตร.ม.)';
-    else if (activeMetric.value === 'valuePerSqm') metricName = 'มูลค่า/ตร.ม. (บาท)';
-
-    // (!!! ดึงปี พ.ศ. ปัจจุบันและปีที่แล้วมาใช้ !!!)
-    const currentYearBE = selectedYear.value;     // เช่น 2568
-    const previousYearBE = selectedYear.value - 1; // เช่น 2567
-
-    const headers = [
-        { title: 'ภูมิภาค', key: 'region', align: 'start', sortable: true, width: '25%' },
-        // { title: `ยอดรวม (${metricName})`, key: 'current_period', align: 'end', sortable: true },
-
-        { title: 'MoM %', key: 'mom_change', align: 'end', sortable: true },
-        { title: 'YoY %', key: 'yoy_change', align: 'end', sortable: true },
-
-        { title: `YTD ${currentYearBE} `, key: 'cytd', align: 'end', sortable: true },
-        { title: `YTD ${previousYearBE} `, key: 'pytd', align: 'end', sortable: true },
-
-        { title: 'YTD %', key: 'ytd_change', align: 'end', sortable: true },
-    ] as const; // (!!! <-- เพิ่ม 'as const' ตรงนี้ครับ !!!)
-
-    return headers;
-});
 // (!!! F. Helpers สำหรับตารางใหม่ (เหมือนเดิม) !!!)
 const formatPercentage = (value: number) => {
-    if (value === 0) return '0.0%';
+    if (value === 0 || !isFinite(value)) return '0.0%';
     const prefix = value > 0 ? '+' : '';
     return `${prefix}${value.toFixed(1)}%`;
 };
@@ -644,7 +618,7 @@ const tableKey = computed(() => {
     return `${activeMetric.value}-${showMomColumn.value}`;
 });
 
-// (!!! H. Chart Options (อัปเดต: กราฟผสม 2 แกน Y) !!!)
+// (!!! H. (อัปเดต!) Chart Options (ปรับปรุงความสวยงาม) !!!)
 const chartOptions = computed(() => {
     let yAxisTitle = '';
     let barColor = '#43ced7';
@@ -676,7 +650,16 @@ const chartOptions = computed(() => {
             toolbar: {
                 show: true,
                 tools: { download: true }
-            }
+            },
+            dropShadow: {
+                enabled: true,
+                enabledOnSeries: [1],
+                top: 3,
+                left: 0,
+                blur: 3,
+                color: '#E53935',
+                opacity: 0.35
+            },
         },
         
         colors: [barColor, '#E53935'], 
@@ -696,25 +679,24 @@ const chartOptions = computed(() => {
 
         dataLabels: {
             enabled: true,
-            enabledOnSeries: [0], 
+            enabledOnSeries: [0],
             offsetY: -13,
             style: {
                 fontSize: '10px',
-                
             },
             formatter: (val: number) => {
                 const value = Number(val);
-                if (value === 0) return ''; 
+                if (value === 0) return '';
                 if (activeMetric.value === 'units') {
-                    return value.toLocaleString('th-TH', {
-                        minimumFractionDigits: 0,
-                        maximumFractionDigits: 0
-                    });
+                    return value.toLocaleString('th-TH');
                 }
-                return value.toLocaleString('th-TH', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2
-                });
+                if (value >= 1000000) {
+                    return (value / 1000000).toFixed(1) + 'M';
+                }
+                if (value >= 1000) {
+                    return (value / 1000).toFixed(0) + 'K';
+                }
+                return value.toLocaleString('th-TH', { maximumFractionDigits: 0 });
             },
         },
         
@@ -728,46 +710,42 @@ const chartOptions = computed(() => {
             borderColor: 'rgba(0, 0, 0, 0.1)'
         },
         xaxis: {
-            categories: monthlyChartLabels.value,
-          
+            categories: selectedMonthlyChartLabels.value, // (!!! อัปเดต: ใช้ selected... !!!)
         },
         
-        // (!!! 7. ตั้งค่า 2 แกน Y (อัปเดต labels) !!!)
         yaxis: [
             {
-                // (แกน Y ที่ 1 - สำหรับแท่ง)
                 seriesName: 'Data',
-               
                 labels: {
-                    show: false, // (!!! 1. เพิ่มบรรทัดนี้เพื่อปิดตัวเลขฝั่งซ้าย !!!)
+                    show: true, 
                     formatter: (val: number) => {
-                        if (val >= 1000000) return (val / 1000000).toFixed(1) + 'M';
+                        if (val >= 1000000) return (val / 1000000).toFixed(0) + 'M';
                         if (val >= 1000) return (val / 1000).toFixed(0) + 'K';
                         return val.toFixed(0);
                     }
                 }
             },
             {
-                // (แกน Y ที่ 2 - สำหรับเส้น %)
                 seriesName: '% เปลี่ยนแปลง (MoM)',
                 opposite: true, 
-            
                 labels: {
-                    show: false, // (!!! 2. เพิ่มบรรทัดนี้เพื่อปิดตัวเลขฝั่งขวา !!!)
+                    show: true, 
                     formatter: (val: number) => (val ? val.toFixed(0) + '%' : '0%')
                 }
             }
         ],
         tooltip: {
             theme: 'dark',
+            shared: true, 
+            intersect: false, 
             y: {
                 formatter: (val: number, { seriesIndex }: { seriesIndex: number }) => {
                     if (val === undefined || val === null) return 'N/A';
                     
-                    if (seriesIndex === 0) { // (Tooltip สำหรับแท่ง)
+                    if (seriesIndex === 0) {
                          return val.toLocaleString('th-TH', { maximumFractionDigits: 2 });
                     }
-                    if (seriesIndex === 1) { // (Tooltip สำหรับเส้น)
+                    if (seriesIndex === 1) {
                         return val.toFixed(1) + ' %';
                     }
                     return val.toString();
@@ -778,32 +756,55 @@ const chartOptions = computed(() => {
             horizontalAlign: 'center',
             position: 'bottom',
             offsetY: 0
+        },
+        markers: {
+            size: 0,
+            hover: {
+                size: 5
+            }
         }
     };
 });
+// (!!! จบการอัปเดต chartOptions !!!)
 
 
-// (!!! ใหม่: computed สำหรับหา data source ปัจจุบัน !!!)
+// (!!! อัปเดต: computed สำหรับหา data source (กราฟ) !!!)
 const currentMetricData = computed(() => {
     switch (activeMetric.value) {
-        case 'units': return monthlyUnitsData.value;
-        case 'value': return monthlyValueData.value;
-        case 'area': return monthlyAreaData.value;
-        case 'valuePerSqm': return monthlyValuePerSqmData.value;
+        case 'units': return selectedMonthlyUnitsData.value;
+        case 'value': return selectedMonthlyValueData.value;
+        case 'area': return selectedMonthlyAreaData.value;
+        case 'valuePerSqm': return selectedMonthlyValuePerSqmData.value;
+        default: return [];
+    }
+});
+
+// (!!! อัปเดต: computed สำหรับหา data source "เต็ม" (ตาราง) !!!)
+const currentMetricData_CY_FULL = computed(() => {
+    switch (activeMetric.value) {
+        case 'units': return fullMonthlyUnitsData_CY.value;
+        case 'value': return fullMonthlyValueData_CY.value;
+        case 'area': return fullMonthlyAreaData_CY.value;
+        case 'valuePerSqm': return fullMonthlyValuePerSqmData_CY.value;
+        default: return [];
+    }
+});
+const currentMetricData_PY_FULL = computed(() => {
+    switch (activeMetric.value) {
+        case 'units': return fullMonthlyUnitsData_PY.value;
+        case 'value': return fullMonthlyValueData_PY.value;
+        case 'area': return fullMonthlyAreaData_PY.value;
+        case 'valuePerSqm': return fullMonthlyValuePerSqmData_PY.value;
         default: return [];
     }
 });
 
 
-// (!!! K. (ใหม่) สร้างข้อมูลสำหรับเส้น % เปลี่ยนแปลง !!!)
+// (!!! K. (อัปเดต) สร้างข้อมูลสำหรับเส้น % เปลี่ยนแปลง (กราฟ) !!!)
 const monthlyPercentChangeData = computed(() => {
-    // (!!! อัปเดต: ใช้ computed ใหม่ !!!)
-    let sourceData: number[] = currentMetricData.value;
-    
-    // เลือกข้อมูลดิบตาม Metric ที่ใช้งาน
-    // (ลบ logic เดิมออก)
+    let sourceData: number[] = currentMetricData.value; // (ใช้ข้อมูล "กราฟ" ที่กรองแล้ว)
 
-    const changes: (number | null)[] = [null]; // เดือนแรกไม่มี % เทียบ
+    const changes: (number | null)[] = [null]; 
     
     for (let i = 1; i < sourceData.length; i++) {
         const prev = sourceData[i - 1];
@@ -813,9 +814,9 @@ const monthlyPercentChangeData = computed(() => {
             const change = ((curr - prev) / prev) * 100;
             changes.push(parseFloat(change.toFixed(1)));
         } else if (curr > 0) {
-            changes.push(100); // ถ้าจาก 0 เป็นค่าบวก
+            changes.push(100);
         } else {
-            changes.push(0); // ถ้าจาก 0 เป็น 0
+            changes.push(0);
         }
     }
     return changes;
@@ -833,23 +834,23 @@ const mainGraphTitle = computed(() => {
 
     const yearText = ' ประจำปี ' + selectedYear.value;
 
-    // 1. Check for specific Quarter
+    // (!!! อัปเดต: ให้ชื่อ Title อิงตาม "ปุ่ม" ที่เลือก (ถ้ามี) !!!)
+    if (selectedPeriod.value === '1M') return `${baseTitle} (1 เดือนล่าสุด)${yearText}`;
+    if (selectedPeriod.value === '3M') return `${baseTitle} (3 เดือนล่าสุด)${yearText}`;
+    if (selectedPeriod.value === '6M') return `${baseTitle} (6 เดือนล่าสุด)${yearText}`;
+
+    // (ถ้าปุ่มเป็น YTD หรือ custom (เลือกจาก Q))
     if (selectedQuarter.value !== 'all') {
         const quarter = quarterOptions.value.find(q => q.value === selectedQuarter.value);
         return quarter ? `${baseTitle} ${quarter.title}${yearText}` : `${baseTitle}${yearText}`;
     }
 
-    // 2. Check for "All Months" (YTD)
-    const sortedMonthsKey = [...selectedMonths.value].sort((a, b) => a - b).join(',');
-    const yearAD = selectedYear.value - 543;
-    const allMonthsCurrentYear = allMonthItems.map((m) => m.value).slice(0, currentJsMonth).join(',');
-    const allMonthsPastYear = allMonthItems.map((m) => m.value).join(',');
-
-    if (sortedMonthsKey === allMonthsCurrentYear || sortedMonthsKey === allMonthsPastYear) {
-        return `${baseTitle}${yearText}`;
+    // (ถ้าปุ่มเป็น YTD)
+    if (selectedPeriod.value === 'YTD') {
+         return `${baseTitle}${yearText}`;
     }
-
-    // 3. Check for specific month range
+    
+    // (Fallback กรณีเลือกเดือนเอง [1, 5, 9])
     if (selectedMonths.value.length > 0) {
         const sortedMonthValues = [...selectedMonths.value].sort((a, b) => a - b);
         const firstMonthValue = sortedMonthValues[0];
@@ -867,7 +868,6 @@ const mainGraphTitle = computed(() => {
         }
     }
     
-    // 4. Fallback
     return `${baseTitle}${yearText}`;
 });
 
@@ -883,19 +883,15 @@ const chartUnitSubtitle = computed(() => {
             return '(หน่วย : บาท / ตร.ม.)';
         case 'value':
         default:
-            // (!!! แก้ไขเล็กน้อยให้ตรงกับ Chart)
             return '(หน่วย : บาท)';
     }
 });
 
-// (!!! K. Main Graph Series (เหมือนเดิม) !!!)
-// (!!! K. Main Graph Series (ปรับปรุงใหม่) !!!)
-// (!!! K. Main Graph Series (อัปเดต: ส่ง 2 ซีรีส์) !!!)
+// (!!! K. Main Graph Series (อัปเดต) !!!)
 const mainGraphSeries = computed(() => {
     let barSeries: { name: string; type: 'bar'; data: number[] } | null = null;
     
-    // (!!! อัปเดต: ใช้ computed ใหม่ !!!)
-    const data = currentMetricData.value;
+    const data = currentMetricData.value; // (!!! ใช้ data "กราฟ" ที่กรองแล้ว !!!)
 
     switch (activeMetric.value) {
         case 'units':
@@ -913,36 +909,15 @@ const mainGraphSeries = computed(() => {
             break;
     }
 
-    // (!!! คืนค่า 2 ซีรีส์พร้อมกัน !!!)
     return [
         barSeries, // ซีรีส์ที่ 1 (แท่ง)
         {
             name: '% เปลี่ยนแปลง (MoM)', // ซีรีส์ที่ 2 (เส้น)
             type: 'line',
-            data: monthlyPercentChangeData.value
+            data: monthlyPercentChangeData.value // (!!! ใช้ data "กราฟ" ที่กรองแล้ว !!!)
         }
     ];
 });
-
-const regionalTableSubtitle = computed(() => {
-    switch (activeMetric.value) {
-        case 'units':
-            return '(เปรียบเทียบตาม: จำนวนหลัง)';
-        case 'area':
-            return '(เปรียบเทียบตาม: พื้นที่ใช้สอย)';
-        case 'valuePerSqm':
-            return '(เปรียบเทียบตาม: มูลค่าเฉลี่ย / ตร.ม.)';
-        case 'value':
-        default:
-            return '(เปรียบเทียบตาม: มูลค่า)';
-    }
-});
-
-
-// (!!! อัปเดต: ลบ computed เก่า (chartAverage, chartTrendPercentage, averageVsLastMonthChange) !!!)
-// const chartAverage = computed(() => { ... }); // ลบ
-// const chartTrendPercentage = computed(() => { ... }); // ลบ
-// const averageVsLastMonthChange = computed(() => { ... }); // ลบ
 
 
 // (!!! ใหม่: Helpers สำหรับ format ตัวเลขสถิติ !!!)
@@ -950,57 +925,164 @@ const formatStatNumber = (val: number) => {
      if (activeMetric.value === 'units') {
         return val.toLocaleString('th-TH', { maximumFractionDigits: 0 });
      }
-     // สำหรับ value, area, valuePerSqm
      return val.toLocaleString('th-TH', { maximumFractionDigits: 2 });
 };
 
-// (!!! อัปเดต: เปลี่ยนชื่อ formatStatPercentage เป็น formatPercentageHelper
-// (เพื่อไม่ให้ซ้ำกับตัวแปร formatPercentage เดิมที่ใช้ในตาราง)
 const formatPercentageHelper = (val: number) => {
-    if (val === 0 || !val) return '0.0%';
+    if (val === 0 || !isFinite(val)) return '0.0%';
     const prefix = val > 0 ? '+' : '';
     return `${prefix}${val.toFixed(1)}%`;
 };
 
 // (!!! ใหม่: computed สำหรับ "ส่วนต่าง" (Value) ของเดือนล่าสุด !!!)
 const latestMonthDifference = computed(() => {
-    const data = currentMetricData.value;
+    const data = currentMetricData.value; // (!!! ใช้ data "กราฟ" !!!)
     
-    // ต้องมีข้อมูลอย่างน้อย 2 เดือน ถึงจะเปรียบเทียบส่วนต่างได้
     if (data.length < 2) return 0;
-
     const latest = data[data.length - 1];
     const previous = data[data.length - 2];
     
-    // คืนค่า (ยอดล่าสุด - ยอดเดือนก่อนหน้า)
     return latest - previous;
 });
 
-// (!!! ใหม่: computed สำหรับสถิติบนหัวกราฟ (แบบใหม่) !!!)
-// (เรายังคงต้องใช้ 2 ตัวนี้ แม้ว่าจะเปลี่ยน logic filter แล้ว)
 
 // 1. ดึง "ค่า" ของ "เดือนล่าสุด" ที่แสดงในกราฟ
 const latestMonthValue = computed(() => {
-    const data = currentMetricData.value;
+    const data = currentMetricData.value; // (!!! ใช้ data "กราฟ" !!!)
     if (data.length === 0) return 0;
-    // คืนค่าข้อมูลตัวสุดท้ายใน Array
     return data[data.length - 1];
 });
 
 // 2. ดึง "ค่า % MoM" ของ "เดือนล่าสุด" (จากเส้นสีแดง)
 const latestMonthMoMChange = computed(() => {
-    // monthlyPercentChangeData คือ Array ที่ใช้สร้างเส้นสีแดง [null, 10.5, -5.2]
-    const momData = monthlyPercentChangeData.value;
-    
-    // ถ้ามีข้อมูลน้อยกว่า 2 เดือน (เช่น เลือก 1M) จะไม่มีค่า MoM
+    const momData = monthlyPercentChangeData.value; // (!!! ใช้ data "กราฟ" !!!)
     if (momData.length < 2) return 0; 
-
-    // คืนค่า % MoM ตัวสุดท้ายใน Array
     const latestChange = momData[momData.length - 1];
-    
-    // ถ้าค่าเป็น null (อาจเป็นเดือนแรก) ให้คืน 0
     return latestChange === null ? 0 : latestChange;
 });
+
+
+// (!!! อัปเดต: computed สำหรับตารางรายเดือน (ตัวหลัก) (เพิ่ม QoQ) !!!)
+const monthlyComparisonTableData = computed(() => {
+    const labels = fullMonthlyLabels.value; // (["ม.ค.", "ก.พ.", ...])
+    const cy_data = currentMetricData_CY_FULL.value; // (ข้อมูลเต็ม 1...maxMonth)
+    const py_data = currentMetricData_PY_FULL.value; // (ข้อมูลเต็ม 1...maxMonth)
+
+    let cytd = 0;
+    let pytd = 0;
+    
+    // (!!! ใหม่: เก็บผลรวมไตรมาส !!!)
+    const quarterlySums_CY: number[] = [0, 0, 0, 0]; // (Q1, Q2, Q3, Q4)
+
+    const tableData = labels.map((shortLabel, index) => {
+        // (!!! อัปเดต: หาชื่อเดือนเต็ม !!!)
+        const monthIndex = index + 1; // (1, 2, 3...)
+        const monthFullName = allMonthItems.find(m => m.short === shortLabel)?.title || shortLabel;
+
+        const cy_value = cy_data[index] || 0;
+        const py_value = py_data[index] || 0;
+        
+        // (MoM)
+        const prev_cy_value = index > 0 ? (cy_data[index - 1] || 0) : 0;
+        let mom_percent = 0;
+        if (prev_cy_value > 0) {
+            mom_percent = ((cy_value - prev_cy_value) / prev_cy_value) * 100;
+        } else if (cy_value > 0) {
+            mom_percent = 100;
+        }
+
+        // (YOY)
+        let yoy_percent = 0;
+        if (py_value > 0) {
+            yoy_percent = ((cy_value - py_value) / py_value) * 100;
+        } else if (cy_value > 0) {
+            yoy_percent = 100;
+        }
+
+        // (YTD)
+        cytd += cy_value;
+        pytd += py_value;
+        let ytd_percent = 0;
+        if (pytd > 0) {
+            ytd_percent = ((cytd - pytd) / pytd) * 100;
+        } else if (cytd > 0) {
+            ytd_percent = 100;
+        }
+
+        // (!!! ใหม่: สะสมค่า QoQ !!!)
+        if (monthIndex <= 3) quarterlySums_CY[0] += cy_value;
+        else if (monthIndex <= 6) quarterlySums_CY[1] += cy_value;
+        else if (monthIndex <= 9) quarterlySums_CY[2] += cy_value;
+        else if (monthIndex <= 12) quarterlySums_CY[3] += cy_value;
+        
+        // (!!! ใหม่: คำนวณ QoQ% (เฉพาะเดือนสิ้นไตรมาส) !!!)
+        let qoq_percent: number | null = null;
+        if (monthIndex === 3) {
+             qoq_percent = null; // (Q1 ไม่มีตัวเทียบ Q ก่อนหน้า)
+        } else if (monthIndex === 6) { // Q2 vs Q1
+            const q1_sum = quarterlySums_CY[0];
+            const q2_sum = quarterlySums_CY[1];
+            if(q1_sum > 0) qoq_percent = ((q2_sum - q1_sum) / q1_sum) * 100;
+            else if (q2_sum > 0) qoq_percent = 100;
+            else qoq_percent = 0;
+        } else if (monthIndex === 9) { // Q3 vs Q2
+            const q2_sum = quarterlySums_CY[1];
+            const q3_sum = quarterlySums_CY[2];
+             if(q2_sum > 0) qoq_percent = ((q3_sum - q2_sum) / q2_sum) * 100;
+            else if (q3_sum > 0) qoq_percent = 100;
+            else qoq_percent = 0;
+        } else if (monthIndex === 12) { // Q4 vs Q3
+            const q3_sum = quarterlySums_CY[2];
+            const q4_sum = quarterlySums_CY[3];
+             if(q3_sum > 0) qoq_percent = ((q4_sum - q3_sum) / q3_sum) * 100;
+            else if (q4_sum > 0) qoq_percent = 100;
+            else qoq_percent = 0;
+        }
+
+        return {
+            monthValue: monthIndex, // (!!! ใหม่: เก็บ value (1,2,3) ไว้กรอง !!!)
+            month: monthFullName,
+            cy_value: cy_value,
+            py_value: py_value,
+            yoy_percent: yoy_percent,
+            mom_percent: mom_percent,
+            qoq_percent: qoq_percent, // (!!! ใหม่ !!!)
+            cytd: cytd,
+            pytd: pytd,
+            ytd_percent: ytd_percent
+        };
+    });
+
+    // (!!! สุดท้าย: กรองตาราง ให้แสดงเฉพาะเดือนที่ผู้ใช้เลือก !!!)
+    return tableData.filter(item => selectedMonths.value.includes(item.monthValue));
+});
+// (!!! จบการอัปเดต monthlyComparisonTableData !!!)
+
+
+// (!!! อัปเดต: computed สำหรับ Headers ตารางรายเดือน (เพิ่ม QoQ) !!!)
+const monthlyComparisonTableHeaders = computed(() => {
+    const currentYearBE = selectedYear.value;     // เช่น 2568
+    const previousYearBE = selectedYear.value - 1; // เช่น 2567
+
+    let metricName = 'ยอด'; // Default
+    if (activeMetric.value === 'units') metricName = 'จำนวน (หลัง)';
+    else if (activeMetric.value === 'value') metricName = 'มูลค่า (บาท)';
+    else if (activeMetric.value === 'area') metricName = 'พื้นที่ (ตร.ม.)';
+    else if (activeMetric.value === 'valuePerSqm') metricName = 'มูลค่า/ตร.ม.';
+
+    return [
+        { title: 'เดือน', key: 'month', align: 'start', sortable: false, width: '15%' },
+        { title: `${metricName} ${currentYearBE}`, key: 'cy_value', align: 'end', sortable: false },
+        { title: `${metricName} ${previousYearBE}`, key: 'py_value', align: 'end', sortable: false },
+        { title: 'YOY %', key: 'yoy_percent', align: 'end', sortable: false },
+        { title: 'MoM %', key: 'mom_percent', align: 'end', sortable: false },
+        { title: 'QoQ %', key: 'qoq_percent', align: 'end', sortable: false }, // (!!! ใหม่ !!!)
+        { title: `YTD ${currentYearBE}`, key: 'cytd', align: 'end', sortable: false },
+        { title: `YTD ${previousYearBE}`, key: 'pytd', align: 'end', sortable: false },
+        { title: 'YTD %', key: 'ytd_percent', align: 'end', sortable: false },
+    ] as const;
+});
+
 </script>
 
 <template>
@@ -1014,11 +1096,7 @@ const latestMonthMoMChange = computed(() => {
             </v-col>
         </v-row>
 
-
         <v-row>
-
-
-
             <v-col cols="12" sm="12" lg="12">
                 <v-card elevation="10">
                     <v-card-text>
@@ -1130,9 +1208,10 @@ const latestMonthMoMChange = computed(() => {
                     <v-card-title class="pa-4">
                         <v-row align="start">
                             
-                            <v-col cols="12">
+                            <v-col cols="12" md="6">
                                 <h3 class="card-title mb-1">
-                                    {{ mainGraphTitle }} </h3>
+                                    {{ mainGraphTitle }}
+                                </h3>
                                 
                                 <v-row v-if="!loading && currentMetricData.length > 0" align="center" justify="start" class="mt-2">
                                     
@@ -1161,19 +1240,34 @@ const latestMonthMoMChange = computed(() => {
                                 <div v-else-if="!loading" class="text-grey">
                                     -
                                 </div>
-                           
+                     
                             </v-col>
                             
-                            </v-row>
+                            <v-col cols="12" md="6" class="d-flex justify-md-end align-start">
+                                <v-btn-toggle
+                                    v-model="selectedPeriod"
+                                    variant="outlined"
+                                    density="compact"
+                                    color="primary"
+                                    mandatory
+                                >
+                                    <v-btn size="small" value="1M" @click="setPeriod('1M')">1M</v-btn>
+                                    <v-btn size="small" value="3M" @click="setPeriod('3M')">3M</v-btn>
+                                    <v-btn size="small" value="6M" @click="setPeriod('6M')">6M</v-btn>
+                                    <v-btn size="small" value="YTD" @click="setPeriod('YTD')">YTD</v-btn>
+                                </v-btn-toggle>
+                            </v-col>
+
+                        </v-row>
                     </v-card-title>
                     <v-divider></v-divider>
 
                     <v-card-text style="min-height: 365px">
                         <v-skeleton-loader v-if="loading" type="image" height="350"></v-skeleton-loader>
 
-                        <VueApexCharts v-else-if="!loading && monthlyChartLabels.length > 0" :options="chartOptions"
+                        <VueApexCharts v-else-if="!loading && selectedMonthlyChartLabels.length > 0" :options="chartOptions"
                             :series="mainGraphSeries" height="350" :key="activeMetric" />
-                        <div v-else-if="!loading && monthlyChartLabels.length === 0"
+                        <div v-else-if="!loading && selectedMonthlyChartLabels.length === 0"
                             class="d-flex align-center justify-center text-grey-darken-1" style="height: 350px">
                             ไม่พบข้อมูลสำหรับตัวกรองที่คุณเลือก
                         </div>
@@ -1181,71 +1275,105 @@ const latestMonthMoMChange = computed(() => {
                 </v-card>
             </v-col>
         </v-row>
-
         <v-row class="mt-4">
             <v-col cols="12">
                 <v-card elevation="2">
                     <v-card-title class="pa-4">
                         <h3 class="card-title mb-1">
-                            ข้อมูลเปรียบเทียบรายภูมิภาค
+                            ข้อมูลเปรียบเทียบรายเดือน (YOY, YTD, QoQ)
                         </h3>
-                        <h5 class="card-subtitle" style="text-align: left;">
-                            {{ regionalTableSubtitle }}
+                        <h5 class="card-subtitle " style="text-align: left;">
+                             {{ chartUnitSubtitle }}
                         </h5>
                     </v-card-title>
                     <v-divider></v-divider>
 
                     <v-card-text>
-                        <v-data-table-virtual :headers="regionalTableHeaders" :items="regionalTableData"
-                            :loading="loadingRegional" :items-per-page="10" class="elevation-0" density="compact">
-
-                            <template v-slot:item.current_period="{ item }">
-                                <span class="text-end d-block">{{ item.current_period.toLocaleString('th-TH', {
-                                    maximumFractionDigits: (activeMetric === 'units' || activeMetric === 'area') ? 0 : 2
+                        <v-data-table-virtual 
+                            :headers="monthlyComparisonTableHeaders" 
+                            :items="monthlyComparisonTableData"
+                            :loading="loadingRegional" :items-per-page="-1" 
+                            class="elevation-0 text-grey" 
+                            density="compact"
+                            :key="activeMetric" >
+                            
+                            <template v-slot:item.month="{ item }">
+                                <span class="font-weight-bold ">{{ item.month }}</span>
+                            </template>
+                            
+                            <template v-slot:item.cy_value="{ item }">
+                                <span class="text-end d-block text-grey">{{ item.cy_value.toLocaleString('th-TH', {
+                                    maximumFractionDigits: activeMetric === 'units' ? 0 : 2,
+                                    minimumFractionDigits: activeMetric === 'units' ? 0 : 2
                                 }) }}</span>
                             </template>
-                            <template v-slot:item.cytd="{ item }">
-                                <span class="text-end d-block">{{ item.cytd.toLocaleString('th-TH', {
-                                    maximumFractionDigits: (activeMetric === 'units' || activeMetric === 'area') ? 0 : 2
-                                }) }}</span>
-                            </template>
-                            <template v-slot:item.pytd="{ item }">
-                                <span class="text-end d-block">{{ item.pytd.toLocaleString('th-TH', {
-                                    maximumFractionDigits: (activeMetric === 'units' || activeMetric === 'area') ? 0 : 2
+                            
+                            <template v-slot:item.py_value="{ item }">
+                                <span class="text-end d-block text-grey">{{ item.py_value.toLocaleString('th-TH', {
+                                    maximumFractionDigits: activeMetric === 'units' ? 0 : 2,
+                                    minimumFractionDigits: activeMetric === 'units' ? 0 : 2
                                 }) }}</span>
                             </template>
 
-                            <template v-slot:item.yoy_change="{ item }">
-                                <span :class="['font-weight-bold', getPercentageColor(item.yoy_change)]">
-                                    {{ formatPercentage(item.yoy_change) }}
+                            <template v-slot:item.yoy_percent="{ item }">
+                                <span v-if="item.yoy_percent !== 0" :class="['font-weight-bold', getPercentageColor(item.yoy_percent)]">
+                                    {{ formatPercentage(item.yoy_percent) }}
                                 </span>
+                                <span v-else class="text-grey">-</span>
                             </template>
 
-                            <template v-slot:item.mom_change="{ item }">
-                                <span :class="['font-weight-bold', getPercentageColor(item.mom_change)]">
-                                    {{ formatPercentage(item.mom_change) }}
+                            <template v-slot:item.mom_percent="{ item }">
+                                <span v-if="item.mom_percent !== 0" :class="['font-weight-bold', getPercentageColor(item.mom_percent)]">
+                                    {{ formatPercentage(item.mom_percent) }}
                                 </span>
+                                <span v-else class="text-grey">-</span>
+                            </template>
+                            
+                            <template v-slot:item.qoq_percent="{ item }">
+                                <span v-if="item.qoq_percent !== null && item.qoq_percent !== 0" :class="['font-weight-bold', getPercentageColor(item.qoq_percent)]">
+                                    {{ formatPercentage(item.qoq_percent) }}
+                                </span>
+                                <span v-else class="text-grey">-</span>
                             </template>
 
-                            <template v-slot:item.ytd_change="{ item }">
-                                <span :class="['font-weight-bold', getPercentageColor(item.ytd_change)]">
-                                    {{ formatPercentage(item.ytd_change) }}
-                                </span>
+                             <template v-slot:item.cytd="{ item }">
+                                <span class="text-end d-block text-grey" >{{ item.cytd.toLocaleString('th-TH', {
+                                    maximumFractionDigits: activeMetric === 'units' ? 0 : 2,
+                                    minimumFractionDigits: activeMetric === 'units' ? 0 : 2
+                                }) }}</span>
                             </template>
+
+                             <template v-slot:item.pytd="{ item }">
+                                <span class="text-end d-block text-grey" >{{ item.pytd.toLocaleString('th-TH', {
+                                    maximumFractionDigits: activeMetric === 'units' ? 0 : 2,
+                                    minimumFractionDigits: activeMetric === 'units' ? 0 : 2
+                                }) }}</span>
+                            </template>
+
+                            <template v-slot:item.ytd_percent="{ item }">
+                                <span v-if="item.ytd_percent !== 0" :class="['font-weight-bold', getPercentageColor(item.ytd_percent)]" >
+                                    {{ formatPercentage(item.ytd_percent) }}
+                                </span>
+                                <span v-else class="text-grey" style="background-color: #f5f5f5;">-</span>
+                            </template>
+
 
                             <template v-slot:no-data>
                                 <div class="pa-4 text-center text-grey">
-                                    ไม่พบข้อมูลรายภูมิภาคสำหรับตัวกรองที่คุณเลือก
+                                    ไม่พบข้อมูลรายเดือนสำหรับตัวกรองที่คุณเลือก
                                 </div>
+                            </template>
+                            
+                             <template v-slot:bottom>
+                                <div style="height: 0;"></div>
                             </template>
 
                         </v-data-table-virtual>
                     </v-card-text>
                 </v-card>
             </v-col>
-        </v-row>
-
-    </v-container>
+        </v-row> 
+        </v-container>
 </template>
 
 <style scoped>

@@ -42,6 +42,32 @@ const regions = [
 
 const contractData = ref<ContractData>({})
 
+function formatCellNumber(value: any, field: keyof ContractDetail | 'price_per_sqm'): string {
+  const num = Number(value);
+  
+  // --- นี่คือส่วนที่แก้ไข ---
+  // ถ้าค่าเป็น null, undefined, หรือไม่ใช่ตัวเลข, หรือเป็น 0
+  if (value == null || isNaN(num) || num === 0) {
+    if (field === 'unit') {
+      return '0'; // ถ้าเป็น 'unit' ให้แสดง '0'
+    } else {
+      return '0.00'; // ถ้าเป็น field อื่น (value, area, price) ให้แสดง '0.00'
+    }
+  }
+  // --- สิ้นสุดส่วนที่แก้ไข ---
+
+  if (field === 'unit') {
+    // 'unit' (จำนวนหลัง) - ไม่ต้องมีทศนิยม
+    return num.toLocaleString('th-TH');
+  } else {
+    // 'value', 'area', 'price_per_sqm' - มีทศนิยม 2 ตำแหน่ง
+    return num.toLocaleString('th-TH', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+  }
+}
+
 
 function convertMonthToNumber(monthLabel: string): number {
   const months = [
@@ -56,7 +82,7 @@ function extractBuddhistYear(monthLabel: string): number {
   return year ? year : new Date().getFullYear() + 543
 }
 
-
+// (!!!) 2. แก้ไข getCell ให้เรียกใช้ formatCellNumber
 function getCell(region: string, type: string, field: keyof ContractDetail): string {
   const r = region.trim().toLowerCase()
   const t = type.trim().toLowerCase()
@@ -68,14 +94,15 @@ function getCell(region: string, type: string, field: keyof ContractDetail): str
       for (const typeKey in regionObj) {
         if (typeKey.trim().toLowerCase() === t) {
           const val = regionObj[typeKey]?.[field]
-          return val == null ? '-' : typeof val === 'number' ? val.toLocaleString() : String(val)
+          // เรียกใช้ helper function
+          return formatCellNumber(val, field)
         }
       }
     }
   }
-  return '-'
+  // คืนค่า '-' ผ่าน helper
+  return formatCellNumber(null, field)
 }
-
 
 function getRegionTotal(region: string, field: keyof ContractDetail): string {
   const r = region.trim().toLowerCase()
@@ -83,7 +110,7 @@ function getRegionTotal(region: string, field: keyof ContractDetail): string {
 
   for (const regKey in data) {
     if (regKey.trim().toLowerCase() === r) {
-      return contractTypes.reduce((total, type) => {
+      const total = contractTypes.reduce((total, type) => {
         const t = type.trim().toLowerCase()
         for (const typeKey in data[regKey]) {
           if (typeKey.trim().toLowerCase() === t) {
@@ -92,12 +119,15 @@ function getRegionTotal(region: string, field: keyof ContractDetail): string {
           }
         }
         return total
-      }, 0).toLocaleString()
+      }, 0)
+      
+      // เรียกใช้ helper function กับผลรวม
+      return formatCellNumber(total, field)
     }
   }
-  return '0'
+  // คืนค่า 0 ผ่าน helper
+  return formatCellNumber(0, field)
 }
-
 
 const fetchContractData = async () => {
   const buddhistYear = extractBuddhistYear(props.monthName)
@@ -113,8 +143,6 @@ const fetchContractData = async () => {
 if (userId) {
   payload.user_id = userId
 }
-
-  
 
   console.log('📤 Sending payload:', payload)
 
@@ -148,11 +176,9 @@ if (userId) {
   }
 }
 
-
-
-
 onMounted(fetchContractData)
 
+// (!!!) 4. แก้ไข getRegionAvgPrice (ใช้ชื่อ price_per_sqm เพื่อความสอดคล้อง)
 function getRegionAvgPrice(region: string): string {
   const regionData = contractData.value[region] ?? {}
   let totalValue = 0
@@ -165,8 +191,9 @@ function getRegionAvgPrice(region: string): string {
   }
 
   const avg = totalArea > 0 ? totalValue / totalArea : 0
-  // ฟังก์ชันนี้คำนวณถูกต้องตามหลักสถิติ: Total Value / Total Area
-  return avg.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  
+  // เรียกใช้ helper function
+  return formatCellNumber(avg, 'price_per_sqm')
 }
 
 function getHorizontalTotalValue(priceRangeLabel: string, field: keyof ContractDetail): number {
@@ -189,53 +216,57 @@ function getHorizontalTotalValue(priceRangeLabel: string, field: keyof ContractD
   return horizontalTotal;
 }
 
-// Helper: สำหรับเรียกใช้และจัดรูปแบบผลรวมแนวนอน
+// (!!!) 5. แก้ไข getFormattedHorizontalTotal ให้เรียกใช้ formatCellNumber
 function getFormattedHorizontalTotal(priceRangeLabel: string, field: keyof ContractDetail, isPricePerSqm: boolean = false): string {
-    const total = getHorizontalTotalValue(priceRangeLabel, field);
     
     if (isPricePerSqm) {
-        // สำหรับราคาเฉลี่ย/ตร.ม. ต้องคำนวณใหม่โดยรวม Total Value และ Total Area ของแถวนั้นๆ
         const totalValue = getHorizontalTotalValue(priceRangeLabel, 'value');
         const totalArea = getHorizontalTotalValue(priceRangeLabel, 'area');
 
         const avg = totalArea > 0 ? totalValue / totalArea : 0;
-        return avg.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        
+        // เรียกใช้ helper function
+        return formatCellNumber(avg, 'price_per_sqm');
     }
 
     // สำหรับ Unit, Value, Area
-    return total.toLocaleString();
+    const total = getHorizontalTotalValue(priceRangeLabel, field);
+    // เรียกใช้ helper function
+    return formatCellNumber(total, field);
 }
 
-// 👇 --- NEW HELPER FUNCTION TO FIX ERROR ---
-// ฟังก์ชันใหม่: คำนวณผลรวมเป็นตัวเลขดิบ (รวมทุกภูมิภาค)
+// (!!!) 6. แก้ไข calculateNumericGrandTotal ให้ถูกต้องมากขึ้น
 function calculateNumericGrandTotal(field: 'unit' | 'value' | 'area'): number {
     let grandTotal = 0;
-    for (const region of regions) {
-        // ดึงผลรวมของแต่ละภูมิภาค (getRegionTotal คืนค่าเป็น string ที่มี comma)
-        const regionTotalString = getRegionTotal(region, field); 
-        // แปลงเป็นตัวเลขแล้วบวกเพิ่ม
-        grandTotal += Number(regionTotalString.replace(/,/g, '')) || 0;
+    const data = contractData.value ?? {};
+    
+    for (const regionKey in data) { // วนลูปทุกภาค
+        if (data.hasOwnProperty(regionKey)) {
+            grandTotal += contractTypes.reduce((total, type) => { // วนลูปทุกแถว
+                total += data[regionKey][type]?.[field] ?? 0
+                return total
+            }, 0)
+        }
     }
     return grandTotal;
 }
 
-// Helper: สำหรับคำนวณผลรวมใหญ่สุด (รวมทุกแถวและทุกคอลัมน์)
+// (!!!) 7. แก้ไข getGrandOverallTotal ให้เรียกใช้ formatCellNumber
 function getGrandOverallTotal(field: keyof ContractDetail | 'price_per_sqm'): string {
     if (field === 'price_per_sqm') {
-        // แก้ไข: ใช้ calculateNumericGrandTotal แทน getGrandTotal
         const totalValue = calculateNumericGrandTotal('value');
         const totalArea = calculateNumericGrandTotal('area');
 
         const avg = totalArea > 0 ? totalValue / totalArea : 0;
-        return avg.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        // เรียกใช้ helper function
+        return formatCellNumber(avg, 'price_per_sqm');
     }
     
-    // แก้ไข: ใช้ calculateNumericGrandTotal โดยตรงสำหรับ Unit, Value, Area
     const grandTotal = calculateNumericGrandTotal(field);
 
-    return grandTotal.toLocaleString();
+    // เรียกใช้ helper function
+    return formatCellNumber(grandTotal, field);
 }
-// 👆 --- END NEW HELPER FUNCTION ---
 </script>
 
 <template>
