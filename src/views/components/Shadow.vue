@@ -1431,7 +1431,7 @@ const tableUnitSubtitle = computed(() => {
         </v-overlay>
       
         <v-card-text>
-          <div class="v-row mt-2">
+          <div class="v-row mt-1">
             <div class="v-col-md-8 v-col-12">
               <div class="d-flex align-center">
                 <div>
@@ -1457,7 +1457,7 @@ const tableUnitSubtitle = computed(() => {
             </div>
           </div>
           
-          <div class="v-table v-theme--BLUE_THEME v-table--density-default month-table mt-12">
+          <div class="v-table v-theme--BLUE_THEME v-table--density-default month-table mt-6">
             <div class="v-table__wrapper">
               <table id="table-to-export">
                 <thead style="background-color: #F5F5F5;">

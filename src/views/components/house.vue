@@ -9,6 +9,8 @@ const jsDate = new Date();
 const currentJsYear = jsDate.getFullYear();
 const currentJsMonth = jsDate.getMonth() + 1; // (1-12)
 
+
+
 const userId = localStorage.getItem('user_id');
 const userRole = localStorage.getItem('user_role') || 'user';
 
@@ -94,8 +96,7 @@ const quarterOptions = ref([
     { title: 'ไตรมาส 4 (ต.ค. - ธ.ค.)', value: 'Q4' }
 ]);
 
-// (4) กราฟ Polar Area (เหมือนเดิม)
-const polarAreaSeries = ref<number[]>([]);
+
 const polarAreaOptions = ref({
     // ... (โค้ด options ของกราฟเหมือนเดิม) ...
     chart: { type: 'polarArea', fontFamily: 'inherit', foreColor: '#6c757d' },
@@ -123,12 +124,86 @@ const polarAreaOptions = ref({
     noData: { text: 'ไม่พบข้อมูลสำหรับช่วงที่เลือก', align: 'center', verticalAlign: 'middle', offsetY: 0, style: { color: '#6c757d', fontSize: '14px', fontFamily: 'inherit' } },
 });
 
+// (4.1) ♻️ [แก้ไข] เปลี่ยน Options เป็น computed เพื่อให้ Tooltip และ DataLabel เปลี่ยนตาม
+const computedPolarAreaOptions = computed(() => {
+    
+    // 1. ตรวจสอบ Metric, คำต่อท้าย (Suffix) และ Title
+    let selectedMetricKey: keyof SummaryData = 'total_value';
+    let tooltipSuffix = ' บาท';
+    let dataLabelTitle = 'มูลค่ารวม';
+
+    if (selectedHighlight.value === 'จำนวนหลัง') {
+        selectedMetricKey = 'unit';
+        tooltipSuffix = ' หลัง';
+        dataLabelTitle = 'จำนวนหลัง';
+    } else if (selectedHighlight.value === 'พื้นที่ใช้สอย') {
+        selectedMetricKey = 'usable_area';
+        tooltipSuffix = ' ตร.ม.';
+        dataLabelTitle = 'พื้นที่ใช้สอย';
+    } else if (selectedHighlight.value === 'ราคาเฉลี่ย/ตร.ม.') {
+        selectedMetricKey = 'price_per_sqm';
+        tooltipSuffix = ' บาท/ตร.ม.';
+        dataLabelTitle = 'ราคาเฉลี่ย/ตร.ม.';
+    }
+
+    // 2. คืนค่า Options Object ใหม่
+    return {
+        chart: { type: 'polarArea', fontFamily: 'inherit', foreColor: '#6c757d' },
+        labels: priceRanges,
+        legend: { position: 'bottom', horizontalAlign: 'center' },
+        stroke: { colors: ['#fff'] },
+        fill: { opacity: 0.8 },
+        responsive: [{ breakpoint: 480, options: { chart: { width: 200 }, legend: { position: 'bottom' } } }],
+        
+        // --- (Dynamic Tooltip) ---
+        tooltip: { 
+            theme: 'dark', 
+            y: { 
+                formatter: (val: number) => val.toLocaleString('th-TH') + tooltipSuffix 
+            } 
+        },
+
+        // --- (Dynamic Data Labels) ---
+        dataLabels: {
+            enabled: true,
+            formatter: (val: number, opts: any) => {
+                let percentageText = '0.00%';
+                if (!isNaN(val)) percentageText = (Number(val) || 0).toFixed(2) + '%';
+                
+                if (!summaryData.value || !summaryData.value[selectedMetricKey]) return percentageText;
+
+                const rangeKey = priceRanges[opts.dataPointIndex];
+                
+                // @ts-ignore
+                const rawValue = summaryData.value[selectedMetricKey][rangeKey];
+                
+                if (rawValue === undefined || rawValue === null) return percentageText;
+                
+                const rawValueText = (Number(rawValue) || 0).toLocaleString('th-TH');
+                return [percentageText, `(${rawValueText})`];
+            },
+            style: { fontSize: '10px' },
+            dropShadow: { enabled: false }
+        },
+        noData: { text: 'ไม่พบข้อมูลสำหรับช่วงที่เลือก', align: 'center', verticalAlign: 'middle', offsetY: 0, style: { color: '#6c757d', fontSize: '14px', fontFamily: 'inherit' } },
+    };
+});
+
+// (4.2) ✅ [เพิ่มใหม่] Computed สำหรับหัวข้อกราฟ
+const chartTitle = computed(() => {
+    const selected = selectedHighlight.value;
+    if (selected === 'จำนวนหลัง') return 'สัดส่วนจำนวนหลัง (Unit) ตามช่วงราคา';
+    if (selected === 'พื้นที่ใช้สอย') return 'สัดส่วนพื้นที่ใช้สอย (Usable Area) ตามช่วงราคา';
+    if (selected === 'ราคาเฉลี่ย/ตร.ม.') return 'สัดส่วนราคาเฉลี่ย/ตร.ม. (Price/Sqm) ตามช่วงราคา';
+    return 'สัดส่วนมูลค่ารวม (Total Value) ตามช่วงราคา'; // (ค่าเริ่มต้น)
+});
+
 // (5) ฟังก์ชันดึงข้อมูล "หลัก" (สำหรับกราฟ/การ์ด/Export)
 const fetchSummary = async () => {
     if (!userId && userRole !== 'admin') return;
     if (selectedMonths.value.length === 0 || !selectedYear.value) {
         summaryData.value = { unit: {}, total_value: {}, usable_area: {}, price_per_sqm: {} };
-        polarAreaSeries.value = []; 
+        // polarAreaSeries.value = []; 
         return;
     }
     try {
@@ -185,9 +260,9 @@ const fetchSummary = async () => {
         } else { aggregatedData.price_per_sqm['total'] = 0; }
         summaryData.value = aggregatedData; 
         console.log('✅ ข้อมูลที่ประมวลผลแล้ว (สำหรับกราฟ/การ์ด):', aggregatedData);
-        const newPolarSeries = priceRanges.map(range => aggregatedData.total_value[range] || 0);
-        const totalSum = newPolarSeries.reduce((a, b) => a + b, 0);
-        polarAreaSeries.value = totalSum > 0 ? newPolarSeries : [];
+        // const newPolarSeries = priceRanges.map(range => aggregatedData.total_value[range] || 0);
+        // const totalSum = newPolarSeries.reduce((a, b) => a + b, 0);
+        // polarAreaSeries.value = totalSum > 0 ? newPolarSeries : [];
     } catch (err) { console.error('❌ Error fetching summary:', err); }
 };
 
@@ -523,6 +598,82 @@ const filterSubtitle = computed(() => {
     return `(${yearText} - ยังไม่ได้เลือกเดือน)`;
 });
 
+
+// ----------------------------------------------------------------
+// ✅ [เพิ่มใหม่] (12) State และ Functions สำหรับการไฮไลต์การ์ดและตาราง
+// (เหมือนใน Shadow.vue)
+// ----------------------------------------------------------------
+
+// 1. Labels สำหรับการ์ด (ควรตรงกับ v-for ใน template)
+const cardLabels = ['จำนวนหลัง', 'มูลค่ารวม', 'พื้นที่ใช้สอย', 'ราคาเฉลี่ย/ตร.ม.'] as const;
+
+// 2. State สำหรับจำค่าที่เลือก
+const selectedHighlight = ref<(typeof cardLabels)[number] | null>(null);
+
+// 3. ฟังก์ชันสำหรับคลิกการ์ด
+function highlightRow(label: (typeof cardLabels)[number]) {
+  if (selectedHighlight.value === label) {
+    selectedHighlight.value = null; // คลิกซ้ำเพื่อยกเลิก
+  } else {
+    selectedHighlight.value = label;
+  }
+}
+
+// (4) กราฟ Polar Area (♻️ [แก้ไข] เปลี่ยนเป็น computed)
+const polarAreaSeries = computed(() => {
+    // 1. ตรวจสอบว่ากำลังเลือก metric ไหน (ค่าเริ่มต้นคือ 'total_value')
+    const metricKey = 
+        (selectedHighlight.value === 'จำนวนหลัง') ? 'unit' :
+        (selectedHighlight.value === 'พื้นที่ใช้สอย') ? 'usable_area' :
+        (selectedHighlight.value === 'ราคาเฉลี่ย/ตร.ม.') ? 'price_per_sqm' :
+        'total_value'; // (ค่าเริ่มต้น)
+
+    // 2. ถ้าไม่มีข้อมูล ให้คืนค่าว่าง
+    if (!summaryData.value[metricKey]) return [];
+
+    // 3. สร้าง Series ใหม่จากข้อมูลที่เลือก
+    // @ts-ignore
+    const newSeries = priceRanges.map(range => summaryData.value[metricKey][range] || 0);
+    
+    const totalSum = newSeries.reduce((a, b) => a + b, 0);
+    
+    // 4. คืนค่า series (ถ้าผลรวมเป็น 0 ก็คืนค่าว่างเพื่อให้แสดง "No Data")
+    return totalSum > 0 ? newSeries : [];
+});
+
+// 4. ฟังก์ชันสำหรับ v-show ในตาราง
+function isRowVisible(label: string): boolean {
+  // ถ้าไม่ได้เลือกอะไร (null) ให้แสดงทุกแถว
+  if (selectedHighlight.value === null) {
+    return true;
+  }
+  // ถ้ามีปุ่มถูกเลือก ให้แสดงเฉพาะแถวที่ตรงกับปุ่มนั้น
+  return selectedHighlight.value === label;
+}
+
+// 5. ฟังก์ชันสำหรับ :style ในตาราง
+function getHighlightStyle(label: string) {
+  if (selectedHighlight.value !== label) return null;
+
+  // สีเดียวกับใน Shadow.vue
+  if (label === 'จำนวนหลัง') return { backgroundColor: '#E3F2FD' }; 
+  if (label === 'มูลค่ารวม') return { backgroundColor: '#EDE7F6' }; 
+  if (label === 'พื้นที่ใช้สอย') return { backgroundColor: '#FFEBEE' }; 
+  if (label === 'ราคาเฉลี่ย/ตร.ม.') return { backgroundColor: '#FFF8E1' }; 
+
+  return null;
+}
+
+// 6. (Bonus) Computed สำหรับเปลี่ยนหน่วยของตาราง
+const tableUnitSubtitle = computed(() => {
+  const selected = selectedHighlight.value;
+  if (selected === 'จำนวนหลัง') return '(หน่วย : หลัง)';
+  if (selected === 'มูลค่ารวม') return '(หน่วย : บาท)'; // หน้านี้แสดงค่าเต็ม
+  if (selected === 'พื้นที่ใช้สอย') return '(หน่วย : ตร.ม.)';
+  if (selected === 'ราคาเฉลี่ย/ตร.ม.') return '(หน่วย : บาท / ตร.ม.)';
+  return ''; // ค่าเริ่มต้น (ไม่แสดงหน่วย)
+});
+
 </script>
 
 <template>
@@ -555,7 +706,34 @@ const filterSubtitle = computed(() => {
                 </v-card-text>
             </v-card>
         </v-col>
-
+ <v-col cols="12" sm="12" lg="12">
+            <div class="v-row">
+                <div v-for="(label, index) in cardLabels" :key="index" class="v-col-sm-6 v-col-lg-3 v-col-12 py-0 mb-3">
+                    
+                    <div class="v-card v-theme--BLUE_THEME v-card--density-default elevation-10 rounded-md v-card--variant-elevated"
+                        @click="highlightRow(label)"
+                        style="cursor: pointer;"
+                        hover
+                        :class="{ 'card-is-active': selectedHighlight === label }"
+                    >
+                        <div class="v-card-text pa-5">
+                            <div class="d-flex align-center ga-4">
+                                <button type="button" class="v-btn v-btn--elevated v-btn--icon v-theme--BLUE_THEME v-btn--density-default v-btn--size-default v-btn--variant-elevated" :class="{ 'bg-primary': label === 'จำนวนหลัง', 'bg-secondary': label === 'มูลค่ารวม', 'bg-error': label === 'พื้นที่ใช้สอย', 'bg-warning': label === 'ราคาเฉลี่ย/ตร.ม.' }" dark>
+                                    <svg v-if="label === 'จำนวนหลัง'" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 12.204c0-2.289 0-3.433.52-4.381c.518-.949 1.467-1.537 3.364-2.715l2-1.241C9.889 2.622 10.892 2 12 2s2.11.622 4.116 1.867l2 1.241c1.897 1.178 2.846 1.766 3.365 2.715S22 9.915 22 12.203v1.522c0 3.9 0 5.851-1.172 7.063S17.771 22 14 22h-4c-3.771 0-5.657 0-6.828-1.212S2 17.626 2 13.725z" /><path stroke-linecap="round" d="M12 15v3" /></g></svg>
+                                     <svg v-else-if="label === 'มูลค่ารวม'" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 14c0-3.771 0-5.657 1.172-6.828S6.229 6 10 6h4c3.771 0 5.657 0 6.828 1.172S22 10.229 22 14s0 5.657-1.172 6.828S17.771 22 14 22h-4c-3.771 0-5.657 0-6.828-1.172S2 17.771 2 14Zm14-8c0-1.886 0-2.828-.586-3.414S13.886 2 12 2s-2.828 0-3.414.586S8 4.114 8 6" /><path stroke-linecap="round" d="M12 17.333c1.105 0 2-.746 2-1.666S13.105 14 12 14s-2-.746-2-1.667c0-.92.895-1.666 2-1.666m0 6.666c-1.105 0-2-.746-2-1.666m2 1.666V18m0-8v.667m0 0c1.105 0 2 .746 2 1.666" /></g></svg>
+                                     <svg v-else-if="label === 'พื้นที่ใช้สอย'" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path d="M11 2c-4.055.007-6.178.107-7.536 1.464C2 4.928 2 7.285 2 11.999s0 7.071 1.464 8.536C4.93 21.999 7.286 21.999 12 21.999s7.071 0 8.535-1.464c1.358-1.357 1.457-3.48 1.464-7.536" /><path stroke-linejoin="round" d="m13 11l9-9m0 0h-5.344M22 2v5.344M21 3l-9 9m0 0h4m-4 0V8" /></g></svg>
+                                     <svg v-else-if="label === 'ราคาเฉลี่ย/ตร.ม.'" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4.979 9.685C2.993 8.891 2 8.494 2 8s.993-.89 2.979-1.685l2.808-1.123C9.773 4.397 10.767 4 12 4s2.227.397 4.213 1.192l2.808 1.123C21.007 7.109 22 7.506 22 8s-.993.89-2.979 1.685l-2.808 1.124C14.227 11.603 13.233 12 12 12s-2.227-.397-4.213-1.191z" /><path d="m5.766 10l-.787.315C2.993 11.109 2 11.507 2 12s.993.89 2.979 1.685l2.808 1.124C9.773 15.603 10.767 16 12 16s2.227-.397 4.213-1.191l2.808-1.124C21.007 12.891 22 12.493 22 12s-.993-.89-2.979-1.685L18.234 10" /><path d="m5.766 14l-.787.315C2.993 15.109 2 15.507 2 16s.993.89 2.979 1.685l2.808 1.124C9.773 19.603 10.767 20 12 20s2.227-.397 4.213-1.192l2.808-1.123C21.007 16.891 22 16.494 22 16c0-.493-.993-.89-2.979-1.685L18.234 14" /></g></svg>
+                                </button>
+                                <div class="">
+                                    <h2 class="text-h4">{{ getValue(dataTypes[index], 'total').toLocaleString('th-TH') }}</h2>
+                                    <p class="textSecondary mt-1 text-15">{{ label }}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </v-col>
         <v-col cols="12">
             <VCard elevation="10">
                 <v-card-text>
@@ -563,14 +741,14 @@ const filterSubtitle = computed(() => {
                         <div class="v-col-md-8 v-col-12">
                             <div class="d-flex align-center">
                               <div>
-    <h3 class="card-title mb-1">สัดส่วนมูลค่ารวม (Total Value) ตามช่วงราคา</h3>
+    <h3 class="card-title mb-1">{{ chartTitle }}</h3>
     <h5 class="card-subtitle" style="text-align: left">{{ filterSubtitle }}</h5>
 </div>
                             </div>
                         </div>
                     </div>
                     <div class="mt-5">
-                        <apexchart type="polarArea" :options="polarAreaOptions" :series="polarAreaSeries" height="400" />
+                      <apexchart type="polarArea" :options="computedPolarAreaOptions" :series="polarAreaSeries" height="400" />
                     </div>
                 </v-card-text>
             </VCard>
@@ -584,6 +762,7 @@ const filterSubtitle = computed(() => {
                <div>
     <h3 class="card-title mb-1">
         ตารางสรุปยอดรายเดือน (แยกตามมูลค่า)
+        <span class="text-subtitle-1 text-grey-darken-1 ml-2">{{ tableUnitSubtitle }}</span>
     </h3>
     <h5 class="card-subtitle" style="text-align: left">{{ filterSubtitle }}</h5>
 </div>
@@ -625,83 +804,83 @@ const filterSubtitle = computed(() => {
                                         <td :colspan="displayedMonths.length + 1"></td>
                                     </tr>
                         
-                                    <tr class="month-item">
+                                    <tr class="month-item" v-show="isRowVisible('จำนวนหลัง')" :style="getHighlightStyle('จำนวนหลัง')">
                                         <td><h6 class="text-p" style="font-size: 12px; font-weight: 400; padding-left: 15px;">จำนวนหลัง</h6></td>
                                         <td v-for="month in displayedMonths" :key="month.value + '-unit'" style="text-align: right;">
                                             <h6 class="text-p" style="font-size: 13px; font-weight: 400;" >{{ getDetailedValue('unit', month.value, range) }}</h6>
                                         </td>
-                                        <td style="background-color: #FFF3E0; text-align: right;">
+                                        <td style="background-color: #FFF3E0; text-align: right;" :style="getHighlightStyle('จำนวนหลัง')">
                                             <h6 class="text-p" style="font-size: 13px; font-weight: 600;">{{ getFormattedHorizontalTotal(range, 'unit') }}</h6>
                                         </td>
                                     </tr>
                         
-                                    <tr class="month-item">
+                                    <tr class="month-item" v-show="isRowVisible('มูลค่ารวม')" :style="getHighlightStyle('มูลค่ารวม')">
                                         <td><h6 class="text-p" style="font-size: 12px; font-weight: 400; padding-left: 15px;">มูลค่ารวม</h6></td>
                                         <td v-for="month in displayedMonths" :key="month.value + '-value'" style="text-align: right;">
                                             <h6 class="text-p" style="font-size: 13px; font-weight: 400;">{{ getDetailedValue('total_value', month.value, range) }}</h6>
                                         </td>
-                                        <td style="background-color: #FFF3E0; text-align: right;">
+                                        <td style="background-color: #FFF3E0; text-align: right;" :style="getHighlightStyle('มูลค่ารวม')">
                                             <h6 class="text-p" style="font-size: 13px; font-weight: 600;">{{ getFormattedHorizontalTotal(range, 'total_value') }}</h6>
                                         </td>
                                     </tr>
                         
-                                    <tr class="month-item">
+                                    <tr class="month-item" v-show="isRowVisible('พื้นที่ใช้สอย')" :style="getHighlightStyle('พื้นที่ใช้สอย')">
                                         <td><h6 class="text-p" style="font-size: 12px; font-weight: 400; padding-left: 15px;">พื้นที่ใช้สอย</h6></td>
                                         <td v-for="month in displayedMonths" :key="month.value + '-area'" style="text-align: right;">
                                             <h6 class="text-p" style="font-size: 13px; font-weight: 400;">{{ getDetailedValue('usable_area', month.value, range) }}</h6>
                                         </td>
-                                        <td style="background-color: #FFF3E0; text-align: right;">
+                                        <td style="background-color: #FFF3E0; text-align: right;" :style="getHighlightStyle('พื้นที่ใช้สอย')">
                                             <h6 class="text-p" style="font-size: 13px; font-weight: 600;">{{ getFormattedHorizontalTotal(range, 'usable_area') }}</h6>
                                         </td>
                                     </tr>
                         
-                                    <tr class="month-item">
+                                    <tr class="month-item" v-show="isRowVisible('ราคาเฉลี่ย/ตร.ม.')" :style="getHighlightStyle('ราคาเฉลี่ย/ตร.ม.')">
                                         <td><h6 class="text-p" style="font-size: 12px; font-weight: 400; padding-left: 15px;">ราคาเฉลี่ย/ตร.ม.</h6></td>
                                         <td v-for="month in displayedMonths" :key="month.value + '-avg'" style="text-align: right;">
                                             <h6 class="text-p" style="font-size: 13px; font-weight: 400;">{{ getDetailedValue('price_per_sqm', month.value, range) }}</h6>
                                         </td>
-                                        <td style="background-color: #FFF3E0; text-align: right;">
+                                        <td style="background-color: #FFF3E0; text-align: right;" :style="getHighlightStyle('ราคาเฉลี่ย/ตร.ม.')">
                                             <h6 class="text-p" style="font-size: 13px; font-weight: 600;">{{ getFormattedHorizontalTotal(range, 'price_per_sqm') }}</h6>
                                         </td>
                                     </tr>
                                 </template>
                         
-                                <tr class="month-item" style="background-color: #fcf8ff;">
+                                <tr class="month-item" style="background-color: #fcf8ff;" v-show="isRowVisible('จำนวนหลัง')" :style="getHighlightStyle('จำนวนหลัง')">
                                     <td><h6 class="text-p" style="font-size: 13px; font-weight: 600; color: #F8285A;">จำนวนหลัง (รวม)</h6></td>
                                     <td v-for="month in displayedMonths" :key="month.value + '-total-unit'" style="text-align: right;">
                                         <h6 class="text-p" style="font-size: 14px; font-weight: 600; color: #F8285A;">{{ getFormattedMonthTotal(month.value, 'unit') }}</h6>
                                     </td>
-                                    <td style="background-color: #FFF3E0; text-align: right;">
+                                    <td style="background-color: #FFF3E0; text-align: right;" :style="getHighlightStyle('จำนวนหลัง')">
                                         <h6 class="text-p" style="font-size: 14px; font-weight: 800; color: #F8285A;">{{ getFormattedGrandTotal('unit') }}</h6>
                                     </td>
                                 </tr>
                         
-                                <tr class="month-item" style="background-color: #fcf8ff;">
+                                <tr class="month-item" style="background-color: #fcf8ff;" v-show="isRowVisible('มูลค่ารวม')" :style="getHighlightStyle('มูลค่ารวม')">
                                     <td><h6 class="text-p" style="font-size: 13px; font-weight: 600; color: #F8285A;">มูลค่ารวม (รวม)</h6></td>
                                     <td v-for="month in displayedMonths" :key="month.value + '-total-value'" style="text-align: right;">
                                         <h6 class="text-p" style="font-size: 14px; font-weight: 600; color: #F8285A;">{{ getFormattedMonthTotal(month.value, 'total_value') }}</h6>
                                     </td>
-                                    <td style="background-color: #FFF3E0; text-align: right;">
+                                    <td style="background-color: #FFF3E0; text-align: right;" :style="getHighlightStyle('มูลค่ารวม')">
                                         <h6 class="text-p" style="font-size: 14px; font-weight: 800; color: #F8285A;">{{ getFormattedGrandTotal('total_value') }}</h6>
                                     </td>
                                 </tr>
                         
-                                <tr class="month-item" style="background-color: #fcf8ff;">
+                                <tr class="month-item" style="background-color: #fcf8ff;" v-show="isRowVisible('พื้นที่ใช้สอย')" :style="getHighlightStyle('พื้นที่ใช้สอย')">
                                     <td><h6 class="text-p" style="font-size: 13px; font-weight: 600; color: #F8285A;">พื้นที่ใช้สอย (รวม)</h6></td>
                                     <td v-for="month in displayedMonths" :key="month.value + '-total-area'" style="text-align: right;">
                                         <h6 class="text-p" style="font-size: 14px; font-weight: 600; color: #F8285A;">{{ getFormattedMonthTotal(month.value, 'usable_area') }}</h6>
                                     </td>
-                                    <td style="background-color: #FFF3E0; text-align: right;">
+                                    <td style="background-color: #FFF3E0; text-align: right;" :style="getHighlightStyle('พื้นที่ใช้สอย')">
                                         <h6 class="text-p" style="font-size: 14px; font-weight: 800; color: #F8285A;">{{ getFormattedGrandTotal('usable_area') }}</h6>
                                     </td>
                                 </tr>
                                 
-                                <tr class="month-item" style="background-color: #fcf8ff;">
+                                <tr class="month-item" style="background-color: #fcf8ff;" v-show="isRowVisible('ราคาเฉลี่ย/ตร.ม.')" :style="getHighlightStyle('ราคาเฉลี่ย/ตร.ม.')">
                                     <td><h6 class="text-p" style="font-size: 13px; font-weight: 600; color: #F8285A;">ราคาเฉลี่ย/ตร.ม. (รวม)</h6></td>
                                     <td v-for="month in displayedMonths" :key="month.value + '-total-avg'" style="text-align: right;">
                                         <h6 class="text-p" style="font-size: 14px; font-weight: 600; color: #F8285A;">{{ getFormattedMonthTotal(month.value, 'price_per_sqm') }}</h6>
                                     </td>
-                                    <td style="background-color: #FFF3E0; text-align: right;">
+                                    <td style="background-color: #FFF3E0; text-align: right;" :style="getHighlightStyle('ราคาเฉลี่ย/ตร.ม.')">
                                         <h6 class="text-p" style="font-size: 14px; font-weight: 800; color: #F8285A;">{{ getFormattedGrandTotal('price_per_sqm') }}</h6>
                                     </td>
                                 </tr>
@@ -714,28 +893,7 @@ const filterSubtitle = computed(() => {
             </v-card>
         </v-col>
 
-        <v-col cols="12" sm="12" lg="12">
-            <div class="v-row">
-                <div v-for="(label, index) in ['จำนวนหลัง', 'มูลค่ารวม', 'พื้นที่ใช้สอย', 'ราคาเฉลี่ย/ตร.ม.']" :key="index" class="v-col-sm-6 v-col-lg-3 v-col-12 py-0 mb-3">
-                    <div class="v-card v-theme--BLUE_THEME v-card--density-default elevation-10 rounded-md v-card--variant-elevated">
-                        <div class="v-card-text pa-5">
-                            <div class="d-flex align-center ga-4">
-                                <button type="button" class="v-btn v-btn--elevated v-btn--icon v-theme--BLUE_THEME v-btn--density-default v-btn--size-default v-btn--variant-elevated" :class="{ 'bg-primary': label === 'จำนวนหลัง', 'bg-secondary': label === 'มูลค่ารวม', 'bg-error': label === 'พื้นที่ใช้สอย', 'bg-warning': label === 'ราคาเฉลี่ย/ตร.ม.' }" dark>
-                                    <svg v-if="label === 'จำนวนหลัง'" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 12.204c0-2.289 0-3.433.52-4.381c.518-.949 1.467-1.537 3.364-2.715l2-1.241C9.889 2.622 10.892 2 12 2s2.11.622 4.116 1.867l2 1.241c1.897 1.178 2.846 1.766 3.365 2.715S22 9.915 22 12.203v1.522c0 3.9 0 5.851-1.172 7.063S17.771 22 14 22h-4c-3.771 0-5.657 0-6.828-1.212S2 17.626 2 13.725z" /><path stroke-linecap="round" d="M12 15v3" /></g></svg>
-                                     <svg v-else-if="label === 'มูลค่ารวม'" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 14c0-3.771 0-5.657 1.172-6.828S6.229 6 10 6h4c3.771 0 5.657 0 6.828 1.172S22 10.229 22 14s0 5.657-1.172 6.828S17.771 22 14 22h-4c-3.771 0-5.657 0-6.828-1.172S2 17.771 2 14Zm14-8c0-1.886 0-2.828-.586-3.414S13.886 2 12 2s-2.828 0-3.414.586S8 4.114 8 6" /><path stroke-linecap="round" d="M12 17.333c1.105 0 2-.746 2-1.666S13.105 14 12 14s-2-.746-2-1.667c0-.92.895-1.666 2-1.666m0 6.666c-1.105 0-2-.746-2-1.666m2 1.666V18m0-8v.667m0 0c1.105 0 2 .746 2 1.666" /></g></svg>
-                                     <svg v-else-if="label === 'พื้นที่ใช้สอย'" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path d="M11 2c-4.055.007-6.178.107-7.536 1.464C2 4.928 2 7.285 2 11.999s0 7.071 1.464 8.536C4.93 21.999 7.286 21.999 12 21.999s7.071 0 8.535-1.464c1.358-1.357 1.457-3.48 1.464-7.536" /><path stroke-linejoin="round" d="m13 11l9-9m0 0h-5.344M22 2v5.344M21 3l-9 9m0 0h4m-4 0V8" /></g></svg>
-                                     <svg v-else-if="label === 'ราคาเฉลี่ย/ตร.ม.'" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4.979 9.685C2.993 8.891 2 8.494 2 8s.993-.89 2.979-1.685l2.808-1.123C9.773 4.397 10.767 4 12 4s2.227.397 4.213 1.192l2.808 1.123C21.007 7.109 22 7.506 22 8s-.993.89-2.979 1.685l-2.808 1.124C14.227 11.603 13.233 12 12 12s-2.227-.397-4.213-1.191z" /><path d="m5.766 10l-.787.315C2.993 11.109 2 11.507 2 12s.993.89 2.979 1.685l2.808 1.124C9.773 15.603 10.767 16 12 16s2.227-.397 4.213-1.191l2.808-1.124C21.007 12.891 22 12.493 22 12s-.993-.89-2.979-1.685L18.234 10" /><path d="m5.766 14l-.787.315C2.993 15.109 2 15.507 2 16s.993.89 2.979 1.685l2.808 1.124C9.773 19.603 10.767 20 12 20s2.227-.397 4.213-1.192l2.808-1.123C21.007 16.891 22 16.494 22 16c0-.493-.993-.89-2.979-1.685L18.234 14" /></g></svg>
-                                </button>
-                                <div class="">
-                                    <h2 class="text-h4">{{ getValue(dataTypes[index], 'total').toLocaleString('th-TH') }}</h2>
-                                    <p class="textSecondary mt-1 text-15">{{ label }}</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </v-col>
+       
     </v-row>
 </template>
 
@@ -751,5 +909,24 @@ const filterSubtitle = computed(() => {
   padding: 8px !important;
   border-bottom: 1px solid #eee;
 }
-</style>
 
+/* ✅ [เพิ่มใหม่] CSS สำหรับการ์ดที่คลิกได้ */
+.v-card[style*="cursor: pointer"] {
+    transition: transform 0.2s ease-in-out, background-color 0.2s ease-in-out;
+}
+
+/* 1. เมื่อ "Hover" หรือ "ถูกคลิก" (Active) -> เปลี่ยน "พื้นหลัง" */
+.v-card[style*="cursor: pointer"]:hover,
+.v-card.card-is-active {
+    background-color: #E3F2FD !important; /* สีฟ้าอ่อน */
+    transform: translateY(-2px);
+}
+
+/* 2. เมื่อ "Hover" หรือ "Active" -> เปลี่ยน "สีข้อความ" */
+.v-card[style*="cursor: pointer"]:hover .text-h4,
+.v-card[style*="cursor: pointer"]:hover .textSecondary,
+.v-card.card-is-active .text-h4,
+.v-card.card-is-active .textSecondary {
+    color: #1E88E5 !important; /* สีฟ้าเข้ม */
+}
+</style>
