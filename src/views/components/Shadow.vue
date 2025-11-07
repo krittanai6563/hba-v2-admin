@@ -2,7 +2,9 @@
 import { ref, computed, watch, onMounted } from 'vue';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
-import { TomlIcon } from 'vue-tabler-icons';
+import jsPDF from 'jspdf'; 
+import html2canvas from 'html2canvas'; 
+import { TomlIcon, DownloadIcon } from 'vue-tabler-icons';
 
 const currentYear = new Date().getFullYear() + 543;
 const currentMonth = new Date().getMonth() + 1;
@@ -14,14 +16,23 @@ const selectedHighlight = ref<(typeof dataTypes)[number] | null>(null);
 
 const regions = ['ทั้งหมด', 'กรุงเทพปริมณฑล', 'ภาคเหนือ', 'ภาคตะวันออกเฉียงเหนือ', 'ภาคกลาง', 'ภาคตะวันออก', 'ภาคใต้', 'ภาคตะวันตก'];
 const selectedRegion = ref('ทั้งหมด'); 
-
+const exportLoading = ref(false);
 const summaryData = ref<Record<string, Record<string, Record<string, number>>>>({});
 // (!!!) NEW: Add state for previous year's data
 const previousYearSummaryData = ref<Record<string, Record<string, Record<string, number>>>>({});
 
+const showErrorAlert = ref(false);
+const alertMessage = ref('');
+
 const userId = localStorage.getItem('user_id');
 const loading = ref(false); // (!!!) เพิ่มตัวแปร loading
 const userRole = localStorage.getItem('user_role') || 'user';
+
+const showSnackbar = ref(false);
+const snackbarText = ref('');
+const snackbarColor = ref('info'); // สีเริ่มต้น
+const snackbarTimeout = ref(5000); // 5000ms = 5 วินาที
+
 
 const priceRanges = ['ไม่เกิน 2.50 ล้านบาท', '2.51 - 5 ล้านบาท', '5.01 - 10 ล้านบาท', '10.01 - 20 ล้านบาท', '20.01 ล้านขึ้นไป'];
 const dataTypes = ['จำนวนหลัง', 'มูลค่ารวม', 'พื้นที่ใช้สอย', 'ราคาเฉลี่ย/ตร.ม.'] as const;
@@ -852,112 +863,400 @@ function isRowVisible(type: (typeof dataTypes)[number]): boolean {
 }
 
 
-const exportToExcel = () => {
-  const wb = XLSX.utils.book_new();  
-  const headers = ['รายงานเปรียบเทียบยอดเซ็นสัญญา', ...visibleQuarters.value, 'รวม'];
-  const aoa: (string | number)[][] = [headers];
-  const merges: { s: { r: number, c: number }, e: { r: number, c: number } }[] = []; 
+// (!!!) NEW: Helper for ExcelJS colors (ควรมีฟังก์ชันนี้อยู่ด้วย)
+function getExcelColor(value: number | null): string {
+    if (value === null) return 'FF808080'; // สีเทา
+    if (value > 0) return 'FF008000';   // สีเขียว
+    if (value < 0) return 'FFFF0000';   // สีแดง
+    return 'FF808080'; // สีเทา
+}
 
-  let currentRow = 1;
-
-  priceRanges.forEach((priceRange) => {
+const exportToExcel = async () => {
+    exportLoading.value = true;
+    showSnackbar.value = false;
     
-    const emptyCols = Array(visibleQuarters.value.length + 1).fill('');
-    aoa.push([priceRange, ...emptyCols]);
-    merges.push({
-      s: { r: currentRow, c: 0 },
-      e: { r: currentRow, c: visibleQuarters.value.length + 1 }
-    });
-    currentRow++;
-
-    dataTypes.forEach((type) => {
-      const row: (string | number)[] = [type];
-      let total = 0;
-      
-      const metricType = typeMap[type];
-      const isDecimalType = metricType === 'value' || metricType === 'area' || metricType === 'price_per_sqm';
-
-      visibleQuarters.value.forEach((q) => {
-        const quarter = q.split(' ')[0];
-        const val = getSpecificMetric(quarter, priceRange, typeMap[type]);
-        
-        if (metricType !== 'price_per_sqm') {
-             total += val;
-        }
-        
-        const formattedVal = formatNumber(val, isDecimalType);
-        row.push(formattedVal);
-      });
-
-      // Recalculate total for avg price
-      if (metricType === 'price_per_sqm') {
-          const totalValue = visibleQuarters.value.reduce((sum, q) => sum + getSpecificMetric(q.split(' ')[0], priceRange, 'value'), 0);
-          const totalArea = visibleQuarters.value.reduce((sum, q) => sum + getSpecificMetric(q.split(' ')[0], priceRange, 'area'), 0);
-          total = totalArea > 0 ? (totalValue / totalArea) : 0;
-      }
-      
-      const formattedTotal = getRowTotal(priceRange, metricType);
-
-      row.push(formattedTotal);
-      aoa.push(row);
-      currentRow++;
-    });
-
-    aoa.push([]);
-    currentRow++;
-  });
-  
-    const totalRowTypes: ('unit' | 'value' | 'area')[] = ['unit', 'value', 'area'];
-    const totalRowLabels = ['จำนวนหลัง (รวม)', 'มูลค่ารวม (รวม)', 'พื้นที่ใช้สอย (รวม)'];
-
-    totalRowTypes.forEach((metric, index) => {
-        const row: (string | number)[] = [totalRowLabels[index]];
-        visibleQuarters.value.forEach(q => {
-            row.push(getQuarterTotal(q, metric)); // Already formatted
+    try {
+        const wb = new ExcelJS.Workbook();
+        const ws = wb.addWorksheet('ตารางรายงาน', {
+            views: [{ state: 'frozen', ySplit: 2 }] // ตรึงแถว Header
         });
-        row.push(getTotalYearTotal(metric)); // Already formatted
-        aoa.push(row);
-        currentRow++;
-    });
 
-    // Add Total Avg Price Row
-    const avgPriceRow: (string | number)[] = ['ราคาเฉลี่ย/ตร.ม. (รวม)'];
-    visibleQuarters.value.forEach(q => {
-        avgPriceRow.push(getQuarterAvgPrice(q)); // Already formatted (decimal)
-    });
-    avgPriceRow.push(getTotalYearAvgPrice()); // Already formatted (decimal)
-    aoa.push(avgPriceRow);
-    currentRow++;
+        // (!!!) NEW: Define font name
+        const fontName = 'TH Sarabun PSK';
 
-  const sheet = XLSX.utils.aoa_to_sheet(aoa);
+        const headerCols = visibleQuarters.value.map(q => q);
+        const ytdLabel = `${selectedYear.value} (YTD)`;
 
-  sheet['!cols'] = [
-    { wch: 35 },
-    ...visibleQuarters.value.map(() => ({ wch: 20 })), // Increased width for QOQ
-    { wch: 20 },
-  ];
+        // --- Row 1 & 2: Main Headers ---
+        const titleRow = ws.addRow([
+            `ตารางแบ่งตามไตรมาส ประจำปี ${selectedYear.value} (พื้นที่: ${selectedRegion.value})`
+        ]);
+        // (!!!) MODIFIED: Add font
+        titleRow.font = { name: fontName, bold: true, size: 16 };
+        ws.mergeCells(1, 1, 1, headerCols.length + 2);
 
-  sheet['!merges'] = merges;
-  
-  aoa.forEach((row, rowIndex) => {
-    if (rowIndex > 0 && rowIndex <= dataTypes.length) {
-      for (let colIndex = 0; colIndex < row.length; colIndex++) {
-        const cell = sheet[XLSX.utils.encode_cell({ r: rowIndex, c: colIndex })];
-        if (cell) {
-          // cell.s = { fill: { fgColor: { rgb: 'FFFF00' } } }; // Example style
+        const headerRow = ws.addRow([
+            'Financial Summary',
+            ...headerCols,
+            ytdLabel
+        ]);
+        // (!!!) MODIFIED: Add font
+        headerRow.font = { name: fontName, bold: true, size: 12 };
+        headerRow.alignment = { horizontal: 'center', vertical: 'middle' };
+        headerRow.getCell(1).alignment = { horizontal: 'left' };
+        headerRow.getCell(headerCols.length + 2).alignment = { horizontal: 'right' };
+        headerRow.eachCell(cell => {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F5F5' } };
+            cell.border = { bottom: { style: 'medium', color: { argb: 'FF00A6D4' } } };
+        });
+
+        ws.addRow([]); // Empty spacer row
+        let currentRowNum = 4; // เริ่มต้นข้อมูลที่แถว 4
+
+        const ytdBgFill = { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFFFF3E0' } };
+        const priceRangeFill = { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFFCF8FF' } };
+        // (!!!) MODIFIED: Add font
+        const priceRangeFont = { name: fontName, bold: true, size: 12, color: { argb: 'FF725AF2' } };
+
+        // --- Data Rows (Price Ranges) ---
+        for (const priceRange of priceRanges) {
+            // แถวหัวข้อ Price Range
+            const priceRow = ws.addRow([priceRange]);
+            ws.mergeCells(currentRowNum, 1, currentRowNum, headerCols.length + 2);
+            priceRow.font = priceRangeFont;
+            priceRow.fill = priceRangeFill;
+            currentRowNum++;
+
+            // แถวข้อมูล
+            for (const type of dataTypes) {
+                const metricType = typeMap[type];
+                const isUnit = type === 'จำนวนหลัง';
+                const numFmt = isUnit ? '#,##0' : '#,##0.00';
+                const rowData: any[] = [type];
+
+                // Quarters Data
+                for (const q of visibleQuarters.value) {
+                    const quarter = q.split(' ')[0];
+                    const value = getSpecificMetric(quarter, priceRange, metricType);
+                    
+                    if (quarter === 'Q1') {
+                        rowData.push(value); // ใส่ค่าดิบ
+                    } else {
+                        const qoqPercent = getQOQCellData(priceRange, q, metricType);
+                        // (!!!) MODIFIED: Add font
+                        rowData.push({
+                            richText: [
+                                { text: formatNumber(value, !isUnit) + '\n', font: { name: fontName, size: 11 } },
+                                { text: `(${formatPercentage(qoqPercent)})`, font: { name: fontName, color: { argb: getExcelColor(qoqPercent) }, size: 9 } }
+                            ]
+                        });
+                    }
+                }
+
+                // YTD Total Data
+                const rawYTDValue = getRawTotalForQuarters(summaryData.value, priceRange, metricType, visibleQuarters.value.map(q => q.split(' ')[0]));
+                const yoyPercent = getRowTotalYoY(priceRange, metricType);
+                // (!!!) MODIFIED: Add font
+                rowData.push({
+                    richText: [
+                        { text: formatNumber(rawYTDValue, !isUnit) + '\n', font: { name: fontName, size: 11 } },
+                        { text: `(${formatPercentage(yoyPercent)})`, font: { name: fontName, color: { argb: getExcelColor(yoyPercent) }, size: 9 } }
+                    ]
+                });
+                
+                const dataRow = ws.addRow(rowData);
+                dataRow.alignment = { vertical: 'middle', horizontal: 'right', wrapText: true };
+                // (!!!) MODIFIED: Add font to cell 1
+                dataRow.getCell(1).alignment = { horizontal: 'left' };
+                dataRow.getCell(1).font = { name: fontName, size: 11 };
+                
+                // (!!!) MODIFIED: Add font to Q1 cell
+                if (visibleQuarters.value.length > 0 && visibleQuarters.value[0].startsWith('Q1')) {
+                    dataRow.getCell(2).numFmt = numFmt;
+                    dataRow.getCell(2).value = getSpecificMetric('Q1', priceRange, metricType);
+                    dataRow.getCell(2).font = { name: fontName, size: 11 };
+                }
+                dataRow.getCell(headerCols.length + 2).fill = ytdBgFill;
+                currentRowNum++;
+            }
         }
-      }
-    }
-  });
 
-  XLSX.utils.book_append_sheet(wb, sheet, 'ตารางรายงาน');
-  XLSX.writeFile(wb, `รายงานแบ่งตามไตรมาส_${selectedYear.value}.xlsx`);
+        // --- Total Rows ---
+        // (!!!) MODIFIED: Add font
+        const totalRowFont = { name: fontName, bold: true, color: { argb: 'FFF8285A' }, size: 11 };
+        const totalRowFill = { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFFCF8FF' } };
+        const totalYtdFill = { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFFFF3E0' } };
+
+        // Helper to add total rows
+        const addTotalRow = (label: string, metric: 'unit' | 'value' | 'area' | 'price_per_sqm') => {
+            const isUnit = metric === 'unit';
+            const numFmt = isUnit ? '#,##0' : '#,##0.00';
+            const rowData: any[] = [{ richText: [{ text: label, font: totalRowFont }] }];
+
+            for (const q of visibleQuarters.value) {
+                const quarter = q.split(' ')[0];
+                const value = (metric === 'price_per_sqm') ? getRawQuarterAvgPrice(quarter) : getRawQuarterTotal(quarter, metric);
+                
+                if (quarter === 'Q1') {
+                    rowData.push(value); // ใส่ค่าดิบ
+                } else {
+                    const qoqPercent = (metric === 'price_per_sqm') ? getQuarterAvgPriceQOQ(q) : getQuarterTotalQOQ(q, metric);
+                    // (!!!) MODIFIED: Add font
+                    rowData.push({
+                        richText: [
+                            { text: formatNumber(value, !isUnit) + '\n', font: totalRowFont },
+                            { text: `(${formatPercentage(qoqPercent)})`, font: { name: fontName, color: { argb: getExcelColor(qoqPercent) }, size: 9 } }
+                        ]
+                    });
+                }
+            }
+            
+            // YTD Total
+            const rawYTDValue = getRawGrandTotalForQuarters(summaryData.value, metric, visibleQuarters.value.map(q => q.split(' ')[0]));
+            const yoyPercent = getGrandTotalYoY(metric);
+            // (!!!) MODIFIED: Add font
+            rowData.push({
+                richText: [
+                    { text: formatNumber(rawYTDValue, !isUnit) + '\n', font: { ...totalRowFont, bold: true } }, // เน้นหนา YTD
+                    { text: `(${formatPercentage(yoyPercent)})`, font: { name: fontName, color: { argb: getExcelColor(yoyPercent) }, size: 9, bold: true } }
+                ]
+            });
+
+            const totalRow = ws.addRow(rowData);
+            totalRow.eachCell((cell, colNumber) => {
+                cell.fill = totalRowFill;
+                cell.alignment = { vertical: 'middle', horizontal: 'right', wrapText: true };
+                if (colNumber === 1) cell.alignment = { horizontal: 'left' };
+                
+                // (!!!) MODIFIED: Add font to Q1 cell
+                if (colNumber === 2 && visibleQuarters.value[0].startsWith('Q1')) {
+                    cell.numFmt = numFmt;
+                    cell.font = totalRowFont; // Q1 ไม่มี RichText ต้องสั่งสี/font เอง
+                }
+                if (colNumber === headerCols.length + 2) {
+                    cell.fill = totalYtdFill; // สีพื้นหลัง YTD
+                }
+            });
+        };
+
+        addTotalRow('จำนวนหลัง (รวม)', 'unit');
+        addTotalRow('มูลค่ารวม (รวม)', 'value');
+        addTotalRow('พื้นที่ใช้สอย (รวม)', 'area');
+        addTotalRow('ราคาเฉลี่ย/ตร.ม. (รวม)', 'price_per_sqm');
+
+        // --- Column Widths ---
+        ws.columns = [
+            { width: 35 }, // Financial Summary
+            ...headerCols.map(() => ({ width: 22 })), // Quarters
+            { width: 25 }  // YTD
+        ];
+
+        // --- Save File ---
+        const buffer = await wb.xlsx.writeBuffer();
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `รายงานแบ่งตามไตรมาส_${selectedYear.value}_${selectedRegion.value}.xlsx`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        snackbarText.value = 'สร้างไฟล์ Excel สำเร็จแล้ว';
+        snackbarColor.value = 'success';
+        showSnackbar.value = true;
+
+    } catch (err: any) {
+        console.error('Error exporting to Excel:', err);
+        // (!!!) NEW: แสดง Snackbar เมื่อล้มเหลว
+        snackbarText.value = `ไม่สามารถสร้าง Excel ได้: ${err.message || 'เกิดข้อผิดพลาดไม่ทราบสาเหตุ'}`;
+        snackbarColor.value = 'error';
+        showSnackbar.value = true;
+    } finally {
+        exportLoading.value = false;
+        // (!!!) ลบบรรทัด 'exportLoading.value = false;' ที่ซ้ำซ้อนตรงนี้ออกไป
+    }
 };
 
+const blobToDataURL = (blob: Blob): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      resolve(reader.result as string); // 2. คืนค่า Data URL ทั้งหมด
+    };
+    reader.onerror = (error) => reject(error);
+    reader.readAsDataURL(blob); // 3. อ่านเป็น DataURL
+  });
+};
+
+// (!!!) 2. แทนที่ฟังก์ชัน exportToPDF เดิมทั้งหมดด้วยโค้ดนี้
+// (!!!) 2. แทนที่ฟังก์ชัน exportToPDF เดิมทั้งหมดด้วยโค้ดนี้
+const exportToPDF = async () => {
+  exportLoading.value = true;
+  showSnackbar.value = false; // ซ่อน Snackbar เก่าก่อน
+  
+  const tableElement = document.getElementById('table-to-export');
+  if (!tableElement) {
+    console.error('Table element not found!');
+    snackbarText.value = 'ไม่พบองค์ประกอบตาราง (Table element not found!)';
+    snackbarColor.value = 'error';
+    showSnackbar.value = true;
+    exportLoading.value = false;
+    return;
+  }
+
+  try {
+    // === 1. โหลดทรัพยากร (ฟอนต์ และ โลโก้) ===
+
+    // (!!!) 1a. (MODIFIED) โหลดฟอนต์ (ใช้วิธี DataURL แล้วตัดส่วนหัว)
+    const fontUrl = '/fonts/Sarabun-Regular.ttf'; 
+    let fontBase64 = ''; // นี่คือ Base64 ที่ *ไม่* มี prefix
+    try {
+        const fontResponse = await fetch(fontUrl);
+        if (!fontResponse.ok) throw new Error('Failed to fetch local font: /fonts/Sarabun-Regular.ttf');
+        const fontBlob = await fontResponse.blob();
+        
+        // ใช้วิธี DataURL ที่เสถียร
+        const fontDataURL = await blobToDataURL(fontBlob); 
+        
+        // (!!!) Key: ตัดส่วนหัว "data:application/octet-stream;base64," (หรือ "data:font/ttf;...") ออก
+        fontBase64 = fontDataURL.split(',')[1]; 
+        if (!fontBase64) throw new Error('Failed to parse Base64 from font Data URL');
+
+    } catch (fontErr: any) {
+        throw new Error(`Font loading failed: ${fontErr.message}`);
+    }
+
+
+    // (!!!) 1b. (MODIFIED) โหลดโลโก้ (ใช้วิธี DataURL ที่สมบูรณ์)
+    // (ใช้ Path ที่ถูกต้องตามที่คุณระบุ)
+    const logoUrl = '/assets/images/image-28-2.png';
+    let logoDataURL = ''; // นี่คือ Data URL ที่ *มี* prefix
+    try {
+        const logoResponse = await fetch(logoUrl);
+        if (!logoResponse.ok) throw new Error('Logo file not found in /assets/images/image-28-2.png');
+        const logoBlob = await logoResponse.blob();
+        
+        // ใช้วิธี DataURL (ตัวนี้เราจะใช้ทั้ง URL)
+        logoDataURL = await blobToDataURL(logoBlob); 
+    } catch (imgErr) {
+        console.error(imgErr); // ถ้าหาโลโก้ไม่เจอ ก็จะแค่ข้ามไป ไม่ให้ error
+    }
+
+    // === 2. สร้าง PDF และตั้งค่าฟอนต์ ===
+    const pdf = new jsPDF('p', 'mm', 'a4'); 
+    const fontName = 'Sarabun'; 
+    const fontStyle = 'normal';
+    
+    // (!!!) 2a. (MODIFIED) ส่ง Base64 string ที่ถูกต้อง (ไม่มี prefix)
+    // (วิธีนี้จะแก้ปัญหา 'No unicode cmap' และ 'vFS error')
+    pdf.addFileToVFS('Sarabun-Regular.ttf', fontBase64); 
+    pdf.addFont('Sarabun-Regular.ttf', fontName, fontStyle);
+    pdf.setFont(fontName, fontStyle);
+    
+    // === 3. สร้างหน้าปก (โลโก้ + ข้อความ) ===
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageCenter = pageWidth / 2;
+    let currentY = 30; 
+
+    // (!!!) 3a. (MODIFIED) เพิ่มโลโก้ (ด้วย Data URL ที่สมบูรณ์)
+    if (logoDataURL) {
+        const logoWidth = 60; 
+        const logoHeight = 18.5; 
+        const logoX = pageCenter - (logoWidth / 2); 
+        
+        // (วิธีนี้จะแก้ปัญหา 'wrong PNG signature' เพราะเราส่ง "data:image/png;base64,...")
+        pdf.addImage(logoDataURL, 'PNG', logoX, currentY, logoWidth, logoHeight);
+        
+        currentY += logoHeight + 15; 
+    } else {
+        currentY = 100; 
+    }
+
+    // (!!!) 3b. & 3c. เพิ่มข้อความ (ส่วนนี้ถูกต้องอยู่แล้ว)
+    // (Error 'widths' จะหายไป เพราะฟอนต์โหลดสำเร็จแล้ว)
+    pdf.setFontSize(22);
+    pdf.text('รายงานแบ่งตามไตรมาส', pageCenter, currentY, { align: 'center' });
+    currentY += 10; 
+    pdf.setFontSize(18);
+    const combinedText = `ประจำปี: ${selectedYear.value}  |  พื้นที่: ${selectedRegion.value}`;
+    pdf.text(combinedText, pageCenter, currentY, { align: 'center' });
+    // === จบหน้าปก ===
+
+    // 7. ถ่ายรูปตาราง
+    const canvas = await html2canvas(tableElement, {
+      scale: 2,
+      useCORS: true,
+      logging: false,
+    });
+    
+    const imgData = canvas.toDataURL('image/png'); // (โค้ดเดิมของคุณตรงนี้ถูกต้อง)
+
+    // 8. เพิ่มหน้าใหม่สำหรับตาราง
+    pdf.addPage();
+
+    // 9. คำนวณสัดส่วน (ส่วนนี้ถูกต้องอยู่แล้ว)
+    const pageMargin = 10; 
+    const pdfWidth = pdf.internal.pageSize.getWidth() - (pageMargin * 2); 
+    const pdfHeight = pdf.internal.pageSize.getHeight() - (pageMargin * 2); 
+
+    const imgHeight = canvas.height * pdfWidth / canvas.width;
+    
+    let heightLeft = imgHeight;
+    let position = pageMargin; 
+
+    pdf.addImage(imgData, 'PNG', pageMargin, position, pdfWidth, imgHeight);
+    heightLeft -= pdfHeight; 
+
+    // 10. วนลูปเพิ่มหน้า (ส่วนนี้ถูกต้องอยู่แล้ว)
+    while (heightLeft > 0) {
+      position = heightLeft - imgHeight + pageMargin; 
+      pdf.addPage();
+      pdf.addImage(imgData, 'PNG', pageMargin, position, pdfWidth, imgHeight);
+      heightLeft -= pdfHeight;
+    }
+    
+    // 11. บันทึกไฟล์
+    pdf.save(`รายงานแบ่งตามไตรมาส_${selectedYear.value}_${selectedRegion.value}.pdf`);
+
+    // (!!!) NEW: แสดง Snackbar เมื่อสำเร็จ
+    snackbarText.value = 'สร้างไฟล์ PDF สำเร็จแล้ว';
+    snackbarColor.value = 'success';
+    showSnackbar.value = true;
+
+  } catch (err: any) { 
+    console.error('Error exporting to PDF:', err);
+    
+    snackbarText.value = `ไม่สามารถสร้าง PDF ได้: ${err.message || 'เกิดข้อผิดพลาดไม่ทราบสาเหตุ'}`;
+    snackbarColor.value = 'error';
+    showSnackbar.value = true;
+    
+  } finally {
+    exportLoading.value = false;
+  }
+};
 </script>
 
 <template>
   <v-row>
+    <v-snackbar
+      v-model="showSnackbar"
+      :timeout="snackbarTimeout"
+      :color="snackbarColor"
+      location="top end"
+      variant="elevated"
+    >
+      {{ snackbarText }}
+      <template v-slot:actions>
+        <v-btn
+          color="white"
+          variant="text"
+          @click="showSnackbar = false"
+        >
+          ปิด
+        </v-btn>
+      </template>
+    </v-snackbar>
+
     <v-col cols="12">
       <div class="mt-3 mb-6">
         <div class="d-flex justify-space-between">
@@ -1073,7 +1372,25 @@ const exportToExcel = () => {
 
 
     <v-col cols="12">
-      <VCard elevation="10">
+      <VCard elevation="10" style="position: relative;">
+      
+        <v-overlay
+            :model-value="exportLoading"
+            class="align-center justify-center"
+            persistent
+            scrim="white"
+            style="opacity: 0.8;"
+          >
+          <div class="text-center">
+            <v-progress-circular
+              color="primary"
+              indeterminate
+              size="64"
+            ></v-progress-circular>
+            <h4 class="text-primary mt-3">กำลังสร้างไฟล์รายงาน...</h4>
+          </div>
+        </v-overlay>
+      
         <v-card-text>
           <div class="v-row">
             <div class="v-col-md-8 v-col-12">
@@ -1089,15 +1406,21 @@ const exportToExcel = () => {
             <div class="v-col-md-4 v-col-12 text-right">
               <div class="d-flex  justify-end v-col-md-12 v-col-lg-12 v-col-12 ">
 
-                <v-btn class=" text-primary   v-btn--size-large " @click="exportToExcel">
-                  <div class="text-none font-weight-regular muted">Export to CSV</div>
+                <v-btn class="text-primary v-btn--size-large" @click="exportToExcel" prepend-icon="mdi-file-excel" color="success">
+                  <div class="text-none font-weight-regular">Export to Excel</div>
                 </v-btn>
+                
+                <v-btn class="ml-2 v-btn--size-large" @click="exportToPDF" prepend-icon="mdi-file-pdf-box" color="error">
+                  <div class="text-none font-weight-regular">Export to PDF</div>
+                </v-btn>
+                
               </div>
             </div>
           </div>
+          
           <div class="v-table v-theme--BLUE_THEME v-table--density-default month-table">
             <div class="v-table__wrapper">
-              <table>
+              <table id="table-to-export">
                 <thead style="background-color: #F5F5F5;">
                   <tr>
                     <th class="text-h6">Financial Summary</th>
