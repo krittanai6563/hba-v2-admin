@@ -193,7 +193,6 @@ function formatPercentage(value: number | null): string {
     const prefix = value > 0 ? '+' : '';
     return `${prefix}${value.toFixed(1)}%`;
 };
-
 // (!!!) NEW: Helper to get percentage color class
 function getQOQPercentageColor(value: number | null): string {
     if (value === null) return 'text-grey';
@@ -201,10 +200,8 @@ function getQOQPercentageColor(value: number | null): string {
     if (value < 0) return 'text-error';   // Red
     return 'text-grey'; // Neutral
 };
-// (!!!) จบ Helpers ตาราง (QOQ)
 
-
-// (!!!) MODIFICATION: baseChartSeries (สร้างข้อมูล 5 ชุดเสมอ)
+// (!!!) แบบใหม่ที่แก้ไขแล้ว
 const baseChartSeries = computed(() => {
     const avgPricePerSqmData = visibleQuarters.value.map((q) => {
         const [quarter] = q.split(' ');
@@ -220,7 +217,8 @@ const baseChartSeries = computed(() => {
         return totalArea > 0 ? parseFloat((totalValue / totalArea).toFixed(2)) : 0;
     });
 
-    return [
+    // 1. สร้าง 4 ซีรีส์หลักก่อน
+    const series = [
         {
             name: 'จำนวนหลัง',
             type: 'column',
@@ -260,15 +258,21 @@ const baseChartSeries = computed(() => {
             data: padSeries(avgPricePerSqmData.map(val => val === null ? null : parseFloat(val.toFixed(2)))),
             color: '#E900D9', 
         },
-        {
+    ];
+
+    // 2. (!!!) ตรวจสอบเงื่อนไข และเพิ่มซีรีส์ที่ 5
+    if (visibleQuarters.value.length > 1) {
+        series.push({
             name: '% QOQ (มูลค่ารวม)',
             type: 'line',
             data: padSeries(qoqValuePercentChangeData.value),
             color: '#D7263D', 
-        },
-    ];
-});
+        });
+    }
 
+    // 3. คืนค่า
+    return series;
+});
 // (!!!) MODIFICATION: finalChartSeries (กรองข้อมูลตามปุ่มที่คลิก)
 const finalChartSeries = computed(() => {
   const selectedName = selectedHighlight.value;
@@ -293,13 +297,17 @@ const finalChartSeries = computed(() => {
 
 
 // (!!!) MODIFICATION: chartOptions เปลี่ยนเป็น computed
+// (!!!) MODIFICATION: chartOptions เปลี่ยนเป็น computed
 const computedChartOptions = computed(() => {
   
   const isFiltered = selectedHighlight.value !== null;
   const selectedName = selectedHighlight.value;
 
-  // 1. กำหนดค่า Y-Axes ทั้งหมด
-  const allYAxes = [
+  // (!!!) ADD THIS: ตรวจสอบว่าซีรีส์ QOQ มีอยู่จริงหรือไม่
+  const hasQOQSeries = baseChartSeries.value.some(s => s.name === '% QOQ (มูลค่ารวม)');
+
+  // 1. กำหนดค่า Y-Axes ทั้งหมด (ใช้เป็น "แม่แบบ" เท่านั้น)
+  const allYAxesTemplates = [
         {
             seriesName: 'จำนวนหลัง',
             axisTicks: { show: true },
@@ -341,27 +349,37 @@ const computedChartOptions = computed(() => {
         },
     ];
   
-  // 2. กำหนดค่า Stroke ทั้งหมด
-  const allStrokes = [2, 2, 2, 2, 3];
+  // 2. กำหนดค่า Stroke ทั้งหมด (ใช้เป็น "แม่แบบ")
+  const allStrokesTemplates = [2, 2, 2, 2, 3];
   
   // 3. เตรียมตัวแปรสำหรับเก็บค่าที่จะใช้
- let finalYAxes: YAxisConfig[] = allYAxes;
-  let finalStrokeWidth = allStrokes;
-  let finalColumnWidth = isFiltered ? '60%' : '50%'; // แท่งกว้างขึ้นถ้ากรอง
+  let finalYAxes: YAxisConfig[];
+  let finalStrokeWidth: number[];
+  let finalColumnWidth = isFiltered ? '60%' : '50%';
 
   // 4. กรองแกน Y และ Stroke ถ้ามีการเลือก
   if (isFiltered && selectedName) {
-    const selectedYAxis = allYAxes.find(a => a.seriesName === selectedName);
-    const qoqYAxis = allYAxes.find(a => a.seriesName === '% QOQ (มูลค่ารวม)');
+    const selectedYAxis = allYAxesTemplates.find(a => a.seriesName === selectedName);
+    // (!!!) หา qoqYAxis เฉพาะเมื่อ hasQOQSeries เป็น true
+    const qoqYAxis = hasQOQSeries ? allYAxesTemplates.find(a => a.seriesName === '% QOQ (มูลค่ารวม)') : undefined;
     
     finalYAxes = [selectedYAxis, qoqYAxis].filter(Boolean) as YAxisConfig[];
 
     const selectedIndex = dataTypes.indexOf(selectedName);
-    if (selectedIndex > -1) {
-      finalStrokeWidth = [allStrokes[selectedIndex], 3];
+
+    // (!!!) แก้ไขการคำนวณ stroke ให้ปลอดภัย
+    const selectedStroke = selectedIndex > -1 ? allStrokesTemplates[selectedIndex] : 2;
+    if (selectedName === 'มูลค่ารวม') {
+        // กรณีคลิก 'มูลค่ารวม' จะมีแค่ [value, qoq]
+        finalStrokeWidth = hasQOQSeries ? [allStrokesTemplates[1], 3] : [allStrokesTemplates[1]];
     } else {
-      finalStrokeWidth = [2, 3]; // Default ถ้าหาไม่เจอ
+        finalStrokeWidth = hasQOQSeries ? [selectedStroke, 3] : [selectedStroke];
     }
+  
+  } else {
+    // (!!!) KEY CHANGE: ถ้าไม่ได้กรอง ให้ใช้ "แม่แบบ" ตามจำนวนซีรีส์ที่มีจริง
+    finalYAxes = hasQOQSeries ? allYAxesTemplates : allYAxesTemplates.slice(0, 4);
+    finalStrokeWidth = hasQOQSeries ? allStrokesTemplates : allStrokesTemplates.slice(0, 4);
   }
 
   // 5. สร้าง Object Options สุดท้าย
@@ -396,10 +414,12 @@ const computedChartOptions = computed(() => {
         formatter: (value: any, { seriesIndex }: { seriesIndex: number }) => {  
             if (value === null) return '';
             
-            // (!!!) Dynamic: ถ้ากรองแล้ว, เส้น QoQ จะอยู่ที่ index 1
-            if (isFiltered && seriesIndex === 1) return ''; 
-            // (!!!) Dynamic: ถ้าไม่กรอง, เส้น QoQ จะอยู่ที่ index 4
-            if (!isFiltered && seriesIndex === 4) return ''; 
+            // (!!!) KEY CHANGE: ตรวจสอบจากชื่อซีรีส์ ไม่ใช่ index
+            // เราจะใช้ finalChartSeries.value ซึ่งเป็น computed ที่ถูกต้อง (มี 4 หรือ 5 ซีรีส์)
+            const seriesName = finalChartSeries.value[seriesIndex]?.name;
+            if (seriesName === '% QOQ (มูลค่ารวม)') {
+                return ''; // ไม่ต้องแสดง % บนเส้นกราฟ
+            }
             
             if (value >= 1000000) return (value / 1000000).toFixed(1) + 'M';
             if (value >= 1000) return (value / 1000).toFixed(1) + 'K';
@@ -436,7 +456,7 @@ const computedChartOptions = computed(() => {
             formatter: (val: number, { seriesIndex }: { seriesIndex: number }) => {
                 if (val === undefined || val === null) return 'N/A';
                 
-                // (!!!) Dynamic: ตรวจสอบชื่อซีรีส์ แทน index
+                // (!!!) Dynamic: ตรวจสอบชื่อซีรีส์ (โค้ดส่วนนี้ของคุณดีอยู่แล้ว)
                 const seriesName = finalChartSeries.value[seriesIndex]?.name;
                 if (seriesName === '% QOQ (มูลค่ารวม)') {
                     return val.toFixed(1) + ' %';
@@ -452,7 +472,6 @@ const computedChartOptions = computed(() => {
     },
   };
 });
-// (!!!) จบการแก้ไข chartOptions
 
 
 const formatNumber = (value: number, isDecimal = false) => {
@@ -774,6 +793,43 @@ function highlightRow(metric: (typeof dataTypes)[number]) {
   }
 }
 
+
+// (!!!) NEW: Computed สำหรับแสดงสถิติ QOQ แบบ Dynamic ตามปุ่มที่คลิก
+const dynamicStatData = computed(() => {
+    const qKey = latestVisibleQuarterKey.value;
+    const prevQKey = previousVisibleQuarterKey.value;
+    
+    // ถ้าเป็น Q1 หรือไม่มีไตรมาสก่อนหน้า ให้ trả về ค่าว่าง
+    if (!qKey || !prevQKey) {
+        return { label: 'มูลค่ารวม', percent: null };
+    }
+
+    // 1. หา Metric ที่เลือก (ถ้าไม่เลือก ให้ใช้ 'มูลค่ารวม' เป็นค่าเริ่มต้น)
+    const selectedMetricName = selectedHighlight.value || 'มูลค่ารวม';
+    const metricType = typeMap[selectedMetricName];
+
+    let currentValue = 0;
+    let previousValue = 0;
+
+    // 2. ดึงค่า Current vs Previous ตาม Metric ที่เลือก
+    // (เราใช้ฟังก์ชันที่มีอยู่แล้วในไฟล์ของคุณ)
+    if (metricType === 'price_per_sqm') {
+        currentValue = getRawQuarterAvgPrice(qKey);
+        previousValue = getRawQuarterAvgPrice(prevQKey);
+    } else if (metricType === 'unit' || metricType === 'value' || metricType === 'area') {
+        currentValue = getRawQuarterTotal(qKey, metricType);
+        previousValue = getRawQuarterTotal(prevQKey, metricType);
+    }
+
+    // 3. คำนวณ % change
+    // (ใช้ฟังก์ชันที่มีอยู่แล้วในไฟล์ของคุณ)
+    const percentChange = calculatePercentageChange(currentValue, previousValue);
+
+    return {
+        label: selectedMetricName,
+        percent: percentChange
+    };
+});
 function getHighlightStyle(type: (typeof dataTypes)[number]) {
   if (selectedHighlight.value !== type) return null;
 
@@ -975,40 +1031,36 @@ const exportToExcel = () => {
     </v-col>
 
 
-    <v-col cols="12">
+   <v-col cols="12">
       <VCard elevation="10">
         <v-card-text>
+          
           <v-row align="start">
+            
             <v-col cols="12" md="8">
               <h3 class="card-title mb-1">
                 รายงานแบ่งตามไตรมาส ประจำปี {{ selectedYear }}
               </h3>
               <h5 class="card-subtitle" style="text-align: left;">(พื้นที่: {{ selectedRegion }})</h5>
+            </v-col>
 
-              <v-row v-if="!loading && previousVisibleQuarterKey" align="center" justify="start" class="mt-2">
-
-                <v-col cols="auto" class="d-flex align-baseline ga-2">
-                  <h3 class="card-title" :class="getPercentageColor(latestQuarterQOQPercent)"
+            <v-col cols="12" md="4">
+              
+              <v-row v-if="!loading && previousVisibleQuarterKey" align="center" justify="end" class="mt-0"> <v-col cols="auto" class="text-right">
+                  <h3 class="card-title" :class="getPercentageColor(dynamicStatData.percent)"
                     style="font-size: 1.25rem;">
-                    {{ formatPercentageHelper(latestQuarterQOQPercent) }}
+                    {{ formatPercentage(dynamicStatData.percent) }}
                   </h3>
-                  <h5 class="card-subtitle text-grey-darken-1"> QOQ % (มูลค่ารวม) </h5>
+                  <h5 class="card-subtitle text-grey-darken-1"> QOQ % ({{ dynamicStatData.label }}) </h5>
                 </v-col>
               </v-row>
 
-              <div v-else-if="!loading && !previousVisibleQuarterKey" class="text-grey mt-2">
+              <div v-else-if="!loading && !previousVisibleQuarterKey" class="text-right text-grey mt-2">
                 <h5 class="card-subtitle text-grey-darken-1">(Q1 ไม่มีข้อมูล QOQ ให้เปรียบเทียบ)</h5>
               </div>
+            
             </v-col>
-
-            <!-- <v-col cols="12" md="4" class="d-flex justify-md-end align-start">
-              <div class="d-flex justify-end v-col-md-12 v-col-lg-12 v-col-12 ">
-                <v-select v-model="selectedYear" label="เลือกปี" :items="yearOptions" class="mr-4"></v-select>
-                <v-select v-model="selectedRegion" label="เลือกพื้นที่" :items="regions" class="mr-4"></v-select>
-              </div>
-            </v-col> -->
           </v-row>
-
           <div class="mt-5">
             <apexchart height="350" :options="computedChartOptions" :series="finalChartSeries"></apexchart>
           </div>
