@@ -2,6 +2,8 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
+import jsPDF from 'jspdf'; 
+
 import type { BorderStyle, Cell } from 'exceljs';
 
 // --- (ส่วนฟิลเตอร์เหมือนเดิม) ---
@@ -171,11 +173,10 @@ const chartTitle = computed(() => {
     if (selected === 'จำนวนหลัง') return 'สัดส่วนจำนวนหลัง (Unit) ตามช่วงราคา';
     if (selected === 'พื้นที่ใช้สอย') return 'สัดส่วนพื้นที่ใช้สอย (Usable Area) ตามช่วงราคา';
     if (selected === 'ราคาเฉลี่ย/ตร.ม.') return 'สัดส่วนราคาเฉลี่ย/ตร.ม. (Price/Sqm) ตามช่วงราคา';
-    return 'สัดส่วนมูลค่ารวม (Total Value) ตามช่วงราคา'; // (ค่าเริ่มต้น)
+    return 'สัดส่วนมูลค่ารวม (Total Value) ตามมูลค่า'; // 
 });
 
-// (5) ฟังก์ชันดึงข้อมูล "หลัก" (สำหรับกราฟ/การ์ด/Export)
-// ♻️ [แก้ไข] ปรับการคำนวณ price_per_sqm ให้เก็บทศนิยม
+
 const fetchSummary = async () => {
     if (!userId && userRole !== 'admin') return;
     if (selectedMonths.value.length === 0 || !selectedYear.value) {
@@ -373,6 +374,66 @@ const getDetailedValue = (type: keyof PriceRangeMetrics, monthValue: number, ran
 };
 
 
+// ----------------------------------------------------------------
+// ✅ [เพิ่มใหม่] (8) State และ Logic สำหรับฟิลเตอร์ปุ่ม
+// ----------------------------------------------------------------
+const showMoM = ref(true); // State สำหรับการสลับเปิด/ปิด MoM%
+const selectedTimeRange = ref<string | null>(null); // State สำหรับ 1M, 2M, 3M, 6M, YTD
+const timeRangeOptions = [
+    { label: '1M', value: '1M' },
+    { label: '2M', value: '2M' },
+    { label: '3M', value: '3M' },
+    { label: '6M', value: '6M' },
+    { label: 'YTD', value: 'YTD' }
+];
+
+// Helper function: ดึงเดือนที่ใช้งานได้ของปีที่เลือก
+function getAvailableMonths(yearInBE: number): number[] {
+    const yearAD = yearInBE - 543;
+    const allMonths = allMonthItems.map(m => m.value);
+    if (yearAD === currentJsYear) {
+        return allMonths.filter(m => m <= currentJsMonth);
+    } else if (yearAD > currentJsYear) {
+        return [];
+    } else {
+        return allMonths;
+    }
+}
+
+// Function: ตั้งค่า `selectedMonths` ตามปุ่มที่เลือก (1M, 2M, ...)
+function setTimeRange(range: string | null) {
+    if (!range) {
+        return;
+    }
+    const availableMonths = getAvailableMonths(selectedYear.value);
+    if (availableMonths.length === 0) {
+        selectedMonths.value = [];
+        return;
+    }
+    
+    let newSelectedMonths: number[] = [];
+    switch (range) {
+        case '1M': newSelectedMonths = availableMonths.slice(-1); break;
+        case '2M': newSelectedMonths = availableMonths.slice(-2); break;
+        case '3M': newSelectedMonths = availableMonths.slice(-3); break;
+        case '6M': newSelectedMonths = availableMonths.slice(-6); break;
+        case 'YTD': newSelectedMonths = [...availableMonths]; break;
+    }
+    
+    selectedMonths.value = newSelectedMonths;
+}
+
+// Watcher: เมื่อปุ่ม (v-btn-toggle) ถูกคลิก
+watch(selectedTimeRange, (newRange) => {
+    if (newRange) {
+        setTimeRange(newRange); // เรียกใช้ setTimeRange เพื่ออัปเดต `selectedMonths`
+    }
+    // ถ้า newRange เป็น null (เช่น ผู้ใช้เลือกเดือนเอง) 
+    // `watch(selectedMonths)` จะจัดการ state นี้
+});
+// ----------------------------------------------------------------
+
+
 watch(selectedQuarter, (newQuarter) => {
     if (isUpdatingFromMonths.value) {
         isUpdatingFromMonths.value = false;
@@ -386,18 +447,28 @@ watch(selectedQuarter, (newQuarter) => {
 });
 
 watch(selectedYear, () => {
-    const validMonths = monthOptions.value.map(m => m.value);
-    selectedMonths.value = selectedMonths.value.filter(m => validMonths.includes(m));
-    if (selectedQuarter.value === 'all') {
-        updateToAllMonths();
+    // ♻️ [แก้ไข] ตรวจสอบว่ามี time range ค้างอยู่หรือไม่
+    if (selectedTimeRange.value) {
+        // ถ้ามี ให้คำนวณ `selectedMonths` ใหม่สำหรับปีใหม่
+        setTimeRange(selectedTimeRange.value); 
     } else {
-        fetchSummary(); 
-        fetchDetailedTableData(); 
+        // ถ้าไม่มี (เลือกแบบ manual หรือ Q) ให้ใช้ logic เดิม
+        const validMonths = monthOptions.value.map(m => m.value);
+        selectedMonths.value = selectedMonths.value.filter(m => validMonths.includes(m));
+        if (selectedQuarter.value === 'all') {
+            updateToAllMonths(); 
+        } else {
+            // `selectedMonths` อาจจะเปลี่ยน (หรืออาจจะไม่) แต่เราต้อง fetch ใหม่สำหรับปีใหม่
+            fetchSummary(); 
+            fetchDetailedTableData(); 
+        }
     }
 });
 
 watch(selectedMonths, () => {
     const sortedMonths = [...selectedMonths.value].sort((a, b) => a - b).join(',');
+
+    // --- (1) อัปเดต ไตรมาส ---
     if (sortedMonths === '1,2,3') selectedQuarter.value = 'Q1';
     else if (sortedMonths === '4,5,6') selectedQuarter.value = 'Q2';
     else if (sortedMonths === '7,8,9') selectedQuarter.value = 'Q3';
@@ -416,6 +487,21 @@ watch(selectedMonths, () => {
             selectedQuarter.value = 'all';
         }
     }
+
+    // --- (2) ✅ [เพิ่มใหม่] อัปเดตปุ่ม TimeRange (1M, 2M, ...) ---
+    const availableMonths = getAvailableMonths(selectedYear.value);
+    let matchedRange: string | null = null;
+    if (availableMonths.length > 0) {
+        if (sortedMonths === availableMonths.slice(-1).join(',')) matchedRange = '1M';
+        else if (sortedMonths === availableMonths.slice(-2).join(',')) matchedRange = '2M';
+        else if (sortedMonths === availableMonths.slice(-3).join(',')) matchedRange = '3M';
+        else if (sortedMonths === availableMonths.slice(-6).join(',')) matchedRange = '6M';
+        else if (sortedMonths === availableMonths.join(',')) matchedRange = 'YTD';
+    }
+    // อัปเดต v-model ของ v-btn-toggle
+    selectedTimeRange.value = matchedRange; 
+
+    // --- (3) ดึงข้อมูล ---
     fetchSummary();
     fetchDetailedTableData(); 
 }, { deep: true });
@@ -463,56 +549,205 @@ const formatCardValue = (type: string, range: string): string => {
 
 
 // (10.1) Export Excel
+// ♻️ [แก้ไข] อัปเดตฟังก์ชันนี้ทั้งหมด
 const exportToExcel = async () => {
     const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('Contract Summary');
-    worksheet.addRow([`สรุปข้อมูลรายงานแบ่งตามมูลค่า ประจำปี ${selectedYear.value}`]);
-    worksheet.getRow(1).font = { bold: true, size: 14 };
-    worksheet.getRow(1).alignment = { horizontal: 'center' };
-    worksheet.mergeCells('A1:E1');
-    const headerRow = ['Price Range', 'จำนวนหลัง', 'มูลค่ารวม', 'พื้นที่ใช้สอย', 'ราคาเฉลี่ย/ตร.ม.'];
-    const headerRowFormatted = worksheet.addRow(headerRow);
-    headerRowFormatted.font = { bold: true };
-    headerRowFormatted.alignment = { horizontal: 'center' };
-    headerRowFormatted.eachCell((cell: Cell) => {
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'D3D3D3' } };
-        cell.border = { top: { style: 'thin' as BorderStyle }, left: { style: 'thin' as BorderStyle }, right: { style: 'thin' as BorderStyle }, bottom: { style: 'thin' as BorderStyle } };
-    });
+    const worksheet = workbook.addWorksheet('Monthly Summary');
+    const fontName = 'TH Sarabun PSK'; // ✅ [ใหม่] กำหนดฟอนต์
+
+    // --- 1. Title Row ---
+    const title = `ตารางสรุปยอดรายเดือน (แยกตามมูลค่า) ${filterSubtitle.value}`;
+    const titleRow = worksheet.addRow([title]);
+    titleRow.font = { name: fontName, bold: true, size: 16 }; // ✅ [ใช้ฟอนต์]
+    worksheet.mergeCells(titleRow.number, 1, titleRow.number, displayedMonths.value.length + 2);
+
+    // --- 2. Header Row ---
+    const headerRowData: string[] = ['']; 
+    displayedMonths.value.forEach(month => headerRowData.push(month.short));
+    headerRowData.push('รวม');
+    
+    const headerRow = worksheet.addRow(headerRowData);
+    headerRow.font = { name: fontName, bold: true, size: 12 }; // ✅ [ใช้ฟอนต์]
+    headerRow.alignment = { horizontal: 'center' };
+    const totalCell = headerRow.getCell(headerRowData.length);
+    totalCell.font = { name: fontName, bold: true, size: 12, color: { argb: 'FFFF0000' } }; // สีแดง
+    totalCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3E0' } }; 
+
+    // Helper function สำหรับกำหนด format ตัวเลข
+    const getNumFmt = (field: string) => (field === 'unit' ? '#,##0' : '#,##0.00');
+
+    // --- 3. Data Rows (วนตาม Price Range) ---
     priceRanges.forEach((range) => {
-        const row = [
-            range,
-            getValue('unit', range), // ♻️ Excel ใช้ค่าดิบ (จำนวนเต็ม)
-            getValue('total_value', range), // ♻️ Excel ใช้ค่าดิบ
-            getValue('usable_area', range), // ♻️ Excel ใช้ค่าดิบ
-            getValue('price_per_sqm', range) // ♻️ Excel ใช้ค่าดิบ
-        ];
-        const dataRow = worksheet.addRow(row);
-        dataRow.getCell(2).numFmt = '#,##0'; // ♻️ unit
-        dataRow.getCell(3).numFmt = '#,##0.00'; // ♻️ total_value
-        dataRow.getCell(4).numFmt = '#,##0.00'; // ♻️ usable_area
-        dataRow.getCell(5).numFmt = '#,##0.00'; // ♻️ price_per_sqm
-        dataRow.eachCell((cell: Cell) => {
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'D9EAF7' } };
-            cell.border = { top: { style: 'thin' as BorderStyle }, left: { style: 'thin' as BorderStyle }, right: { style: 'thin' as BorderStyle }, bottom: { style: 'thin' as BorderStyle } };
+        // 3.1: แถวชื่อช่วงราคา
+        const rangeTitleRow = worksheet.addRow([range]);
+        rangeTitleRow.font = { name: fontName, bold: true, size: 12, color: { argb: 'FF725AF2' } }; // ✅ [ใช้ฟอนต์]
+        rangeTitleRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F5F5' } };
+        worksheet.mergeCells(rangeTitleRow.number, 1, rangeTitleRow.number, headerRowData.length);
+
+        // 3.2: แถวข้อมูลย่อย
+        dataTypes.forEach((field) => {
+            const metricLabel = dataTypeLabels[field];
+            const rowData: (string | number)[] = [`  ${metricLabel}`];
+            const numFmt = getNumFmt(field);
+            const fieldKey = field as keyof PriceRangeMetrics;
+
+            // เพิ่มข้อมูลรายเดือน
+            displayedMonths.value.forEach(month => {
+                rowData.push(getNumericDetailedValue(fieldKey, month.value, range));
+            });
+
+            // เพิ่มข้อมูล "ผลรวมแนวนอน" (คอลัมน์ รวม)
+            if (fieldKey === 'price_per_sqm') {
+                const totalValue = getHorizontalTotal(range, 'total_value');
+                const totalArea = getHorizontalTotal(range, 'usable_area');
+                rowData.push(totalArea > 0 ? totalValue / totalArea : 0);
+            } else {
+                rowData.push(getHorizontalTotal(range, fieldKey));
+            }
+            
+            const dataRow = worksheet.addRow(rowData);
+            dataRow.font = { name: fontName, size: 11 }; // ✅ [ใช้ฟอนต์]
+            
+            // กำหนดสไตล์และ Format
+            dataRow.getCell(1).alignment = { horizontal: 'left' };
+            for (let i = 2; i <= rowData.length; i++) {
+                const cell = dataRow.getCell(i);
+                cell.numFmt = numFmt;
+                cell.alignment = { horizontal: 'right' };
+                if (i === rowData.length) {
+                    cell.font = { name: fontName, bold: true, size: 11 }; // ✅ [ใช้ฟอนต์]
+                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3E0' } };
+                }
+            }
+
+            // ✅ [ใหม่] เพิ่มแถว MoM%
+            // (เราใช้ showMoM.value ที่มาจากฟิลเตอร์บนหน้าจอ)
+            if (showMoM.value) {
+                const momRowData: (string | number)[] = [`  (MoM%)`];
+                displayedMonths.value.forEach(month => {
+                    const momValue = getMoMCellData(range, month.value, fieldKey);
+                    // แปลง 10.5 -> 0.105 (สำหรับ Excel)
+                    momRowData.push(momValue !== null ? momValue / 100 : '-');
+                });
+                momRowData.push(''); // คอลัมน์ "รวม" ของ MoM ไม่มี
+                
+                const momRow = worksheet.addRow(momRowData);
+                momRow.font = { name: fontName, italic: true, size: 10, color: { argb: 'FF555555' } }; // ✅ [ใช้ฟอนต์]
+                
+                // สไตล์สำหรับแถว MoM
+                momRow.getCell(1).alignment = { horizontal: 'left' };
+                for (let i = 2; i <= momRowData.length; i++) {
+                    const cell = momRow.getCell(i);
+                    if (typeof cell.value === 'number') {
+                        cell.numFmt = '0.0"%"'; // Format เป็น %
+                        cell.alignment = { horizontal: 'right' };
+                    } else {
+                        cell.alignment = { horizontal: 'center' };
+                    }
+                }
+            }
         });
     });
-    worksheet.columns = [
-        { header: 'Price Range', key: 'price_range', width: 25 }, { header: 'จำนวนหลัง', key: 'unit', width: 15 },
-        { header: 'มูลค่ารวม', key: 'total_value', width: 20 }, { header: 'พื้นที่ใช้สอย', key: 'usable_area', width: 20 },
-        { header: 'ราคาเฉลี่ย/ตร.ม.', key: 'price_per_sqm', width: 20 }
-    ];
+
+    // --- 4. Grand Total Rows ---
+    const totalTitleRow = worksheet.addRow(['']);
+    totalTitleRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F5F5' } };
+    worksheet.mergeCells(totalTitleRow.number, 1, totalTitleRow.number, headerRowData.length);
+
+    dataTypes.forEach((field) => {
+        const metricLabel = dataTypeLabels[field];
+        const rowData: (string | number)[] = [`${metricLabel} (รวม)`];
+        const numFmt = getNumFmt(field);
+        const fieldKey = field as keyof PriceRangeMetrics;
+
+        // ผลรวมแนวตั้ง (รายเดือน)
+        displayedMonths.value.forEach(month => {
+            if (fieldKey === 'price_per_sqm') {
+                const totalValue = getMonthTotal(month.value, 'total_value');
+                const totalArea = getMonthTotal(month.value, 'usable_area');
+                rowData.push(totalArea > 0 ? totalValue / totalArea : 0);
+            } else {
+                rowData.push(getMonthTotal(month.value, fieldKey));
+            }
+        });
+
+        // ผลรวมทั้งหมด (Grand Total)
+        if (fieldKey === 'price_per_sqm') {
+            const totalValue = getGrandTotal('total_value');
+            const totalArea = getGrandTotal('usable_area');
+            rowData.push(totalArea > 0 ? totalValue / totalArea : 0);
+        } else {
+            rowData.push(getGrandTotal(fieldKey));
+        }
+
+        const totalRow = worksheet.addRow(rowData);
+        totalRow.font = { name: fontName, bold: true, size: 12, color: { argb: 'FFF8285A' } }; // ✅ [ใช้ฟอนต์]
+        
+        totalRow.getCell(1).alignment = { horizontal: 'left' };
+        for (let i = 2; i <= rowData.length; i++) {
+            const cell = totalRow.getCell(i);
+            cell.numFmt = numFmt;
+            cell.alignment = { horizontal: 'right' };
+            if (i === rowData.length) {
+                 cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3E0' } };
+            }
+        }
+        
+        // ✅ [ใหม่] แถว MoM% สำหรับ Total
+        if (showMoM.value) {
+            const momRowData: (string | number)[] = [`  (MoM%)`];
+             displayedMonths.value.forEach(month => {
+                const momValue = getMonthTotalMoM(month.value, fieldKey);
+                momRowData.push(momValue !== null ? momValue / 100 : '-');
+            });
+            momRowData.push(''); // "รวม" ไม่มี MoM
+            
+            const momRow = worksheet.addRow(momRowData);
+            momRow.font = { name: fontName, italic: true, size: 10, color: { argb: 'FF555555' } }; // ✅ [ใช้ฟอนต์]
+            momRow.getCell(1).alignment = { horizontal: 'left' };
+            for (let i = 2; i <= momRowData.length; i++) {
+                const cell = momRow.getCell(i);
+                if (typeof cell.value === 'number') {
+                    cell.numFmt = '0.0"%"';
+                    cell.alignment = { horizontal: 'right' };
+                } else {
+                    cell.alignment = { horizontal: 'center' };
+                }
+            }
+        }
+    });
+
+    // --- 5. Set Column Widths ---
+    worksheet.getColumn(1).width = 30;
+    for (let i = 2; i <= headerRowData.length; i++) {
+        worksheet.getColumn(i).width = 18;
+    }
+
+    // --- 6. Write file ---
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheet.sheet' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = 'contract_summary_report.xlsx'; a.click();
+    a.href = url;
+    a.download = `${dynamicFilename.value}.xlsx`; // ✅ [ใช้ชื่อไฟล์ใหม่]
+    a.click();
     window.URL.revokeObjectURL(url);
 };
 
-
-// ----------------------------------------------------------------
-// (11) ฟังก์ชันสำหรับคำนวณ "ผลรวม" (Totals)
-// ----------------------------------------------------------------
+const dynamicFilename = computed(() => {
+    // จะได้ค่าประมาณ "(ประจำปี 2568 - ไตรมาส 1 (มกราคม - มีนาคม))"
+    const cleanedSubtitle = filterSubtitle.value
+        .replace(/[\(\)]/g, '') // ลบวงเล็บ
+        .replace(/\s+/g, '_')   // แทนที่ช่องว่างด้วย _
+        .replace(/__/g, '_')
+        .replace(/_-_/g, '_');
+    
+    // e.g., "รายงานสรุปยอดรายเดือน_ประจำปี_2568_ไตรมาส_1"
+    const baseName = `รายงานสรุปยอดรายเดือน${cleanedSubtitle || ''}`;
+    
+    // ลบอักขระที่ไม่ปลอดภัยสำหรับชื่อไฟล์ (เผื่อไว้)
+    return baseName.replace(/[/\\?%*:|"<>]/g, '');
+});
 
 // (ฟังก์ชันนี้เหมือน getDetailedValue แต่คืนค่าเป็นตัวเลข)
 function getNumericDetailedValue(type: keyof PriceRangeMetrics, monthValue: number, range: string): number {
@@ -628,10 +863,6 @@ const filterSubtitle = computed(() => {
 });
 
 
-// ----------------------------------------------------------------
-// (12) State และ Functions สำหรับการไฮไลต์การ์ดและตาราง
-// ----------------------------------------------------------------
-
 const cardLabels = ['จำนวนหลัง', 'มูลค่ารวม', 'พื้นที่ใช้สอย', 'ราคาเฉลี่ย/ตร.ม.'] as const;
 const selectedHighlight = ref<(typeof cardLabels)[number] | null>(null);
 
@@ -682,9 +913,47 @@ const tableUnitSubtitle = computed(() => {
 });
 
 
+// ... (ใส่ต่อจากโค้ด <script setup> อื่นๆ ของคุณ) ...
+
 // ----------------------------------------------------------------
-// ✅ [เพิ่มใหม่] (13) Helpers for MoM% and YoY%
+// ✅ [เพิ่มใหม่] (16) Computed for Chart MoM%
 // ----------------------------------------------------------------
+const chartMoMData = computed(() => {
+    if (selectedMonths.value.length === 0) {
+        // ถ้าไม่มีเดือนที่เลือก
+        return { percent: null, label: '', hasPreviousMonth: false };
+    }
+
+    // 1. หาเดือน "สุดท้าย" ในช่วงที่ผู้ใช้เลือก
+    const lastSelectedMonth = Math.max(...selectedMonths.value);
+    
+    // 2. กำหนดเดือนก่อนหน้า
+    const prevMonthValue = lastSelectedMonth - 1;
+
+    // 3. ตรวจสอบว่าเปรียบเทียบได้หรือไม่
+    // (เทียบไม่ได้ ถ้าเป็นเดือน ม.ค. หรือ ถ้าไม่มีข้อมูลเดือนก่อนหน้า)
+    if (lastSelectedMonth === 1 || !detailedTableData.value[prevMonthValue]) {
+        const label = lastSelectedMonth === 1 ? '(ม.ค. ไม่มีข้อมูล MoM)' : '';
+        return { percent: null, label: label, hasPreviousMonth: false };
+    }
+
+    // 4. หา metric key ตามที่ผู้ใช้กำลังไฮไลต์ (หรือใช้ 'total_value' เป็นค่าเริ่มต้น)
+    const metricKey =
+        (selectedHighlight.value === 'จำนวนหลัง') ? 'unit' :
+        (selectedHighlight.value === 'พื้นที่ใช้สอย') ? 'usable_area' :
+        (selectedHighlight.value === 'ราคาเฉลี่ย/ตร.ม.') ? 'price_per_sqm' :
+        'total_value'; // ค่าเริ่มต้น
+
+    // 5. ใช้ฟังก์ชันเดิม (getMonthTotalMoM) ที่คุณมีอยู่แล้ว
+    // เพื่อคำนวณ MoM% ของ "ผลรวม"
+    const percent = getMonthTotalMoM(lastSelectedMonth, metricKey);
+
+    // 6. สร้าง Label
+    const prevMonthShort = allMonthItems.find(m => m.value === prevMonthValue)?.short || '';
+    const label = `MoM % (เทียบ ${prevMonthShort}.)`;
+
+    return { percent: percent, label: label, hasPreviousMonth: true };
+});
 
 function calculatePercentageChange(currentValue: number, previousValue: number): number | null {
   if (previousValue > 0) {
@@ -809,6 +1078,205 @@ function getGrandTotalYoY(metric: keyof PriceRangeMetrics): number | null {
     }
     return calculatePercentageChange(currentValue, previousValue);
 }
+
+
+
+
+       
+ // (Helper function สำหรับดึงฟอนต์ไทยมาแปลงเป็น Base64)
+// ♻️ [แก้ไข] เปลี่ยนไปใช้ THSarabunNew.ttf (ตามไฟล์ที่มีในโปรเจกต์)
+async function getFontBase64(fontUrl: string) {
+    const response = await fetch(fontUrl);
+    const blob = await response.blob();
+    return new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            const base64data = reader.result as string;
+            resolve(base64data.split(',')[1]); 
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+    });
+}
+
+// ♻️ [แก้ไข] ฟังก์ชันสำหรับ Export PDF (ดึงข้อมูลตารางละเอียด + MoM%)
+const exportToPdf = async () => {
+    try {
+        // 'l' = landscape (แนวนอน), 'pt' = points (หน่วยวัด)
+        const doc = new jsPDF('l', 'pt', 'a4'); 
+        
+        // ♻️ [แก้ไข] เปลี่ยนฟอนต์เป็น THSarabunNew (ตัวเดียวกับที่มีใน /public/fonts)
+        const fontName = 'THSarabunNew'; 
+        const fontFileName = 'THSarabunNew.ttf'; 
+
+        // --- 1. จัดการฟอนต์ไทย ---
+        const fontBase64 = await getFontBase64(`/fonts/${fontFileName}`);
+        
+        doc.addFileToVFS(fontFileName, fontBase64);
+        doc.addFont(fontFileName, fontName, 'normal');
+        doc.setFont(fontName);
+        // --- จบส่วนฟอนต์ ---
+
+        // --- 2. ตั้งค่าหัวข้อ ---
+        const title = `ตารางสรุปยอดรายเดือน (แยกตามมูลค่า) ${filterSubtitle.value}`;
+        doc.setFontSize(16);
+        doc.text(title, 40, 40); // (x, y coordinates in points)
+
+        // --- 3. เตรียมข้อมูลสำหรับตาราง ---
+        const head: string[][] = [[]];
+        const body: any[][] = []; // ใช้ any[] เพื่อรองรับ styles
+        
+        // 3.1: สร้าง Header Row
+        const headerRowData: string[] = ['']; // คอลัมน์แรก
+        displayedMonths.value.forEach(month => headerRowData.push(month.short));
+        headerRowData.push('รวม');
+        head[0] = headerRowData;
+        
+        // Helper format ตัวเลข (สำหรับ autoTable)
+        const formatNum = (field: string, value: number) => {
+             if (field === 'unit') {
+                 return value.toLocaleString('th-TH', { maximumFractionDigits: 0 });
+             }
+             return value.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        };
+
+        // 3.2: สร้าง Body Rows
+        priceRanges.forEach((range) => {
+            // แถวชื่อช่วงราคา
+            body.push([{ 
+                content: range, 
+                colSpan: headerRowData.length, 
+                styles: { fontStyle: 'bold', fillColor: [245, 245, 245], textColor: [114, 90, 242], fontSize: 10 } 
+            }]);
+
+            dataTypes.forEach((field) => {
+                const metricLabel = dataTypeLabels[field];
+                const rowData: any[] = [`  ${metricLabel}`]; // ย่อหน้า Label
+                const fieldKey = field as keyof PriceRangeMetrics;
+
+                // ข้อมูลรายเดือน
+                displayedMonths.value.forEach(month => {
+                    const val = getNumericDetailedValue(fieldKey, month.value, range);
+                    rowData.push(formatNum(field, val));
+                });
+
+                // ข้อมูล "ผลรวมแนวนอน"
+                let totalVal: number;
+                if (fieldKey === 'price_per_sqm') {
+                    const totalValue = getHorizontalTotal(range, 'total_value');
+                    const totalArea = getHorizontalTotal(range, 'usable_area');
+                    totalVal = (totalArea > 0 ? totalValue / totalArea : 0);
+                } else {
+                    totalVal = getHorizontalTotal(range, fieldKey);
+                }
+                rowData.push({ content: formatNum(field, totalVal), styles: { fontStyle: 'bold' } });
+                body.push(rowData);
+
+                // แถว MoM%
+                if (showMoM.value) {
+                    const momRowData: any[] = [{ content: `  (MoM%)`, styles: { fontStyle: 'italic', textColor: [85, 85, 85], fontSize: 8 } }];
+                    displayedMonths.value.forEach(month => {
+                        const momValue = getMoMCellData(range, month.value, fieldKey);
+                        const momText = momValue !== null ? formatPercentage(momValue) : '';
+                        momRowData.push({ content: momText, styles: { fontStyle: 'italic', textColor: [85, 85, 85], fontSize: 8 } });
+                    });
+                    momRowData.push(''); // คอลัมน์ "รวม" ของ MoM ไม่มี
+                    body.push(momRowData);
+                }
+            });
+        });
+        
+        // 3.3 แถว Total
+        body.push([{ content: '', colSpan: headerRowData.length, styles: { fillColor: [245, 245, 245] } }]); // แถวคั่น
+
+        dataTypes.forEach((field) => {
+            const metricLabel = dataTypeLabels[field];
+            const rowData: any[] = [{ content: `${metricLabel} (รวม)`, styles: { fontStyle: 'bold', textColor: [248, 40, 90] } }];
+            const fieldKey = field as keyof PriceRangeMetrics;
+
+            // ผลรวมแนวตั้ง (รายเดือน)
+            displayedMonths.value.forEach(month => {
+                let monthTotalVal: number;
+                if (fieldKey === 'price_per_sqm') {
+                    const totalValue = getMonthTotal(month.value, 'total_value');
+                    const totalArea = getMonthTotal(month.value, 'usable_area');
+                    monthTotalVal = (totalArea > 0 ? totalValue / totalArea : 0);
+                } else {
+                    monthTotalVal = getMonthTotal(month.value, fieldKey);
+                }
+                rowData.push({ content: formatNum(field, monthTotalVal), styles: { fontStyle: 'bold', textColor: [248, 40, 90] } });
+            });
+
+            // ผลรวมทั้งหมด (Grand Total)
+            let grandTotalVal: number;
+            if (fieldKey === 'price_per_sqm') {
+                const totalValue = getGrandTotal('total_value');
+                const totalArea = getGrandTotal('usable_area');
+                grandTotalVal = (totalArea > 0 ? totalValue / totalArea : 0);
+            } else {
+                grandTotalVal = getGrandTotal(fieldKey);
+            }
+            rowData.push({ content: formatNum(field, grandTotalVal), styles: { fontStyle: 'bold', textColor: [248, 40, 90] } });
+            body.push(rowData);
+
+            // แถว MoM% สำหรับ Total
+            if (showMoM.value) {
+                const momRowData: any[] = [{ content: `  (MoM%)`, styles: { fontStyle: 'italic', textColor: [85, 85, 85], fontSize: 8 } }];
+                displayedMonths.value.forEach(month => {
+                    const momValue = getMonthTotalMoM(month.value, fieldKey);
+                    const momText = momValue !== null ? formatPercentage(momValue) : '';
+                    momRowData.push({ content: momText, styles: { fontStyle: 'italic', textColor: [85, 85, 85], fontSize: 8 } });
+                });
+                momRowData.push(''); // "รวม" ไม่มี MoM
+                body.push(momRowData);
+            }
+        });
+
+
+        // --- 4. สร้างตาราง ---
+        doc.autoTable({
+            head: head,
+            body: body,
+            startY: 55, 
+            theme: 'grid',
+            styles: {
+                font: fontName,
+                fontSize: 9,
+                cellPadding: 2,
+            },
+            headStyles: {
+                fillColor: [245, 245, 245], 
+                textColor: [0, 0, 0],
+                fontStyle: 'bold',
+                halign: 'center'
+            },
+            didParseCell: (data) => {
+                // จัดคอลัมน์ "รวม" ขวาสุด
+                if (data.column.index === headerRowData.length - 1) {
+                     data.cell.styles.fillColor = [255, 243, 224];
+                }
+                // จัดตัวเลขชิดขวา
+                if (data.section === 'body' && data.column.index > 0) {
+                    // ตรวจสอบว่าเป็น row MoM% หรือไม่ (มี %)
+                    if (data.cell.text[0] && !data.cell.text[0].toString().includes('%')) {
+                         data.cell.styles.halign = 'right';
+                    } else {
+                        data.cell.styles.halign = 'center'; // MoM% ให้อยู่กลาง
+                    }
+                }
+            },
+            columnStyles: {
+                0: { cellWidth: 150 }, // คอลัมน์ Label
+            }
+        });
+
+        // --- 5. บันทึกไฟล์ ---
+        doc.save(`${dynamicFilename.value}.pdf`); // ✅ [ใช้ชื่อไฟล์ใหม่]
+
+    } catch (error) {
+        console.error("Error generating PDF:", error);
+    }
+};
 </script>
 
 <template>
@@ -838,6 +1306,8 @@ function getGrandTotalYoY(metric: keyof PriceRangeMetrics): number | null {
                         <v-col cols="12" sm="4" md="4"><v-select v-model="selectedQuarter" :items="quarterOptions" item-title="title" item-value="value" label="ไตรมาส" density="compact" variant="outlined" hide-details /></v-col>
                         <v-col cols="12" sm="4" md="4"><v-select v-model="selectedMonths" :items="monthOptions" item-title="title" item-value="value" label="เดือน (เลือกได้หลายเดือน)" multiple chips closable-chips density="compact" variant="outlined" hide-details /></v-col>
                     </v-row>
+                    
+                   
                 </v-card-text>
             </v-card>
         </v-col>
@@ -870,24 +1340,72 @@ function getGrandTotalYoY(metric: keyof PriceRangeMetrics): number | null {
             </div>
         </v-col>
         <v-col cols="12">
-            <VCard elevation="10">
-                <v-card-text>
-                    <div class="v-row">
-                        <div class="v-col-md-8 v-col-12">
-                            <div class="d-flex align-center">
-                              <div>
-                                  <h3 class="card-title mb-1">{{ chartTitle }}</h3>
-                                  <h5 class="card-subtitle" style="text-align: left">{{ filterSubtitle }}</h5>
-                              </div>
-                            </div>
+    <VCard elevation="10">
+        <v-card-text>
+            <div class="v-row">
+                <div class="v-col-md-8 v-col-12">
+                    <div class="d-flex align-center">
+                        <div>
+                            <h3 class="card-title mb-1">{{ chartTitle }}</h3>
+                            <h5 class="card-subtitle" style="text-align: left">{{ filterSubtitle }}</h5>
                         </div>
                     </div>
-                    <div class="mt-5">
-                      <apexchart type="polarArea" :options="computedPolarAreaOptions" :series="polarAreaSeries" height="400" />
+                </div>
+                
+                <div class="v-col-md-4 v-col-12">
+                    <v-row v-if="chartMoMData.hasPreviousMonth" align="center" justify="end" class="mt-0">
+                        <v-col cols="auto" class="text-right">
+                            <h3 class="card-title" :class="getPercentageColor(chartMoMData.percent)"
+                                style="font-size: 1.25rem;">
+                                {{ formatPercentage(chartMoMData.percent) }}
+                            </h3>
+                            <h5 class="card-subtitle text-grey-darken-1"> {{ chartMoMData.label }} </h5>
+                        </v-col>
+                    </v-row>
+                    <div v-else-if="chartMoMData.label" class="text-right text-grey mt-2 pa-2">
+                        <h5 class="card-subtitle text-grey-darken-1">{{ chartMoMData.label }}</h5>
                     </div>
-                </v-card-text>
-            </VCard>
-        </v-col>
+                </div>
+                </div>
+            
+          <v-row class="mt-0">
+                <v-col cols="12" md="12"> 
+                    <div class="d-flex justify-space-between align-center flex-wrap ga-2">
+                        <v-switch
+                            v-model="showMoM"
+                            label="แสดง MoM%"
+                            color="primary"
+                            density="compact"
+                            hide-details
+                            class="flex-shrink-0"
+                        ></v-switch>
+                        
+                        <v-btn-toggle
+                            v-model="selectedTimeRange"
+                            variant="outlined"
+                            density="compact"
+                            color="primary"
+                            class="flex-wrap"
+                        >
+                            <v-btn
+                                v-for="range in timeRangeOptions"
+                                :key="range.value"
+                                :value="range.value"
+                                size="small"
+                            >
+                                {{ range.label }}
+                            </v-btn>
+                        </v-btn-toggle>
+                    </div>
+                </v-col>
+            </v-row>
+            
+            <div class="mt-5">
+                <apexchart type="polarArea" :options="computedPolarAreaOptions" :series="polarAreaSeries" height="400" />
+            </div>
+        </v-card-text>
+    </VCard>
+</v-col>
 
         <v-col cols="12" sm="12" lg="12">
             <v-card elevation="10">
@@ -903,12 +1421,30 @@ function getGrandTotalYoY(metric: keyof PriceRangeMetrics): number | null {
                             </div>
                         </div>
                         <div class="v-col-md-4 v-col-12 text-right">
-                            <div class="d-flex justify-end v-col-md-12 v-col-lg-12 v-col-12">
-                                <v-btn class="text-primary v-btn--size-small" @click="exportToExcel">
-                                    <div class="text-none font-weight-regular muted">Export (Price Range)</div>
-                                </v-btn>
-                            </div>
-                        </div>
+    <div class="d-flex justify-end ga-2 v-col-md-12 v-col-lg-12 v-col-12">
+        
+        <v-btn
+            color="primary"
+            variant="outlined"
+            @click="exportToExcel"
+            class="v-btn--size-small"
+        >
+            <v-icon start>mdi-file-excel</v-icon>
+            Export Excel
+        </v-btn>
+        
+        <v-btn
+            color="primary"
+            variant="outlined"
+            @click="exportToPdf"
+            class="v-btn--size-small"
+        >
+            <v-icon start>mdi-file-pdf-box</v-icon>
+            Export PDF
+        </v-btn>
+
+    </div>
+</div>
                     </div>
                     <br /><br />
                     
@@ -953,7 +1489,7 @@ function getGrandTotalYoY(metric: keyof PriceRangeMetrics): number | null {
                                                 style="text-align: right; vertical-align: middle;">
                                                 <div>
                                                     <h6 class="text-p" style="font-size: 12px; font-weight: 400;">{{ getDetailedValue('unit', month.value, range) }}</h6>
-                                                    <span v-if="getMoMCellData(range, month.value, 'unit') !== null"
+                                                    <span v-if="showMoM && getMoMCellData(range, month.value, 'unit') !== null"
                                                         class="text-caption ml-1"
                                                         :class="getPercentageColor(getMoMCellData(range, month.value, 'unit'))"
                                                         style="font-weight: 400; font-size: 9px !important;">
@@ -988,7 +1524,7 @@ function getGrandTotalYoY(metric: keyof PriceRangeMetrics): number | null {
                                                 <div>
                                                     <h6 class="text-p" style="font-size: 12px; font-weight: 400;">{{
                                                         getDetailedValue('total_value', month.value, range) }}</h6>
-                                                    <span v-if="getMoMCellData(range, month.value, 'total_value') !== null"
+                                                    <span v-if="showMoM && getMoMCellData(range, month.value, 'total_value') !== null"
                                                         class="text-caption ml-1"
                                                         :class="getPercentageColor(getMoMCellData(range, month.value, 'total_value'))"
                                                         style="font-weight: 400; font-size: 9px !important;">
@@ -1024,7 +1560,7 @@ function getGrandTotalYoY(metric: keyof PriceRangeMetrics): number | null {
                                                 <div>
                                                     <h6 class="text-p" style="font-size: 12px; font-weight: 400;">{{
                                                         getDetailedValue('usable_area', month.value, range) }}</h6>
-                                                    <span v-if="getMoMCellData(range, month.value, 'usable_area') !== null"
+                                                    <span v-if="showMoM && getMoMCellData(range, month.value, 'usable_area') !== null"
                                                         class="text-caption ml-1"
                                                         :class="getPercentageColor(getMoMCellData(range, month.value, 'usable_area'))"
                                                         style="font-weight: 400; font-size: 9px !important;">
@@ -1060,7 +1596,7 @@ function getGrandTotalYoY(metric: keyof PriceRangeMetrics): number | null {
                                                 <div>
                                                     <h6 class="text-p" style="font-size: 12px; font-weight: 400;">{{
                                                         getDetailedValue('price_per_sqm', month.value, range) }}</h6>
-                                                    <span v-if="getMoMCellData(range, month.value, 'price_per_sqm') !== null"
+                                                    <span v-if="showMoM && getMoMCellData(range, month.value, 'price_per_sqm') !== null"
                                                         class="text-caption ml-1"
                                                         :class="getPercentageColor(getMoMCellData(range, month.value, 'price_per_sqm'))"
                                                         style="font-weight: 400; font-size: 9px !important;">
@@ -1097,7 +1633,7 @@ function getGrandTotalYoY(metric: keyof PriceRangeMetrics): number | null {
                                             <div>
                                                 <h6 class="text-p" style="font-size: 12px; font-weight: 600; color: #F8285A;">{{
                                                     getFormattedMonthTotal(month.value, 'unit') }}</h6>
-                                                <span v-if="getMonthTotalMoM(month.value, 'unit') !== null"
+                                                <span v-if="showMoM && getMonthTotalMoM(month.value, 'unit') !== null"
                                                     class="text-caption ml-1"
                                                     :class="getPercentageColor(getMonthTotalMoM(month.value, 'unit'))"
                                                     style="font-weight: 400; font-size: 9px !important;">
@@ -1132,7 +1668,7 @@ function getGrandTotalYoY(metric: keyof PriceRangeMetrics): number | null {
                                             <div>
                                                 <h6 class="text-p" style="font-size: 12px; font-weight: 600; color: #F8285A;">{{
                                                     getFormattedMonthTotal(month.value, 'total_value') }}</h6>
-                                                <span v-if="getMonthTotalMoM(month.value, 'total_value') !== null"
+                                                <span v-if="showMoM && getMonthTotalMoM(month.value, 'total_value') !== null"
                                                     class="text-caption ml-1"
                                                     :class="getPercentageColor(getMonthTotalMoM(month.value, 'total_value'))"
                                                     style="font-weight: 400; font-size: 9px !important;">
@@ -1168,7 +1704,7 @@ function getGrandTotalYoY(metric: keyof PriceRangeMetrics): number | null {
                                             <div>
                                                 <h6 class="text-p" style="font-size: 12px; font-weight: 600; color: #F8285A;">{{
                                                     getFormattedMonthTotal(month.value, 'usable_area') }}</h6>
-                                                <span v-if="getMonthTotalMoM(month.value, 'usable_area') !== null"
+                                                <span v-if="showMoM && getMonthTotalMoM(month.value, 'usable_area') !== null"
                                                     class="text-caption ml-1"
                                                     :class="getPercentageColor(getMonthTotalMoM(month.value, 'usable_area'))"
                                                     style="font-weight: 400; font-size: 9px !important;">
@@ -1204,7 +1740,7 @@ function getGrandTotalYoY(metric: keyof PriceRangeMetrics): number | null {
                                             <div>
                                                 <h6 class="text-p" style="font-size: 12px; font-weight: 600; color: #F8285A;">{{
                                                     getFormattedMonthTotal(month.value, 'price_per_sqm') }}</h6>
-                                                <span v-if="getMonthTotalMoM(month.value, 'price_per_sqm') !== null"
+                                                <span v-if="showMoM && getMonthTotalMoM(month.value, 'price_per_sqm') !== null"
                                                     class="text-caption ml-1"
                                                     :class="getPercentageColor(getMonthTotalMoM(month.value, 'price_per_sqm'))"
                                                     style="font-weight: 400; font-size: 9px !important;">
@@ -1274,5 +1810,11 @@ function getGrandTotalYoY(metric: keyof PriceRangeMetrics): number | null {
 .v-card.card-is-active .text-h4,
 .v-card.card-is-active .textSecondary {
     color: #1E88E5 !important; /* สีฟ้าเข้ม */
+}
+
+/* ✅ [เพิ่มใหม่] CSS สำหรับปุ่ม TimeRange ที่อาจจะขึ้นบรรทัดใหม่ */
+.flex-wrap {
+    flex-wrap: wrap;
+    height: auto !important; /* override v-btn-toggle height */
 }
 </style>

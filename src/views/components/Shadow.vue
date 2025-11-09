@@ -871,6 +871,8 @@ function getExcelColor(value: number | null): string {
     return 'FF808080'; // สีเทา
 }
 
+
+
 const exportToExcel = async () => {
     exportLoading.value = true;
     showSnackbar.value = false;
