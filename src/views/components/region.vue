@@ -266,12 +266,57 @@ onMounted(() => {
     updateToAllMonths();
 });
 
-// --- (6) Helper Functions (ปรับปรุง) ---
+// ⭐️ (6.B.7) [ใหม่] [แถวแนวนอน-สำหรับตารางใหม่] คำนวณยอดรวมของ 1 Region (รวมทุกเดือนที่แสดง)
+function getRegionHorizontalTotal(region: string, field: keyof RegionMetrics): number {
+    let totalUnit = 0;
+    let totalValue = 0;
+    let totalArea = 0;
 
-// ⭐️ (6.A) Helpers สำหรับตารางสรุป (Grand Total) (ใช้ rawData) ⭐️
-// ==========================================================
+    // วนลูปเฉพาะเดือนที่แสดง
+    for (const month of displayedMonths.value) {
+        // ⭐️ ใช้ getMonthlyVerticalTotal (ที่มีอยู่แล้ว) 
+        // ⭐️ เพื่อดึงยอดรวม (ทุก PriceRange) ของ Region นั้น / ในเดือนนั้น
+        totalUnit += getMonthlyVerticalTotal(month.value, region, 'unit');
+        totalValue += getMonthlyVerticalTotal(month.value, region, 'value');
+        totalArea += getMonthlyVerticalTotal(month.value, region, 'area');
+    }
 
-// (6.A.1) ดึงค่าดิบ (ตัวเลข)
+    if (field === 'unit') return totalUnit;
+    if (field === 'value') return totalValue;
+    if (field === 'area') return totalArea;
+    if (field === 'price_per_sqm') {
+        // คำนวณเฉลี่ยจากยอดรวม
+        return totalArea > 0 ? (totalValue / totalArea) : 0;
+    }
+    return 0;
+}
+
+// ⭐️ (6.B.8) [ใหม่] [รวมทั้งหมด-สำหรับตารางใหม่] คำนวณยอดรวม Grand Total (รวมทุกเดือนที่แสดง)
+function getMonthlyTabGrandTotal(field: keyof RegionMetrics): number {
+    let totalUnit = 0;
+    let totalValue = 0;
+    let totalArea = 0;
+
+    // วนลูปเฉพาะเดือนที่แสดง
+    for (const month of displayedMonths.value) {
+        // ⭐️ ใช้ getMonthlyGrandTotal (ที่มีอยู่แล้ว)
+        // ⭐️ เพื่อดึงยอดรวม (ทุก Region, ทุก PriceRange) ของเดือนนั้น
+        totalUnit += getMonthlyGrandTotal(month.value, 'unit');
+        totalValue += getMonthlyGrandTotal(month.value, 'value');
+        totalArea += getMonthlyGrandTotal(month.value, 'area');
+    }
+
+    if (field === 'unit') return totalUnit;
+    if (field === 'value') return totalValue;
+    if (field === 'area') return totalArea;
+    if (field === 'price_per_sqm') {
+        // คำนวณเฉลี่ยจากยอดรวม
+        return totalArea > 0 ? (totalValue / totalArea) : 0;
+    }
+    return 0;
+}
+
+
 function getSummaryNumericValue(region: string, range: string, field: 'unit' | 'value' | 'area'): number {
     return Number(rawData.value?.[region]?.[range]?.[field] || 0);
 }
@@ -866,6 +911,8 @@ function getSummaryGrandTotalContributionPercent(field: keyof RegionMetrics): st
 
 <template>
     <v-row>
+
+        
         <v-col cols="12" sm="12" lg="12">
             <div class="mt-3 mb-6">
                 <div class="d-flex justify-space-between">
@@ -892,6 +939,8 @@ function getSummaryGrandTotalContributionPercent(field: keyof RegionMetrics): st
                 </div>
             </div>
         </v-col>
+
+        
 
         <v-col cols="12" sm="12" lg="12">
             <v-card elevation="10">
@@ -939,225 +988,12 @@ function getSummaryGrandTotalContributionPercent(field: keyof RegionMetrics): st
             </v-card>
         </v-col>
 
-        <v-col cols="12">
-            <VCard elevation="10">
-                <v-card-text>
-                    <div class="v-row">
-                        <div class="v-col-md-8 v-col-12">
-                            <div class="d-flex align-center">
-                                <div>
-                                    <h3 class="card-title mb-1">สัดส่วนมูลค่ารวม (Total Value) ตามภูมิภาค</h3>
-                                    <h5 class="card-subtitle" style="text-align: left">{{ filterSubtitle }}</h5>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="mt-5">
-                        <apexchart type="polarArea" :options="polarAreaOptions" :series="polarAreaSeries" height="400" />
-                    </div>
-                </v-card-text>
-            </VCard>
-        </v-col>
-
-        <!-- ⭐️ [ปรับปรุง] เริ่มตารางใหม่ (ใช้ Tabs) ⭐️ -->
-        <v-col cols="12" sm="12" lg="12">
-            <v-card elevation="10">
-                 <v-card-title class="d-flex justify-space-between align-center">
-                    <div>
-                        <h3 class="card-title mb-1">ตารางสรุป (แถว=มูลค่า, คอลัมน์=ภูมิภาค)</h3>
-                        <h5 class="card-subtitle" style="text-align: left">{{ filterSubtitle }}</h5>
-                    </div>
-                    <v-btn class="text-primary v-btn--size-small" @click="exportToExcel">
-                        <div class="text-none font-weight-regular muted">Export to Excel</div>
-                    </v-btn>
-                </v-card-title>
-                <v-card-text>
-                   <v-tabs v-model="activeTab" grow>
-                        <v-tab value="summary" key="summary">สรุปภาพรวม</v-tab>
-                        <v-tab v-for="month in displayedMonths" :key="month.value" :value="month.value">
-                            {{ month.title }}
-                        </v-tab>
-                    </v-tabs>
-                    <v-window v-model="activeTab">
-                        <!-- ⭐️ (1) Tab: สรุปยอดรวม ⭐️ -->
-                        <!-- ⭐️ [แก้ไข] v-window-item value="summary" ⭐️ -->
-                        <v-window-item value="summary" key="summary">
-                            <v-card-text>
-                                <!-- ⭐️ [ใหม่] เริ่มต้น Layout สรุป ⭐️ -->
-                                <v-row>
-                                    <!-- (ตารางสรุปตามภูมิภาค) -->
-                                   <v-col cols="12" lg="12">
-    <div class="v-table v-theme--BLUE_THEME v-table--density-default month-table">
-        <div class="v-table__wrapper" style="overflow-x: auto">
-            <table>
-                <thead style="background-color: #f5f5f5">
-                    <tr>
-                        <th style="text-align: left;">ภูมิภาค</th>
-                        <th style="text-align: right;">จำนวนหลัง</th>
-                        <th style="text-align: right;">มูลค่ารวม</th>
-                        <th style="text-align: right;">พื้นที่ใช้สอย</th>
-                        <th style="text-align: right;">ราคา/ตร.ม.</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr v-for="region in regions" :key="region">
-                        <td style="text-align: left;">
-                            <h6 class="text-p" style="font-size: 12px; font-weight: 600; color: #725af2">{{ region }}</h6>
-                        </td>
-                        <td style="text-align: right;">
-                            {{ formatValue(getSummaryVerticalTotal(region, 'unit'), 'unit') }}
-                            <span style="font-size: 10px; color: #28a745;"  v-html="getSummaryContributionPercent(region, 'unit')"></span>
-                        </td>
-                        <td style="text-align: right;">
-                            {{ formatValue(getSummaryVerticalTotal(region, 'value'), 'value') }}
-                            <span style="font-size: 10px; color: #28a745;" v-html="getSummaryContributionPercent(region, 'value')"></span>
-                        </td>
-                        <td style="text-align: right;">
-                            {{ formatValue(getSummaryVerticalTotal(region, 'area'), 'area') }}
-                            <span style="font-size: 10px; color: #28a745;" v-html="getSummaryContributionPercent(region, 'area')"></span>
-                        </td>
-                        <td style="text-align: right; ">
-                            {{ formatValue(getSummaryVerticalTotal(region, 'price_per_sqm'), 'price_per_sqm') }}
-                            </td>
-                    </tr>
-                </tbody>
-                <!-- <tfoot style="background-color: #fcf8ff;">
-                    <tr class="month-item">
-                        <td style="text-align: left;">
-                            <h6 class="text-p" style="font-size: 13px; font-weight: 600; color: #f8285a">รวมทั้งหมด</h6>
-                        </td>
-                        <td style="text-align: right;">
-                            <h6 class="text-p" style="font-size: 14px; font-weight: 600; color: #f8285a">
-                                {{ formatValue(getSummaryGrandTotal('unit'), 'unit') }}
-                                <span v-html="getSummaryGrandTotalContributionPercent('unit')"></span>
-                            </h6>
-                        </td>
-                        <td style="text-align: right;">
-                            <h6 class="text-p" style="font-size: 14px; font-weight: 600; color: #f8285a">
-                                {{ formatValue(getSummaryGrandTotal('value'), 'value') }}
-                                <span v-html="getSummaryGrandTotalContributionPercent('value')"></span>
-                            </h6>
-                        </td>
-                        <td style="text-align: right;">
-                            <h6 class="text-p" style="font-size: 14px; font-weight: 600; color: #f8285a">
-                                {{ formatValue(getSummaryGrandTotal('area'), 'area') }}
-                                <span v-html="getSummaryGrandTotalContributionPercent('area')"></span>
-                            </h6>
-                        </td>
-                        <td style="text-align: right;">
-                            <h6 class="text-p" style="font-size: 14px; font-weight: 600; color: #f8285a">{{ formatValue(getSummaryGrandTotal('price_per_sqm'), 'price_per_sqm') }}</h6>
-                        </td>
-                    </tr>
-                </tfoot> -->
-            </table>
-        </div>
-    </div>
-</v-col>
-                                    
-                                    <!-- (ตารางสรุปตามมูลค่า) -->
-                                    <!-- (โค้ดส่วนนี้ถูกคอมเมนต์ไว้อยู่แล้วในไฟล์เดิม) -->
-                                </v-row>
-                                <!-- ⭐️ [ใหม่] สิ้นสุด Layout สรุป ⭐️ -->
-                            </v-card-text>
-                        </v-window-item>
-                        
-                        <!-- ⭐️ (2) Tab: รายเดือน (v-for) ⭐️ -->
-                        <v-window-item v-for="month in displayedMonths" :key="month.value" :value="month.value">
-                             <v-card-text>
-                                <div class="v-table v-theme--BLUE_THEME v-table--density-default month-table">
-                                    <div class="v-table__wrapper" style="overflow-x: auto">
-                                        <table>
-                                            <thead style="background-color: #f5f5f5">
-                                                <tr>
-                                                    <th class="text-h6" style="min-width: 150px; text-align: left;"></th>
-                                                    <th
-                                                        v-for="region in regions"
-                                                        :key="region"
-                                                        class="text-p"
-                                                        style="font-size: 13px; text-align: center"
-                                                    >
-                                                        {{ region }}
-                                                    </th>
-                                                    <th
-                                                        class="text-p"
-                                                        style="font-size: 13px; font-weight: 600; background-color: #fff3e0; text-align: center"
-                                                    >
-                                                        รวม
-                                                    </th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                <template v-for="range in priceRanges" :key="range">
-                                                    <tr class="month-item" style="background-color: #fcf8ff">
-                                                        <td style="text-align: left;">
-                                                            <h6 class="text-p" style="font-size: 12px; font-weight: 600; color: #725af2">{{ range }}</h6>
-                                                        </td>
-                                                        <td :colspan="regions.length + 1"></td>
-                                                    </tr>
-                                                    <tr class="month-item" v-for="field in dataTypes" :key="range + field">
-                                                        <td style="text-align: left;">
-                                                            <h6 class="text-p" style="font-size: 12px; font-weight: 400; padding-left: 15px">
-                                                                {{ dataTypeLabels[field] }}
-                                                            </h6>
-                                                        </td>
-                                                        <!-- ⭐️ ใช้ helpers (6.B) ที่อ่านจาก detailedTableData -->
-                                                        <td v-for="region in regions" :key="region + range + field" style="text-align: right">
-                                                            <h6 class="text-p" style="font-size: 13px; font-weight: 400">
-                                                                {{ formatValue(getMonthlyCalculatedMetrics(month.value, region, range)[field], field) }}
-                                                                <!-- ⭐️ [ใหม่] เพิ่ม v-html สำหรับ MoM% -->
-                                                                <span style="font-size: 10px;"v-html="getMoMFormatted(month.value, region, range, field)"></span>
-                                                            </h6>
-                                                        </td>
-                                                        <td style="background-color: #fff3e0; text-align: right">
-                                                            <h6 class="text-p" style="font-size: 13px; font-weight: 600">
-                                                                {{ formatValue(getMonthlyHorizontalTotal(month.value, range, field), field) }}
-                                                                <!-- ⭐️ [ใหม่] เพิ่ม v-html สำหรับ MoM% -->
-                                                                <!-- <span  style="font-size: 10px;"v-html="getMoMFormatted_HorizontalTotal(month.value, range, field)"></span> -->
-                                                            </h6>
-                                                        </td>
-                                                    </tr>
-                                                </template>
-                                                <tr class="month-item" style="background-color: #fcf8ff;" v-for="field in dataTypes" :key="'total-' + field">
-                                                    <td style="text-align: left;">
-                                                        <h6 class="text-p" style="font-size: 13px; font-weight: 600; color: #f8285a">
-                                                            {{ dataTypeLabels[field] }} (รวม)
-                                                        </h6>
-                                                    </td>
-                                                    <td v-for="region in regions" :key="'total-' + region + field" style="text-align: right">
-                                                        <h6 class="text-p" style="font-size: 14px; font-weight: 600; color: #f8285a">
-                                                            {{ formatValue(getMonthlyVerticalTotal(month.value, region, field), field) }}
-                                                            <!-- ⭐️ [ใหม่] เพิ่ม v-html สำหรับ MoM% -->
-                                                            <!-- <span  style="font-size: 10px;"v-html="getMoMFormatted_VerticalTotal(month.value, region, field)"></span> -->
-                                                        </h6>
-                                                    </td>
-                                                    <td style="background-color: #fff3e0; text-align: right">
-                                                        <h6 class="text-p" style="font-size: 14px; font-weight: 800; color: #f8285a">
-                                                            {{ formatValue(getMonthlyGrandTotal(month.value, field), field) }}
-                                                            <!-- ⭐️ [ใหม่] เพิ่ม v-html สำหรับ MoM% -->
-                                                            <!-- <span  style="font-size: 10px;"v-html="getMoMFormatted_GrandTotal(month.value, field)"></span> -->
-                                                        </h6>
-                                                    </td>
-                                                </tr>
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                            </v-card-text>
-                        </v-window-item>
-
-                    </v-window>
-                </v-card-text>
-            </v-card>
-        </v-col>
-       
-        <!-- ⭐️ [ปรับปรุง] สิ้นสุดตารางใหม่ ⭐️ -->
-
-        <v-col cols="12" sm="12" lg="12">
+          <v-col cols="12" sm="12" lg="12">
             <div class="v-row">
                 <div
                     v-for="field in dataTypes"
                     :key="field"
-                    class="v-col-sm-6 v-col-lg-3 v-col-12 py-0 mb-3"
+                    class="v-col-sm-6 v-col-lg-3 v-col-12 py-0 mb-0"
                 >
                     <div class="v-card v-theme--BLUE_THEME v-card--density-default elevation-10 rounded-md v-card--variant-elevated">
                         <div class="v-card-text pa-5">
@@ -1208,6 +1044,137 @@ function getSummaryGrandTotalContributionPercent(field: keyof RegionMetrics): st
                 </div>
             </div>
         </v-col>
+
+        <v-col cols="12">
+            <VCard elevation="10">
+                <v-card-text>
+                    <div class="v-row">
+                        <div class="v-col-md-8 v-col-12">
+                            <div class="d-flex align-center">
+                                <div>
+                                    <h3 class="card-title mb-1">สัดส่วนมูลค่ารวม (Total Value) ตามภูมิภาค</h3>
+                                    <h5 class="card-subtitle" style="text-align: left">{{ filterSubtitle }}</h5>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-5">
+                        <apexchart type="polarArea" :options="polarAreaOptions" :series="polarAreaSeries" height="400" />
+                    </div>
+                </v-card-text>
+            </VCard>
+        </v-col>
+
+        <!-- ⭐️ [ปรับปรุง] เริ่มตารางใหม่ (ใช้ Tabs) ⭐️ -->
+        <v-col cols="12" sm="12" lg="12">
+            <v-card elevation="10">
+                 <v-card-title class="d-flex justify-space-between align-center">
+                    <div>
+                        <h3 class="card-title mb-1">ตารางสรุป (แถว=มูลค่า, คอลัมน์=ภูมิภาค)</h3>
+                        <h5 class="card-subtitle" style="text-align: left">{{ filterSubtitle }}</h5>
+                    </div>
+                    <v-btn class="text-primary v-btn--size-small" @click="exportToExcel">
+                        <div class="text-none font-weight-regular muted">Export to Excel</div>
+                    </v-btn>
+                </v-card-title>
+                <v-card-text>
+                                <div class="v-table v-theme--BLUE_THEME v-table--density-default month-table">
+                                    <div class="v-table__wrapper" style="overflow-x: auto">
+                                        <table>
+                                            <thead style="background-color: #f5f5f5">
+                                                <tr>
+                                                    <th class="text-h6" style="min-width: 80px; text-align: left;"></th>
+                                                    <th
+                                                        v-for="month_item in displayedMonths"
+                                                        :key="month_item.value"
+                                                        class="text-p"
+                                                        style="font-size: 13px; text-align: center"
+                                                    >
+                                                        {{ month_item.short }}
+                                                    </th>
+                                                    <th
+                                                        class="text-p"
+                                                        style="font-size: 13px; font-weight: 600; background-color: #fff3e0; text-align: center"
+                                                    >
+                                                        รวม
+                                                    </th>
+                                                </tr>
+                                            </thead>
+                                            
+                                            <tbody>
+                                                <template v-for="region in regions" :key="region">
+                                                    <tr class="month-item" style="background-color: #fcf8ff">
+                                                        <td style="text-align: left;">
+                                                            <h6 class="text-p" style="font-size: 12px; font-weight: 600; color: #725af2">{{ region }}</h6>
+                                                        </td>
+                                                        <td :colspan="displayedMonths.length + 1"></td>
+                                                    </tr>
+                                                    
+                                                    <tr class="month-item" v-for="field in dataTypes" :key="region + field">
+                                                        <td style="text-align: left;">
+                                                            <h6 class="text-p" style="font-size: 12px; font-weight: 400; padding-left: 15px">
+                                                                {{ dataTypeLabels[field] }}
+                                                            </h6>
+                                                        </td>
+                                                        
+                                                        <!-- ⭐️ [แก้ไข 1/4] ปรับขนาดฟอนต์ และปรับโครงสร้าง h6/span -->
+                                                        <td v-for="month_item in displayedMonths" :key="region + field + month_item.value" style="text-align: right; vertical-align: middle;">
+                                                            <div>
+                                                                <h6 class="text-p" style="font-size: 12px; font-weight: 400;">
+                                                                    {{ formatValue(getMonthlyVerticalTotal(month_item.value, region, field), field) }}
+                                                                </h6>
+                                                                <span style="font-size: 9px !important;" v-html="getMoMFormatted_VerticalTotal(month_item.value, region, field)"></span>
+                                                            </div>
+                                                        </td>
+                                                        
+                                                        <!-- ⭐️ [แก้ไข 2/4] ปรับขนาดฟอนต์ และเพิ่ม wrapper -->
+                                                        <td style="background-color: #fff3e0; text-align: right; vertical-align: middle;">
+                                                            <div>
+                                                                <h6 class="text-p" style="font-size: 12px; font-weight: 600">
+                                                                    {{ formatValue(getRegionHorizontalTotal(region, field), field) }}
+                                                                </h6>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                </template>
+                                                
+                                                <tr class="month-item" style="background-color: #fcf8ff;" v-for="field in dataTypes" :key="'total-' + field">
+                                                    <td style="text-align: left;">
+                                                        <h6 class="text-p" style="font-size: 13px; font-weight: 600; color: #f8285a">
+                                                            {{ dataTypeLabels[field] }} (รวม)
+                                                        </h6>
+                                                    </td>
+                                                    
+                                                    <!-- ⭐️ [แก้ไข 3/4] ปรับขนาดฟอนต์ และปรับโครงสร้าง h6/span -->
+                                                    <td v-for="month_item in displayedMonths" :key="'total-' + month_item.value + field" style="text-align: right; vertical-align: middle;">
+                                                        <div>
+                                                            <h6 class="text-p" style="font-size: 12px; font-weight: 600; color: #f8285a">
+                                                                {{ formatValue(getMonthlyGrandTotal(month_item.value, field), field) }}
+                                                            </h6>
+                                                            <span  style="font-size: 9px !important;" v-html="getMoMFormatted_GrandTotal(month_item.value, field)"></span>
+                                                        </div>
+                                                    </td>
+                                                    
+                                                    <!-- ⭐️ [แก้ไข 4/4] ปรับขนาดฟอนต์ และเพิ่ม wrapper -->
+                                                    <td style="background-color: #fff3e0; text-align: right; vertical-align: middle;">
+                                                         <div>
+                                                            <h6 class="text-p" style="font-size: 12px; font-weight: 800; color: #f8285a">
+                                                                {{ formatValue(getMonthlyTabGrandTotal(field), field) }}
+                                                            </h6>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                </v-card-text>
+            </v-card>
+        </v-col>
+       
+        <!-- ⭐️ [ปรับปรุง] สิ้นสุดตารางใหม่ ⭐️ -->
+
+      
     </v-row>
 </template>
 
@@ -1288,5 +1255,11 @@ th.text-right, td.text-right {
     white-space: nowrap;
 }
 
-</style>
+/* ⭐️ [แก้ไข] เพิ่ม vertical-align 
+   เพื่อให้ <span> ที่ถูกย้ายออกมา
+   ยังอยู่กึ่งกลางแนวตั้ง */
+.month-item td {
+    vertical-align: middle;
+}
 
+</style>

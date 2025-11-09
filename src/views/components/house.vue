@@ -3,6 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
 import jsPDF from 'jspdf'; 
+import html2canvas from 'html2canvas'; // (!!!) 1. เพิ่ม Import
 
 import type { BorderStyle, Cell } from 'exceljs';
 
@@ -11,10 +12,15 @@ const jsDate = new Date();
 const currentJsYear = jsDate.getFullYear();
 const currentJsMonth = jsDate.getMonth() + 1; // (1-12)
 
-
-
 const userId = localStorage.getItem('user_id');
 const userRole = localStorage.getItem('user_role') || 'user';
+
+// (!!!) 2. เพิ่ม Refs สำหรับ Loading และ Snackbar
+const exportLoading = ref(false);
+const showSnackbar = ref(false);
+const snackbarText = ref('');
+const snackbarColor = ref('info'); 
+const snackbarTimeout = ref(5000); 
 
 // (1) โครงสร้างข้อมูลสำหรับ กราฟ, การ์ดรวม (เหมือนเดิม)
 interface SummaryData {
@@ -277,6 +283,7 @@ function processMonthData(data: any): Record<string, PriceRangeMetrics> {
     }
     return monthData;
 }
+
 
 
 // (6) ♻️ [แก้ไข] ฟังก์ชันสำหรับดึงข้อมูลตาราง "แบบละเอียด" (ปรับปรุงใหม่ทั้งหมด)
@@ -551,95 +558,168 @@ const formatCardValue = (type: string, range: string): string => {
 // (10.1) Export Excel
 // ♻️ [แก้ไข] อัปเดตฟังก์ชันนี้ทั้งหมด
 const exportToExcel = async () => {
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('Monthly Summary');
-    const fontName = 'TH Sarabun PSK'; // ✅ [ใหม่] กำหนดฟอนต์
-
-    // --- 1. Title Row ---
-    const title = `ตารางสรุปยอดรายเดือน (แยกตามมูลค่า) ${filterSubtitle.value}`;
-    const titleRow = worksheet.addRow([title]);
-    titleRow.font = { name: fontName, bold: true, size: 16 }; // ✅ [ใช้ฟอนต์]
-    worksheet.mergeCells(titleRow.number, 1, titleRow.number, displayedMonths.value.length + 2);
-
-    // --- 2. Header Row ---
-    const headerRowData: string[] = ['']; 
-    displayedMonths.value.forEach(month => headerRowData.push(month.short));
-    headerRowData.push('รวม');
+    exportLoading.value = true; // (!!!) เพิ่ม
+    showSnackbar.value = false; // (!!!) เพิ่ม
     
-    const headerRow = worksheet.addRow(headerRowData);
-    headerRow.font = { name: fontName, bold: true, size: 12 }; // ✅ [ใช้ฟอนต์]
-    headerRow.alignment = { horizontal: 'center' };
-    const totalCell = headerRow.getCell(headerRowData.length);
-    totalCell.font = { name: fontName, bold: true, size: 12, color: { argb: 'FFFF0000' } }; // สีแดง
-    totalCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3E0' } }; 
+    try { // (!!!) เพิ่ม
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Monthly Summary');
+        const fontName = 'TH Sarabun PSK'; // ✅ [ใหม่] กำหนดฟอนต์
 
-    // Helper function สำหรับกำหนด format ตัวเลข
-    const getNumFmt = (field: string) => (field === 'unit' ? '#,##0' : '#,##0.00');
+        // --- 1. Title Row ---
+        const title = `ตารางสรุปยอดรายเดือน (แยกตามมูลค่า) ${filterSubtitle.value}`;
+        const titleRow = worksheet.addRow([title]);
+        titleRow.font = { name: fontName, bold: true, size: 16 }; // ✅ [ใช้ฟอนต์]
+        worksheet.mergeCells(titleRow.number, 1, titleRow.number, displayedMonths.value.length + 2);
 
-    // --- 3. Data Rows (วนตาม Price Range) ---
-    priceRanges.forEach((range) => {
-        // 3.1: แถวชื่อช่วงราคา
-        const rangeTitleRow = worksheet.addRow([range]);
-        rangeTitleRow.font = { name: fontName, bold: true, size: 12, color: { argb: 'FF725AF2' } }; // ✅ [ใช้ฟอนต์]
-        rangeTitleRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F5F5' } };
-        worksheet.mergeCells(rangeTitleRow.number, 1, rangeTitleRow.number, headerRowData.length);
+        // --- 2. Header Row ---
+        const headerRowData: string[] = ['']; 
+        displayedMonths.value.forEach(month => headerRowData.push(month.short));
+        headerRowData.push('รวม');
+        
+        const headerRow = worksheet.addRow(headerRowData);
+        headerRow.font = { name: fontName, bold: true, size: 12 }; // ✅ [ใช้ฟอนต์]
+        headerRow.alignment = { horizontal: 'center' };
+        const totalCell = headerRow.getCell(headerRowData.length);
+        totalCell.font = { name: fontName, bold: true, size: 12, color: { argb: 'FFFF0000' } }; // สีแดง
+        totalCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3E0' } }; 
 
-        // 3.2: แถวข้อมูลย่อย
+        // Helper function สำหรับกำหนด format ตัวเลข
+        const getNumFmt = (field: string) => (field === 'unit' ? '#,##0' : '#,##0.00');
+
+        // --- 3. Data Rows (วนตาม Price Range) ---
+        priceRanges.forEach((range) => {
+            // 3.1: แถวชื่อช่วงราคา
+            const rangeTitleRow = worksheet.addRow([range]);
+            rangeTitleRow.font = { name: fontName, bold: true, size: 12, color: { argb: 'FF725AF2' } }; // ✅ [ใช้ฟอนต์]
+            rangeTitleRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F5F5' } };
+            worksheet.mergeCells(rangeTitleRow.number, 1, rangeTitleRow.number, headerRowData.length);
+
+            // 3.2: แถวข้อมูลย่อย
+            dataTypes.forEach((field) => {
+                const metricLabel = dataTypeLabels[field];
+                const rowData: (string | number)[] = [`  ${metricLabel}`];
+                const numFmt = getNumFmt(field);
+                const fieldKey = field as keyof PriceRangeMetrics;
+
+                // เพิ่มข้อมูลรายเดือน
+                displayedMonths.value.forEach(month => {
+                    rowData.push(getNumericDetailedValue(fieldKey, month.value, range));
+                });
+
+                // เพิ่มข้อมูล "ผลรวมแนวนอน" (คอลัมน์ รวม)
+                if (fieldKey === 'price_per_sqm') {
+                    const totalValue = getHorizontalTotal(range, 'total_value');
+                    const totalArea = getHorizontalTotal(range, 'usable_area');
+                    rowData.push(totalArea > 0 ? totalValue / totalArea : 0);
+                } else {
+                    rowData.push(getHorizontalTotal(range, fieldKey));
+                }
+                
+                const dataRow = worksheet.addRow(rowData);
+                dataRow.font = { name: fontName, size: 11 }; // ✅ [ใช้ฟอนต์]
+                
+                // กำหนดสไตล์และ Format
+                dataRow.getCell(1).alignment = { horizontal: 'left' };
+                for (let i = 2; i <= rowData.length; i++) {
+                    const cell = dataRow.getCell(i);
+                    cell.numFmt = numFmt;
+                    cell.alignment = { horizontal: 'right' };
+                    if (i === rowData.length) {
+                        cell.font = { name: fontName, bold: true, size: 11 }; // ✅ [ใช้ฟอนต์]
+                        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3E0' } };
+                    }
+                }
+
+                // ✅ [ใหม่] เพิ่มแถว MoM%
+                // (เราใช้ showMoM.value ที่มาจากฟิลเตอร์บนหน้าจอ)
+                if (showMoM.value) {
+                    const momRowData: (string | number)[] = [`  (MoM%)`];
+                    displayedMonths.value.forEach(month => {
+                        const momValue = getMoMCellData(range, month.value, fieldKey);
+                        // แปลง 10.5 -> 0.105 (สำหรับ Excel)
+                        momRowData.push(momValue !== null ? momValue / 100 : '-');
+                    });
+                    momRowData.push(''); // คอลัมน์ "รวม" ของ MoM ไม่มี
+                    
+                    const momRow = worksheet.addRow(momRowData);
+                    momRow.font = { name: fontName, italic: true, size: 10, color: { argb: 'FF555555' } }; // ✅ [ใช้ฟอนต์]
+                    
+                    // สไตล์สำหรับแถว MoM
+                    momRow.getCell(1).alignment = { horizontal: 'left' };
+                    for (let i = 2; i <= momRowData.length; i++) {
+                        const cell = momRow.getCell(i);
+                        if (typeof cell.value === 'number') {
+                            cell.numFmt = '0.0"%"'; // Format เป็น %
+                            cell.alignment = { horizontal: 'right' };
+                        } else {
+                            cell.alignment = { horizontal: 'center' };
+                        }
+                    }
+                }
+            });
+        });
+
+        // --- 4. Grand Total Rows ---
+        const totalTitleRow = worksheet.addRow(['']);
+        totalTitleRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F5F5' } };
+        worksheet.mergeCells(totalTitleRow.number, 1, totalTitleRow.number, headerRowData.length);
+
         dataTypes.forEach((field) => {
             const metricLabel = dataTypeLabels[field];
-            const rowData: (string | number)[] = [`  ${metricLabel}`];
+            const rowData: (string | number)[] = [`${metricLabel} (รวม)`];
             const numFmt = getNumFmt(field);
             const fieldKey = field as keyof PriceRangeMetrics;
 
-            // เพิ่มข้อมูลรายเดือน
+            // ผลรวมแนวตั้ง (รายเดือน)
             displayedMonths.value.forEach(month => {
-                rowData.push(getNumericDetailedValue(fieldKey, month.value, range));
+                if (fieldKey === 'price_per_sqm') {
+                    const totalValue = getMonthTotal(month.value, 'total_value');
+                    const totalArea = getMonthTotal(month.value, 'usable_area');
+                    rowData.push(totalArea > 0 ? totalValue / totalArea : 0);
+                } else {
+                    rowData.push(getMonthTotal(month.value, fieldKey));
+                }
             });
 
-            // เพิ่มข้อมูล "ผลรวมแนวนอน" (คอลัมน์ รวม)
+            // ผลรวมทั้งหมด (Grand Total)
             if (fieldKey === 'price_per_sqm') {
-                const totalValue = getHorizontalTotal(range, 'total_value');
-                const totalArea = getHorizontalTotal(range, 'usable_area');
+                const totalValue = getGrandTotal('total_value');
+                const totalArea = getGrandTotal('usable_area');
                 rowData.push(totalArea > 0 ? totalValue / totalArea : 0);
             } else {
-                rowData.push(getHorizontalTotal(range, fieldKey));
+                rowData.push(getGrandTotal(fieldKey));
             }
+
+            const totalRow = worksheet.addRow(rowData);
+            totalRow.font = { name: fontName, bold: true, size: 12, color: { argb: 'FFF8285A' } }; // ✅ [ใช้ฟอนต์]
             
-            const dataRow = worksheet.addRow(rowData);
-            dataRow.font = { name: fontName, size: 11 }; // ✅ [ใช้ฟอนต์]
-            
-            // กำหนดสไตล์และ Format
-            dataRow.getCell(1).alignment = { horizontal: 'left' };
+            totalRow.getCell(1).alignment = { horizontal: 'left' };
             for (let i = 2; i <= rowData.length; i++) {
-                const cell = dataRow.getCell(i);
+                const cell = totalRow.getCell(i);
                 cell.numFmt = numFmt;
                 cell.alignment = { horizontal: 'right' };
                 if (i === rowData.length) {
-                    cell.font = { name: fontName, bold: true, size: 11 }; // ✅ [ใช้ฟอนต์]
-                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3E0' } };
+                     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3E0' } };
                 }
             }
-
-            // ✅ [ใหม่] เพิ่มแถว MoM%
-            // (เราใช้ showMoM.value ที่มาจากฟิลเตอร์บนหน้าจอ)
+            
+            // ✅ [ใหม่] แถว MoM% สำหรับ Total
             if (showMoM.value) {
                 const momRowData: (string | number)[] = [`  (MoM%)`];
-                displayedMonths.value.forEach(month => {
-                    const momValue = getMoMCellData(range, month.value, fieldKey);
-                    // แปลง 10.5 -> 0.105 (สำหรับ Excel)
+                 displayedMonths.value.forEach(month => {
+                    const momValue = getMonthTotalMoM(month.value, fieldKey);
                     momRowData.push(momValue !== null ? momValue / 100 : '-');
                 });
-                momRowData.push(''); // คอลัมน์ "รวม" ของ MoM ไม่มี
+                momRowData.push(''); // "รวม" ไม่มี MoM
                 
                 const momRow = worksheet.addRow(momRowData);
                 momRow.font = { name: fontName, italic: true, size: 10, color: { argb: 'FF555555' } }; // ✅ [ใช้ฟอนต์]
-                
-                // สไตล์สำหรับแถว MoM
                 momRow.getCell(1).alignment = { horizontal: 'left' };
                 for (let i = 2; i <= momRowData.length; i++) {
                     const cell = momRow.getCell(i);
                     if (typeof cell.value === 'number') {
-                        cell.numFmt = '0.0"%"'; // Format เป็น %
+                        cell.numFmt = '0.0"%"';
                         cell.alignment = { horizontal: 'right' };
                     } else {
                         cell.alignment = { horizontal: 'center' };
@@ -647,91 +727,36 @@ const exportToExcel = async () => {
                 }
             }
         });
-    });
 
-    // --- 4. Grand Total Rows ---
-    const totalTitleRow = worksheet.addRow(['']);
-    totalTitleRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F5F5' } };
-    worksheet.mergeCells(totalTitleRow.number, 1, totalTitleRow.number, headerRowData.length);
-
-    dataTypes.forEach((field) => {
-        const metricLabel = dataTypeLabels[field];
-        const rowData: (string | number)[] = [`${metricLabel} (รวม)`];
-        const numFmt = getNumFmt(field);
-        const fieldKey = field as keyof PriceRangeMetrics;
-
-        // ผลรวมแนวตั้ง (รายเดือน)
-        displayedMonths.value.forEach(month => {
-            if (fieldKey === 'price_per_sqm') {
-                const totalValue = getMonthTotal(month.value, 'total_value');
-                const totalArea = getMonthTotal(month.value, 'usable_area');
-                rowData.push(totalArea > 0 ? totalValue / totalArea : 0);
-            } else {
-                rowData.push(getMonthTotal(month.value, fieldKey));
-            }
-        });
-
-        // ผลรวมทั้งหมด (Grand Total)
-        if (fieldKey === 'price_per_sqm') {
-            const totalValue = getGrandTotal('total_value');
-            const totalArea = getGrandTotal('usable_area');
-            rowData.push(totalArea > 0 ? totalValue / totalArea : 0);
-        } else {
-            rowData.push(getGrandTotal(fieldKey));
+        // --- 5. Set Column Widths ---
+        worksheet.getColumn(1).width = 30;
+        for (let i = 2; i <= headerRowData.length; i++) {
+            worksheet.getColumn(i).width = 18;
         }
 
-        const totalRow = worksheet.addRow(rowData);
-        totalRow.font = { name: fontName, bold: true, size: 12, color: { argb: 'FFF8285A' } }; // ✅ [ใช้ฟอนต์]
+        // --- 6. Write file ---
+        const buffer = await workbook.xlsx.writeBuffer();
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${dynamicFilename.value}.xlsx`; // ✅ [ใช้ชื่อไฟล์ใหม่]
+        a.click();
+        window.URL.revokeObjectURL(url);
         
-        totalRow.getCell(1).alignment = { horizontal: 'left' };
-        for (let i = 2; i <= rowData.length; i++) {
-            const cell = totalRow.getCell(i);
-            cell.numFmt = numFmt;
-            cell.alignment = { horizontal: 'right' };
-            if (i === rowData.length) {
-                 cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3E0' } };
-            }
-        }
-        
-        // ✅ [ใหม่] แถว MoM% สำหรับ Total
-        if (showMoM.value) {
-            const momRowData: (string | number)[] = [`  (MoM%)`];
-             displayedMonths.value.forEach(month => {
-                const momValue = getMonthTotalMoM(month.value, fieldKey);
-                momRowData.push(momValue !== null ? momValue / 100 : '-');
-            });
-            momRowData.push(''); // "รวม" ไม่มี MoM
-            
-            const momRow = worksheet.addRow(momRowData);
-            momRow.font = { name: fontName, italic: true, size: 10, color: { argb: 'FF555555' } }; // ✅ [ใช้ฟอนต์]
-            momRow.getCell(1).alignment = { horizontal: 'left' };
-            for (let i = 2; i <= momRowData.length; i++) {
-                const cell = momRow.getCell(i);
-                if (typeof cell.value === 'number') {
-                    cell.numFmt = '0.0"%"';
-                    cell.alignment = { horizontal: 'right' };
-                } else {
-                    cell.alignment = { horizontal: 'center' };
-                }
-            }
-        }
-    });
+        // (!!!) เพิ่ม
+        snackbarText.value = 'สร้างไฟล์ Excel สำเร็จแล้ว';
+        snackbarColor.value = 'success';
+        showSnackbar.value = true;
 
-    // --- 5. Set Column Widths ---
-    worksheet.getColumn(1).width = 30;
-    for (let i = 2; i <= headerRowData.length; i++) {
-        worksheet.getColumn(i).width = 18;
+    } catch (err: any) { // (!!!) เพิ่ม
+        console.error('Error exporting to Excel:', err);
+        snackbarText.value = `ไม่สามารถสร้าง Excel ได้: ${err.message || 'เกิดข้อผิดพลาดไม่ทราบสาเหตุ'}`;
+        snackbarColor.value = 'error';
+        showSnackbar.value = true;
+    } finally { // (!!!) เพิ่ม
+        exportLoading.value = false;
     }
-
-    // --- 6. Write file ---
-    const buffer = await workbook.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheet.sheet' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${dynamicFilename.value}.xlsx`; // ✅ [ใช้ชื่อไฟล์ใหม่]
-    a.click();
-    window.URL.revokeObjectURL(url);
 };
 
 const dynamicFilename = computed(() => {
@@ -1080,207 +1105,204 @@ function getGrandTotalYoY(metric: keyof PriceRangeMetrics): number | null {
 }
 
 
-
+// (!!!) 3. เพิ่ม Helper Function (คัดลอกมาจาก shadow.vue)
+const blobToDataURL = (blob: Blob): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      resolve(reader.result as string); 
+    };
+    reader.onerror = (error) => reject(error);
+    reader.readAsDataURL(blob); 
+  });
+};
 
        
- // (Helper function สำหรับดึงฟอนต์ไทยมาแปลงเป็น Base64)
-// ♻️ [แก้ไข] เปลี่ยนไปใช้ THSarabunNew.ttf (ตามไฟล์ที่มีในโปรเจกต์)
-async function getFontBase64(fontUrl: string) {
-    const response = await fetch(fontUrl);
-    const blob = await response.blob();
-    return new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-            const base64data = reader.result as string;
-            resolve(base64data.split(',')[1]); 
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-    });
-}
+ // (!!!) 4. ลบ getFontBase64 และ exportToPdf (เวอร์ชัน autoTable) เดิมทิ้ง
+ // ... (โค้ด 2 ฟังก์ชันนี้ถูกลบไปแล้ว) ...
 
-// ♻️ [แก้ไข] ฟังก์ชันสำหรับ Export PDF (ดึงข้อมูลตารางละเอียด + MoM%)
+
+// (!!!) 5. เพิ่มฟังก์ชัน exportToPdf (เวอร์ชัน html2canvas)
 const exportToPdf = async () => {
+  exportLoading.value = true;
+  showSnackbar.value = false; 
+  
+  // (!!!) 6a. เปลี่ยน ID ตาราง
+  const tableElement = document.getElementById('house-table-to-export');
+  if (!tableElement) {
+    console.error('Table element not found!');
+    snackbarText.value = 'ไม่พบองค์ประกอบตาราง (Table element not found!)';
+    snackbarColor.value = 'error';
+    showSnackbar.value = true;
+    exportLoading.value = false;
+    return;
+  }
+
+  try {
+    // === 1. โหลดทรัพยากร (ฟอนต์) ===
+    const fontUrl = '/fonts/THSarabunNew.ttf';
+    let fontBase64 = ''; 
     try {
-        // 'l' = landscape (แนวนอน), 'pt' = points (หน่วยวัด)
-        const doc = new jsPDF('l', 'pt', 'a4'); 
-        
-        // ♻️ [แก้ไข] เปลี่ยนฟอนต์เป็น THSarabunNew (ตัวเดียวกับที่มีใน /public/fonts)
-        const fontName = 'THSarabunNew'; 
-        const fontFileName = 'THSarabunNew.ttf'; 
+        const fontResponse = await fetch(fontUrl);
+        if (!fontResponse.ok) throw new Error('Failed to fetch local font: /fonts/THSarabunNew.ttf');
+        const fontBlob = await fontResponse.blob();
+        const fontDataURL = await blobToDataURL(fontBlob); 
+        fontBase64 = fontDataURL.split(',')[1]; 
+        if (!fontBase64) throw new Error('Failed to parse Base64 from font Data URL');
 
-        // --- 1. จัดการฟอนต์ไทย ---
-        const fontBase64 = await getFontBase64(`/fonts/${fontFileName}`);
-        
-        doc.addFileToVFS(fontFileName, fontBase64);
-        doc.addFont(fontFileName, fontName, 'normal');
-        doc.setFont(fontName);
-        // --- จบส่วนฟอนต์ ---
-
-        // --- 2. ตั้งค่าหัวข้อ ---
-        const title = `ตารางสรุปยอดรายเดือน (แยกตามมูลค่า) ${filterSubtitle.value}`;
-        doc.setFontSize(16);
-        doc.text(title, 40, 40); // (x, y coordinates in points)
-
-        // --- 3. เตรียมข้อมูลสำหรับตาราง ---
-        const head: string[][] = [[]];
-        const body: any[][] = []; // ใช้ any[] เพื่อรองรับ styles
-        
-        // 3.1: สร้าง Header Row
-        const headerRowData: string[] = ['']; // คอลัมน์แรก
-        displayedMonths.value.forEach(month => headerRowData.push(month.short));
-        headerRowData.push('รวม');
-        head[0] = headerRowData;
-        
-        // Helper format ตัวเลข (สำหรับ autoTable)
-        const formatNum = (field: string, value: number) => {
-             if (field === 'unit') {
-                 return value.toLocaleString('th-TH', { maximumFractionDigits: 0 });
-             }
-             return value.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        };
-
-        // 3.2: สร้าง Body Rows
-        priceRanges.forEach((range) => {
-            // แถวชื่อช่วงราคา
-            body.push([{ 
-                content: range, 
-                colSpan: headerRowData.length, 
-                styles: { fontStyle: 'bold', fillColor: [245, 245, 245], textColor: [114, 90, 242], fontSize: 10 } 
-            }]);
-
-            dataTypes.forEach((field) => {
-                const metricLabel = dataTypeLabels[field];
-                const rowData: any[] = [`  ${metricLabel}`]; // ย่อหน้า Label
-                const fieldKey = field as keyof PriceRangeMetrics;
-
-                // ข้อมูลรายเดือน
-                displayedMonths.value.forEach(month => {
-                    const val = getNumericDetailedValue(fieldKey, month.value, range);
-                    rowData.push(formatNum(field, val));
-                });
-
-                // ข้อมูล "ผลรวมแนวนอน"
-                let totalVal: number;
-                if (fieldKey === 'price_per_sqm') {
-                    const totalValue = getHorizontalTotal(range, 'total_value');
-                    const totalArea = getHorizontalTotal(range, 'usable_area');
-                    totalVal = (totalArea > 0 ? totalValue / totalArea : 0);
-                } else {
-                    totalVal = getHorizontalTotal(range, fieldKey);
-                }
-                rowData.push({ content: formatNum(field, totalVal), styles: { fontStyle: 'bold' } });
-                body.push(rowData);
-
-                // แถว MoM%
-                if (showMoM.value) {
-                    const momRowData: any[] = [{ content: `  (MoM%)`, styles: { fontStyle: 'italic', textColor: [85, 85, 85], fontSize: 8 } }];
-                    displayedMonths.value.forEach(month => {
-                        const momValue = getMoMCellData(range, month.value, fieldKey);
-                        const momText = momValue !== null ? formatPercentage(momValue) : '';
-                        momRowData.push({ content: momText, styles: { fontStyle: 'italic', textColor: [85, 85, 85], fontSize: 8 } });
-                    });
-                    momRowData.push(''); // คอลัมน์ "รวม" ของ MoM ไม่มี
-                    body.push(momRowData);
-                }
-            });
-        });
-        
-        // 3.3 แถว Total
-        body.push([{ content: '', colSpan: headerRowData.length, styles: { fillColor: [245, 245, 245] } }]); // แถวคั่น
-
-        dataTypes.forEach((field) => {
-            const metricLabel = dataTypeLabels[field];
-            const rowData: any[] = [{ content: `${metricLabel} (รวม)`, styles: { fontStyle: 'bold', textColor: [248, 40, 90] } }];
-            const fieldKey = field as keyof PriceRangeMetrics;
-
-            // ผลรวมแนวตั้ง (รายเดือน)
-            displayedMonths.value.forEach(month => {
-                let monthTotalVal: number;
-                if (fieldKey === 'price_per_sqm') {
-                    const totalValue = getMonthTotal(month.value, 'total_value');
-                    const totalArea = getMonthTotal(month.value, 'usable_area');
-                    monthTotalVal = (totalArea > 0 ? totalValue / totalArea : 0);
-                } else {
-                    monthTotalVal = getMonthTotal(month.value, fieldKey);
-                }
-                rowData.push({ content: formatNum(field, monthTotalVal), styles: { fontStyle: 'bold', textColor: [248, 40, 90] } });
-            });
-
-            // ผลรวมทั้งหมด (Grand Total)
-            let grandTotalVal: number;
-            if (fieldKey === 'price_per_sqm') {
-                const totalValue = getGrandTotal('total_value');
-                const totalArea = getGrandTotal('usable_area');
-                grandTotalVal = (totalArea > 0 ? totalValue / totalArea : 0);
-            } else {
-                grandTotalVal = getGrandTotal(fieldKey);
-            }
-            rowData.push({ content: formatNum(field, grandTotalVal), styles: { fontStyle: 'bold', textColor: [248, 40, 90] } });
-            body.push(rowData);
-
-            // แถว MoM% สำหรับ Total
-            if (showMoM.value) {
-                const momRowData: any[] = [{ content: `  (MoM%)`, styles: { fontStyle: 'italic', textColor: [85, 85, 85], fontSize: 8 } }];
-                displayedMonths.value.forEach(month => {
-                    const momValue = getMonthTotalMoM(month.value, fieldKey);
-                    const momText = momValue !== null ? formatPercentage(momValue) : '';
-                    momRowData.push({ content: momText, styles: { fontStyle: 'italic', textColor: [85, 85, 85], fontSize: 8 } });
-                });
-                momRowData.push(''); // "รวม" ไม่มี MoM
-                body.push(momRowData);
-            }
-        });
-
-
-        // --- 4. สร้างตาราง ---
-        doc.autoTable({
-            head: head,
-            body: body,
-            startY: 55, 
-            theme: 'grid',
-            styles: {
-                font: fontName,
-                fontSize: 9,
-                cellPadding: 2,
-            },
-            headStyles: {
-                fillColor: [245, 245, 245], 
-                textColor: [0, 0, 0],
-                fontStyle: 'bold',
-                halign: 'center'
-            },
-            didParseCell: (data) => {
-                // จัดคอลัมน์ "รวม" ขวาสุด
-                if (data.column.index === headerRowData.length - 1) {
-                     data.cell.styles.fillColor = [255, 243, 224];
-                }
-                // จัดตัวเลขชิดขวา
-                if (data.section === 'body' && data.column.index > 0) {
-                    // ตรวจสอบว่าเป็น row MoM% หรือไม่ (มี %)
-                    if (data.cell.text[0] && !data.cell.text[0].toString().includes('%')) {
-                         data.cell.styles.halign = 'right';
-                    } else {
-                        data.cell.styles.halign = 'center'; // MoM% ให้อยู่กลาง
-                    }
-                }
-            },
-            columnStyles: {
-                0: { cellWidth: 150 }, // คอลัมน์ Label
-            }
-        });
-
-        // --- 5. บันทึกไฟล์ ---
-        doc.save(`${dynamicFilename.value}.pdf`); // ✅ [ใช้ชื่อไฟล์ใหม่]
-
-    } catch (error) {
-        console.error("Error generating PDF:", error);
+    } catch (fontErr: any) {
+        throw new Error(`Font loading failed: ${fontErr.message}`);
     }
+    
+    // (!!!) 6b. ลบการโหลด Logo ออก
+
+    const logoUrl = '/assets/images/image-28-2.png'; // (!!!) ตรวจสอบว่า path นี้ถูกต้อง
+    let logoDataURL = ''; 
+    try {
+        const logoResponse = await fetch(logoUrl);
+        if (!logoResponse.ok) throw new Error('Logo file not found in /assets/images/image-28-2.png');
+        const logoBlob = await logoResponse.blob();
+        
+        logoDataURL = await blobToDataURL(logoBlob); 
+    } catch (imgErr) {
+        console.error(imgErr); // ถ้าหาโลโก้ไม่เจอ ก็จะแค่ข้ามไป ไม่ให้ error
+    }
+    
+
+    // === 2. สร้าง PDF และตั้งค่าฟอนต์ ===
+    // (!!!) 6c. เปลี่ยนเป็นแนวนอน ('l' for landscape)
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const fontName = 'THSarabunNew';
+    const fontStyle = 'normal';
+    
+    pdf.addFileToVFS('THSarabunNew.ttf', atob(fontBase64)); 
+    pdf.addFont('THSarabunNew.ttf', fontName, fontStyle);
+    pdf.setFont(fontName, fontStyle);
+    
+    // === 3. สร้างหน้าปก (ข้อความ) ===
+    // === 3. สร้างหน้าปก (ข้อความ) ===
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageCenter = pageWidth / 2;
+
+    // (!!!) 6d. (แก้ไข) ปรับ Y และเพิ่มโลโก้
+    let currentY = 90; // (!!!) ปรับตำแหน่งเริ่มต้นสำหรับโลโก้ (ถ้าใช้แนวตั้ง)
+
+    // (!!!) 6d. (เพิ่ม) วาดโลโก้
+    if (logoDataURL) {
+        const logoWidth = 60; 
+        const logoHeight = 70; 
+        const logoX = pageCenter - (logoWidth / 2); 
+        
+        pdf.addImage(logoDataURL, 'PNG', logoX, currentY, logoWidth, logoHeight);
+        
+        currentY += logoHeight + 15; // ขยับ Y ลงมาใต้โลโก้
+    } else {
+        currentY = 100; // กลับไปค่าเดิมถ้าไม่มีโลโก้ (หรือปรับตามความเหมาะสม)
+    }
+
+    // (!!!) 6e. เปลี่ยนข้อความเป็นของ house.vue
+    pdf.setFontSize(20);
+    // ... (โค้ดส่วนที่เหลือสำหรับวาด Title และ DateString เหมือนเดิม) ...
+
+    const title = `ตารางสรุปยอดรายเดือน (แยกตามมูลค่า) ${filterSubtitle.value}`;
+    // ใช้ autoTable (หรือ text) เพื่อจัดการข้อความยาว
+    const splitTitle = pdf.splitTextToSize(title, pageWidth - 40); // 40 = margin
+    pdf.text(splitTitle, pageCenter, currentY, { align: 'center' });
+    currentY += (splitTitle.length * 7); // ปรับ Y ตามจำนวนบรรทัด
+
+    // (!!!) 6f. ลบวันที่อัพเดต (ถ้าไม่ต้องการ) หรือเก็บไว้
+    const today = new Date();
+    const day = today.getDate();
+    const monthIndex = today.getMonth();
+    const year = today.getFullYear() + 543; // ปี พ.ศ.
+    const thaiMonths = [
+        "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", 
+        "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
+    ];
+    const month = thaiMonths[monthIndex];
+    const dateString = `อัพเดตข้อมูลวันที่ ${day} ${month} ${year}`;
+    
+    currentY += 10; 
+    pdf.setFontSize(15); 
+    pdf.text(dateString, pageCenter, currentY, { align: 'center' });
+    // === จบหน้าปก ===
+
+    // 7. ถ่ายรูปตาราง
+    const canvas = await html2canvas(tableElement, {
+      scale: 2,
+      useCORS: true,
+      logging: false,
+    });
+    
+    const imgData = canvas.toDataURL('image/png'); 
+
+    // 8. เพิ่มหน้าใหม่สำหรับตาราง
+    pdf.addPage();
+
+    // 9. คำนวณสัดส่วน
+    const pageMargin = 10; 
+    const pdfWidth = pdf.internal.pageSize.getWidth() - (pageMargin * 2); 
+    const pdfHeight = pdf.internal.pageSize.getHeight() - (pageMargin * 2); 
+
+    // (!!!) 6g. ปรับสัดส่วนรูปภาพ (Fit by Width)
+    const imgWidth = pdfWidth; // 1. ยึดความกว้าง 100% เป็นหลัก
+    const imgHeight = canvas.height * imgWidth / canvas.width; // 2. คำนวณความสูงตามสัดส่วน
+    
+    let heightLeft = imgHeight;
+    let position = pageMargin; 
+
+    pdf.addImage(imgData, 'PNG', pageMargin, position, imgWidth, imgHeight); 
+    heightLeft -= pdfHeight;
+
+    // 10. วนลูปเพิ่มหน้า (เหมือนเดิม)
+    while (heightLeft > 0) {
+      position = heightLeft - imgHeight + pageMargin; 
+      pdf.addPage();
+      pdf.addImage(imgData, 'PNG', pageMargin, position, imgWidth, imgHeight); 
+      heightLeft -= pdfHeight;
+    }
+    
+    // 11. บันทึกไฟล์
+    // (!!!) 6h. เปลี่ยนชื่อไฟล์
+    pdf.save(`${dynamicFilename.value}.pdf`);
+
+    snackbarText.value = 'สร้างไฟล์ PDF สำเร็จแล้ว';
+    snackbarColor.value = 'success';
+    showSnackbar.value = true;
+
+  } catch (err: any) { 
+    console.error('Error exporting to PDF:', err);
+    snackbarText.value = `ไม่สามารถสร้าง PDF ได้: ${err.message || 'เกิดข้อผิดพลาดไม่ทราบสาเหตุ'}`;
+    snackbarColor.value = 'error';
+    showSnackbar.value = true;
+    
+  } finally {
+    exportLoading.value = false;
+  }
 };
 </script>
 
 <template>
     <v-row>
+        <v-snackbar
+          v-model="showSnackbar"
+          :timeout="snackbarTimeout"
+          :color="snackbarColor"
+          location="top end"
+          variant="elevated"
+        >
+          {{ snackbarText }}
+          <template v-slot:actions>
+            <v-btn
+              color="white"
+              variant="text"
+              @click="showSnackbar = false"
+            >
+              ปิด
+            </v-btn>
+          </template>
+        </v-snackbar>
+
         <v-col cols="12" sm="12" lg="12">
             <div class="mt-3 mb-6">
                 <div class="d-flex justify-space-between">
@@ -1408,7 +1430,24 @@ const exportToPdf = async () => {
 </v-col>
 
         <v-col cols="12" sm="12" lg="12">
-            <v-card elevation="10">
+            <v-card elevation="10" style="position: relative;">
+                 <v-overlay
+                    :model-value="exportLoading"
+                    class="align-center justify-center"
+                    persistent
+                    scrim="white"
+                    style="opacity: 0.8;"
+                  >
+                  <div class="text-center">
+                    <v-progress-circular
+                      color="primary"
+                      indeterminate
+                      size="64"
+                    ></v-progress-circular>
+                    <h4 class="text-primary mt-3">กำลังสร้างไฟล์รายงาน...</h4>
+                  </div>
+                </v-overlay>
+
                 <v-card-text>
                     <div class="v-row">
                         <div class="v-col-md-8 v-col-12">
@@ -1428,6 +1467,7 @@ const exportToPdf = async () => {
             variant="outlined"
             @click="exportToExcel"
             class="v-btn--size-small"
+            :loading="exportLoading"
         >
             <v-icon start>mdi-file-excel</v-icon>
             Export Excel
@@ -1438,6 +1478,7 @@ const exportToPdf = async () => {
             variant="outlined"
             @click="exportToPdf"
             class="v-btn--size-small"
+            :loading="exportLoading"
         >
             <v-icon start>mdi-file-pdf-box</v-icon>
             Export PDF
@@ -1450,10 +1491,10 @@ const exportToPdf = async () => {
                     
                     <div class="v-table v-theme--BLUE_THEME v-table--density-default month-table">
                         <div class="v-table__wrapper" style="overflow-x: auto;">
-                            <table>
+                            <table id="house-table-to-export">
                                 <thead style="background-color: #F5F5F5;">
                                 <tr>
-                                    <th class="text-h6" style="min-width: 150px;"></th>
+                                    <th class="text-h6" style="min-width: 100px;"></th>
                                     <th 
                                         v-for="month in displayedMonths" 
                                         :key="month.value" 
