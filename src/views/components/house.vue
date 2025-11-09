@@ -697,12 +697,11 @@ function calculatePercentageChange(currentValue: number, previousValue: number):
   }
   return null;
 }
-
 function formatPercentage(value: number | null): string {
-    if (value === null) return '-'; 
-    if (value === 0) return '0.0%';
+    if (value === null) return ''; // [แก้ไข] เปลี่ยนจาก '-' เป็น ''
+    if (value === 0) return ''; // [แก้ไข] เปลี่ยนจาก '0.0%' เป็น ''
     const prefix = value > 0 ? '+' : '';
-    return `${prefix}${value.toFixed(1)}%`;
+    return `(${prefix}${value.toFixed(1)}%)`; // [แก้ไข] ย้ายวงเล็บมาไว้ในฟังก์ชันนี้
 };
 
 function getPercentageColor(value: number | null): string {
@@ -957,9 +956,9 @@ function getGrandTotalYoY(metric: keyof PriceRangeMetrics): number | null {
                                                     <span v-if="getMoMCellData(range, month.value, 'unit') !== null"
                                                         class="text-caption ml-1"
                                                         :class="getPercentageColor(getMoMCellData(range, month.value, 'unit'))"
-                                                        style="font-weight: 400; font-size: 11px !important;">
-                                                        ({{ formatPercentage(getMoMCellData(range, month.value, 'unit'))
-                                                        }})
+                                                        style="font-weight: 400; font-size: 9px !important;">
+                                                        {{ formatPercentage(getMoMCellData(range, month.value, 'unit'))
+                                                        }}
                                                     </span>
                                                 </div>
                                             </td>
@@ -971,8 +970,8 @@ function getGrandTotalYoY(metric: keyof PriceRangeMetrics): number | null {
                                                         getFormattedHorizontalTotal(range, 'unit') }}</h6>
                                                     <span class="text-caption ml-1"
                                                         :class="getPercentageColor(getRowTotalYoY(range, 'unit'))"
-                                                        style="font-weight: 400; font-size: 10px !important;">
-                                                        ({{ formatPercentage(getRowTotalYoY(range, 'unit')) }})
+                                                        style="font-weight: 400; font-size: 9px !important;">
+                                                        {{ formatPercentage(getRowTotalYoY(range, 'unit')) }}
                                                     </span>
                                                 </div>
                                             </td>
@@ -992,9 +991,9 @@ function getGrandTotalYoY(metric: keyof PriceRangeMetrics): number | null {
                                                     <span v-if="getMoMCellData(range, month.value, 'total_value') !== null"
                                                         class="text-caption ml-1"
                                                         :class="getPercentageColor(getMoMCellData(range, month.value, 'total_value'))"
-                                                        style="font-weight: 400; font-size: 10px !important;">
-                                                        ({{ formatPercentage(getMoMCellData(range, month.value,
-                                                        'total_value')) }})
+                                                        style="font-weight: 400; font-size: 9px !important;">
+                                                        {{ formatPercentage(getMoMCellData(range, month.value,
+                                                        'total_value')) }}
                                                     </span>
                                                 </div>
                                             </td>
@@ -1006,8 +1005,8 @@ function getGrandTotalYoY(metric: keyof PriceRangeMetrics): number | null {
                                                         getFormattedHorizontalTotal(range, 'total_value') }}</h6>
                                                     <span class="text-caption ml-1"
                                                         :class="getPercentageColor(getRowTotalYoY(range, 'total_value'))"
-                                                        style="font-weight: 400; font-size: 10px !important;">
-                                                        ({{ formatPercentage(getRowTotalYoY(range, 'total_value')) }})
+                                                        style="font-weight: 400; font-size: 9px !important;">
+                                                        {{ formatPercentage(getRowTotalYoY(range, 'total_value')) }}
                                                     </span>
                                                 </div>
                                             </td>
@@ -1028,9 +1027,9 @@ function getGrandTotalYoY(metric: keyof PriceRangeMetrics): number | null {
                                                     <span v-if="getMoMCellData(range, month.value, 'usable_area') !== null"
                                                         class="text-caption ml-1"
                                                         :class="getPercentageColor(getMoMCellData(range, month.value, 'usable_area'))"
-                                                        style="font-weight: 400; font-size: 10px !important;">
-                                                        ({{ formatPercentage(getMoMCellData(range, month.value,
-                                                        'usable_area')) }})
+                                                        style="font-weight: 400; font-size: 9px !important;">
+                                                        {{ formatPercentage(getMoMCellData(range, month.value,
+                                                        'usable_area')) }}
                                                     </span>
                                                 </div>
                                             </td>
@@ -1042,8 +1041,8 @@ function getGrandTotalYoY(metric: keyof PriceRangeMetrics): number | null {
                                                         getFormattedHorizontalTotal(range, 'usable_area') }}</h6>
                                                     <span class="text-caption ml-1"
                                                         :class="getPercentageColor(getRowTotalYoY(range, 'usable_area'))"
-                                                        style="font-weight: 400; font-size: 10px !important;">
-                                                        ({{ formatPercentage(getRowTotalYoY(range, 'usable_area')) }})
+                                                        style="font-weight: 400; font-size: 9px !important;">
+                                                        {{ formatPercentage(getRowTotalYoY(range, 'usable_area')) }}
                                                     </span>
                                                 </div>
                                             </td>
@@ -1064,9 +1063,9 @@ function getGrandTotalYoY(metric: keyof PriceRangeMetrics): number | null {
                                                     <span v-if="getMoMCellData(range, month.value, 'price_per_sqm') !== null"
                                                         class="text-caption ml-1"
                                                         :class="getPercentageColor(getMoMCellData(range, month.value, 'price_per_sqm'))"
-                                                        style="font-weight: 400; font-size: 10px !important;">
-                                                        ({{ formatPercentage(getMoMCellData(range, month.value,
-                                                        'price_per_sqm')) }})
+                                                        style="font-weight: 400; font-size: 9px !important;">
+                                                        {{ formatPercentage(getMoMCellData(range, month.value,
+                                                        'price_per_sqm')) }}
                                                     </span>
                                                 </div>
                                             </td>
@@ -1078,8 +1077,8 @@ function getGrandTotalYoY(metric: keyof PriceRangeMetrics): number | null {
                                                         getFormattedHorizontalTotal(range, 'price_per_sqm') }}</h6>
                                                     <span class="text-caption ml-1"
                                                         :class="getPercentageColor(getRowTotalYoY(range, 'price_per_sqm'))"
-                                                        style="font-weight: 400; font-size: 10px !important;">
-                                                        ({{ formatPercentage(getRowTotalYoY(range, 'price_per_sqm')) }})
+                                                        style="font-weight: 400; font-size: 9px !important;">
+                                                        {{ formatPercentage(getRowTotalYoY(range, 'price_per_sqm')) }}
                                                     </span>
                                                 </div>
                                             </td>
@@ -1101,8 +1100,8 @@ function getGrandTotalYoY(metric: keyof PriceRangeMetrics): number | null {
                                                 <span v-if="getMonthTotalMoM(month.value, 'unit') !== null"
                                                     class="text-caption ml-1"
                                                     :class="getPercentageColor(getMonthTotalMoM(month.value, 'unit'))"
-                                                    style="font-weight: 400; font-size: 10px !important;">
-                                                    ({{ formatPercentage(getMonthTotalMoM(month.value, 'unit')) }})
+                                                    style="font-weight: 400; font-size: 9px !important;">
+                                                    {{ formatPercentage(getMonthTotalMoM(month.value, 'unit')) }}
                                                 </span>
                                             </div>
                                         </td>
@@ -1114,8 +1113,8 @@ function getGrandTotalYoY(metric: keyof PriceRangeMetrics): number | null {
                                                     getFormattedGrandTotal('unit') }}</h6>
                                                 <span class="text-caption ml-1"
                                                     :class="getPercentageColor(getGrandTotalYoY('unit'))"
-                                                    style="font-weight: 600; color: #F8285A; font-size: 10px !important;">
-                                                    ({{ formatPercentage(getGrandTotalYoY('unit')) }})
+                                                    style="font-weight: 600; color: #F8285A; font-size: 9px !important;">
+                                                    {{ formatPercentage(getGrandTotalYoY('unit')) }}
                                                 </span>
                                             </div>
                                         </td>
@@ -1136,9 +1135,9 @@ function getGrandTotalYoY(metric: keyof PriceRangeMetrics): number | null {
                                                 <span v-if="getMonthTotalMoM(month.value, 'total_value') !== null"
                                                     class="text-caption ml-1"
                                                     :class="getPercentageColor(getMonthTotalMoM(month.value, 'total_value'))"
-                                                    style="font-weight: 400; font-size: 10px !important;">
-                                                    ({{ formatPercentage(getMonthTotalMoM(month.value, 'total_value'))
-                                                    }})
+                                                    style="font-weight: 400; font-size: 9px !important;">
+                                                    {{ formatPercentage(getMonthTotalMoM(month.value, 'total_value'))
+                                                    }}
                                                 </span>
                                             </div>
                                         </td>
@@ -1150,8 +1149,8 @@ function getGrandTotalYoY(metric: keyof PriceRangeMetrics): number | null {
                                                     getFormattedGrandTotal('total_value') }}</h6>
                                                 <span class="text-caption ml-1"
                                                     :class="getPercentageColor(getGrandTotalYoY('total_value'))"
-                                                    style="font-weight: 600; color: #F8285A; font-size: 10px !important;">
-                                                    ({{ formatPercentage(getGrandTotalYoY('total_value')) }})
+                                                    style="font-weight: 600; color: #F8285A; font-size: 9px !important;">
+                                                    {{ formatPercentage(getGrandTotalYoY('total_value')) }}
                                                 </span>
                                             </div>
                                         </td>
@@ -1172,9 +1171,9 @@ function getGrandTotalYoY(metric: keyof PriceRangeMetrics): number | null {
                                                 <span v-if="getMonthTotalMoM(month.value, 'usable_area') !== null"
                                                     class="text-caption ml-1"
                                                     :class="getPercentageColor(getMonthTotalMoM(month.value, 'usable_area'))"
-                                                    style="font-weight: 400; font-size: 10px !important;">
-                                                    ({{ formatPercentage(getMonthTotalMoM(month.value, 'usable_area'))
-                                                    }})
+                                                    style="font-weight: 400; font-size: 9px !important;">
+                                                    {{ formatPercentage(getMonthTotalMoM(month.value, 'usable_area'))
+                                                    }}
                                                 </span>
                                             </div>
                                         </td>
@@ -1186,8 +1185,8 @@ function getGrandTotalYoY(metric: keyof PriceRangeMetrics): number | null {
                                                     getFormattedGrandTotal('usable_area') }}</h6>
                                                 <span class="text-caption ml-1"
                                                     :class="getPercentageColor(getGrandTotalYoY('usable_area'))"
-                                                    style="font-weight: 600; color: #F8285A; font-size: 10px !important;">
-                                                    ({{ formatPercentage(getGrandTotalYoY('usable_area')) }})
+                                                    style="font-weight: 600; color: #F8285A; font-size: 9px !important;">
+                                                    {{ formatPercentage(getGrandTotalYoY('usable_area')) }}
                                                 </span>
                                             </div>
                                         </td>
@@ -1208,9 +1207,9 @@ function getGrandTotalYoY(metric: keyof PriceRangeMetrics): number | null {
                                                 <span v-if="getMonthTotalMoM(month.value, 'price_per_sqm') !== null"
                                                     class="text-caption ml-1"
                                                     :class="getPercentageColor(getMonthTotalMoM(month.value, 'price_per_sqm'))"
-                                                    style="font-weight: 400; font-size: 10px !important;">
-                                                    ({{ formatPercentage(getMonthTotalMoM(month.value, 'price_per_sqm'))
-                                                    }})
+                                                    style="font-weight: 400; font-size: 9px !important;">
+                                                    {{ formatPercentage(getMonthTotalMoM(month.value, 'price_per_sqm'))
+                                                    }}
                                                 </span>
                                             </div>
                                         </td>
@@ -1222,8 +1221,8 @@ function getGrandTotalYoY(metric: keyof PriceRangeMetrics): number | null {
                                                     getFormattedGrandTotal('price_per_sqm') }}</h6>
                                                 <span class="text-caption ml-1"
                                                     :class="getPercentageColor(getGrandTotalYoY('price_per_sqm'))"
-                                                    style="font-weight: 600; color: #F8285A; font-size: 10px !important;">
-                                                    ({{ formatPercentage(getGrandTotalYoY('price_per_sqm')) }})
+                                                    style="font-weight: 600; color: #F8285A; font-size: 9px !important;">
+                                                    {{ formatPercentage(getGrandTotalYoY('price_per_sqm')) }}
                                                 </span>
                                             </div>
                                         </td>
