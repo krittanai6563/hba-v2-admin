@@ -50,7 +50,8 @@ const previousYearDetailedTableData = ref<Record<number, Record<string, PriceRan
 
 
 const priceRanges = ['ไม่เกิน 2.50 ล้านบาท', '2.51 - 5 ล้านบาท', '5.01 - 10 ล้านบาท', '10.01 - 20 ล้านบาท', '20.01 ล้านขึ้นไป'];
-const dataTypes = ['unit', 'total_value', 'usable_area', 'price_per_sqm'];
+
+const dataTypes: (keyof PriceRangeMetrics)[] = ['unit', 'total_value', 'usable_area', 'price_per_sqm'];
 // (Label สำหรับแถวในตาราง)
 const dataTypeLabels: Record<string, string> = {
     unit: 'จำนวนหลัง',
@@ -146,29 +147,53 @@ const computedPolarAreaOptions = computed(() => {
             } 
         },
 
-        // --- (Dynamic Data Labels) ---
+        // ... (อยู่ภายใน computedPolarAreaOptions)
+
         dataLabels: {
             enabled: true,
+            
+            // ⭐️ [แทนที่] formatter เดิมทั้งหมด
             formatter: (val: number, opts: any) => {
                 let percentageText = '0.00%';
                 if (!isNaN(val)) percentageText = (Number(val) || 0).toFixed(2) + '%';
                 
+                // ⭐️ (ใช้ selectedMetricKey จาก scope ด้านบน)
                 if (!summaryData.value || !summaryData.value[selectedMetricKey]) return percentageText;
 
-                const rangeKey = priceRanges[opts.dataPointIndex];
+                // ⭐️ [แก้ไข] ⭐️
+                // เปลี่ยนจาก dataPointIndex (ที่ส่ง undefined) เป็น seriesIndex
+                const index = opts.seriesIndex; 
+                const rangeKey = priceRanges[index]; // ⭐️ ใช้ index ใหม่
+
+                if (!rangeKey) {
+                    console.warn("ไม่สามารถหา rangeKey ได้, index:", index);
+                    return percentageText;
+                }
                 
                 // @ts-ignore
                 const rawValue = summaryData.value[selectedMetricKey][rangeKey];
                 
                 if (rawValue === undefined || rawValue === null) return percentageText;
                 
-                // ♻️ [แก้ไข] เพิ่มทศนิยม 2 ตำแหน่ง
-                const rawValueText = (Number(rawValue) || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                return [percentageText, `(${rawValueText})`];
+                // 1. จัดรูปแบบ "ค่าจริง" (ไม่ใส่วงเล็บ)
+                const rawValueText = (Number(rawValue) || 0).toLocaleString('th-TH', { 
+                    minimumFractionDigits: 2, 
+                    maximumFractionDigits: 2 
+                });
+                
+                // 2. [แก้ไข] สลับลำดับ และใส่วงเล็บให้ %
+                //    (เอาค่าจริงขึ้นก่อน ตามด้วยเปอร์เซ็นต์)
+                return [rawValueText, `(${percentageText})`];
             },
-            style: { fontSize: '10px' },
+
+            // ⭐️ (ตรวจสอบว่า style และ dropShadow เป็นแบบนี้)
+            style: { 
+                fontSize: '10px' 
+                // ⭐️ (ห้ามมี colors: [...] เพราะจะทำให้ Array formatter ไม่ทำงาน)
+            },
             dropShadow: { enabled: false }
         },
+
         noData: { text: 'ไม่พบข้อมูลสำหรับช่วงที่เลือก', align: 'center', verticalAlign: 'middle', offsetY: 0, style: { color: '#6c757d', fontSize: '14px', fontFamily: 'inherit' } },
     };
 });
@@ -1052,6 +1077,41 @@ function getRawData(
     return dataSource?.[monthValue]?.[priceRange]?.[metric] || 0;
 }
 
+// ⭐️ [ใหม่] Computed สำหรับ YTD% (YoY) ของการ์ดสรุป
+// (ใช้ logic เดียวกับ region.vue แต่เรียกใช้ getGrandTotalYoY ที่มีอยู่แล้วใน house.vue)
+const summaryCardYTDData = computed(() => {
+    
+    // ตรวจสอบว่ามีข้อมูลปีก่อนหรือไม่ (house.vue มี state นี้อยู่แล้ว)
+    if (Object.keys(previousYearDetailedTableData.value).length === 0) {
+        return { unit: null, total_value: null, usable_area: null, price_per_sqm: null };
+    }
+
+    const ytdValues: Record<string, string | null> = {};
+
+    // ⭐️ ใช้ dataTypes (['unit', 'total_value', ...]) ที่มีใน house.vue
+    for (const field of dataTypes) { 
+        
+        // ⭐️ เรียกใช้ฟังก์ชัน getGrandTotalYoY (line 970) ที่มีอยู่แล้วใน house.vue
+        const percent = getGrandTotalYoY(field as keyof PriceRangeMetrics); 
+
+        if (percent === null) {
+            ytdValues[field] = null;
+        } else {
+            const percentStr = percent.toFixed(0); // ไม่เอาทศนิยม
+            if (percent > 0) {
+                ytdValues[field] = `(+${percentStr}%)`;
+            } else if (percent < 0) {
+                ytdValues[field] = `(${percentStr}%)`;
+            } else {
+                ytdValues[field] = null; // ไม่แสดง 0%
+            }
+        }
+    }
+
+    // ⭐️ ต้องคืนค่าให้ครบ 4 keys ของ house.vue
+    return ytdValues as Record<keyof PriceRangeMetrics, string | null>;
+});
+
 function getRowTotalYoY(priceRange: string, metric: keyof PriceRangeMetrics): number | null {
     if (metric === 'price_per_sqm') {
         let currentTotalValue = 0;
@@ -1351,10 +1411,27 @@ const exportToPdf = async () => {
                                      <svg v-else-if="label === 'พื้นที่ใช้สอย'" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path d="M11 2c-4.055.007-6.178.107-7.536 1.464C2 4.928 2 7.285 2 11.999s0 7.071 1.464 8.536C4.93 21.999 7.286 21.999 12 21.999s7.071 0 8.535-1.464c1.358-1.357 1.457-3.48 1.464-7.536" /><path stroke-linejoin="round" d="m13 11l9-9m0 0h-5.344M22 2v5.344M21 3l-9 9m0 0h4m-4 0V8" /></g></svg>
                                      <svg v-else-if="label === 'ราคาเฉลี่ย/ตร.ม.'" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4.979 9.685C2.993 8.891 2 8.494 2 8s.993-.89 2.979-1.685l2.808-1.123C9.773 4.397 10.767 4 12 4s2.227.397 4.213 1.192l2.808 1.123C21.007 7.109 22 7.506 22 8s-.993.89-2.979 1.685l-2.808 1.124C14.227 11.603 13.233 12 12 12s-2.227-.397-4.213-1.191z" /><path d="m5.766 10l-.787.315C2.993 11.109 2 11.507 2 12s.993.89 2.979 1.685l2.808 1.124C9.773 15.603 10.767 16 12 16s2.227-.397 4.213-1.191l2.808-1.124C21.007 12.891 22 12.493 22 12s-.993-.89-2.979-1.685L18.234 10" /><path d="m5.766 14l-.787.315C2.993 15.109 2 15.507 2 16s.993.89 2.979 1.685l2.808 1.124C9.773 19.603 10.767 20 12 20s2.227-.397 4.213-1.192l2.808-1.123C21.007 16.891 22 16.494 22 16c0-.493-.993-.89-2.979-1.685L18.234 14" /></g></svg>
                                 </button>
-                                <div class="">
-                                    <h2 class="text-h4">{{ formatCardValue(dataTypes[index], 'total') }}</h2>
-                                    <p class="textSecondary mt-1 text-15">{{ label }}</p>
-                                </div>
+                              <div class="">
+    <div class="d-flex align-end ga-2">
+        <h2 class="text-h4" style="line-height: 1.1;">
+            {{ formatCardValue(dataTypes[index], 'total') }}
+        </h2>
+    </div>
+    
+    <span 
+        v-if="summaryCardYTDData[dataTypes[index]]" 
+        class="mom-card" 
+        :class="{
+            'text-success': summaryCardYTDData[dataTypes[index]]?.includes('+'), 'text-error': summaryCardYTDData[dataTypes[index]]?.includes('-')  }"
+         style="font-size: 9px; font-weight: 400; line-height: 1.6; display: block;"
+    >
+        {{ summaryCardYTDData[dataTypes[index]] }} 
+    </span>
+                                    
+    <p class="textSecondary text-15" style="line-height: 1.2;">
+        {{ label }}
+    </p>
+</div>
                             </div>
                         </div>
                     </div>

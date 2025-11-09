@@ -9,6 +9,7 @@ import type { BorderStyle, Cell } from 'exceljs';
 
 const memberTypes = ref(['สามัญ', 'วิสามัญ ก', 'สมทบ']);
 const selectedMemberTypeForm = ref('สามัญ');
+const currentUserRole = ref<string | null>(null);
 
 const fullname = ref('');
 const email = ref('');
@@ -107,13 +108,14 @@ const filterMemberTypes = ref(['สามัญ', 'วิสามัญ ก', '
 const roles = ref(['user', 'admin']);
 const statuses = ref(['กรอกข้อมูลเรียบร้อย', 'ยังไม่กรอกข้อมูล']);
 
-const selectedMemberTypeFilter = ref('');
+const selectedMemberTypeFilter = ref('ทั้งหมด');
 const selectedRoleFilter = ref('');
-const selectedStatusFilter = ref('');
+const selectedStatusFilter = ref('ทั้งหมด');
 
 
 const currentYear = new Date().getFullYear();
 const currentMonth = new Date().getMonth() + 1;
+const monthString = currentMonth < 10 ? `0${currentMonth}` : `${currentMonth}`;
 
 interface MonthItem {
     value: string;
@@ -144,8 +146,8 @@ for (let m = 1; m <= currentMonth; m++) {
     });
 }
 
-const selectedMonthFilter = ref('');
-const selectedYearFilter = ref<string>('');
+const selectedMonthFilter = ref(`${currentYear}-${monthString}`);
+const selectedYearFilter = ref<string>((currentYear + 543).toString());
 
 const filteredMembers = computed(() => {
     let filtered = members.value;
@@ -216,6 +218,7 @@ watch([selectedYearFilter, selectedMonthFilter], () => {
 });
 
 onMounted(() => {
+    currentUserRole.value = localStorage.getItem('role');
     fetchMembers();
 });
 
@@ -317,7 +320,7 @@ function closeMessageBox() {
 async function exportToExcel() {
     const workbook = new ExcelJS.Workbook();
 
-
+    // --- (ส่วนนี้เหมือนเดิม: จัดกลุ่มข้อมูล) ---
     const groupedByType: { [key: string]: Member[] } = {};
     members.value.forEach((member) => {
         if (!groupedByType[member.member_type]) {
@@ -326,19 +329,18 @@ async function exportToExcel() {
         groupedByType[member.member_type].push(member);
     });
 
-
+    // --- (ส่วนนี้เหมือนเดิม: คำนวณสรุปผลรวม) ---
     let totalMembersOverall = members.value.length;
     let filledMembersOverall = members.value.filter((m) => m.status === 'กรอกข้อมูลเรียบร้อย').length;
     let missingMembersOverall = members.value.filter((m) => m.status !== 'กรอกข้อมูลเรียบร้อย').length;
 
-
+    // --- (ส่วนนี้เหมือนเดิม: เตรียมข้อความหัวตาราง เดือน/ปี) ---
     let headerYearDisplay = 'ไม่ระบุปี';
     let headerMonthDisplay = 'ไม่ระบุเดือน';
 
     if (selectedYearFilter.value) {
         headerYearDisplay = `ปี ${selectedYearFilter.value}`;
     } else {
-
         headerYearDisplay = `ปี ${new Date().getFullYear() + 543}`;
     }
 
@@ -347,11 +349,10 @@ async function exportToExcel() {
         const monthIndex = parseInt(monthNum) - 1;
         headerMonthDisplay = `เดือน${monthNames[monthIndex]}`;
     } else {
-
         headerMonthDisplay = `เดือน${monthNames[new Date().getMonth()]}`;
     }
 
-
+    // --- (ส่วนนี้เหมือนเดิม: ตั้งค่า font และเส้นขอบ) ---
     const angsanaNewFont = { name: 'Angsana New', family: 2, size: 12 };
 
     const thinBlackBorder = {
@@ -361,41 +362,174 @@ async function exportToExcel() {
         right: { style: 'thin' as BorderStyle, color: { argb: 'FF000000' } }
     };
 
+    // --- [ปรับปรุง] ส่วนที่ 1: สร้างชีต "สมาชิกทั้งหมด" (4 คอลัมน์) ---
+    const allWorksheet = workbook.addWorksheet('สมาชิกทั้งหมด');
+    
+    // หัวข้อหลัก
+    const titleText = `ข้อมูลสมาชิกที่กรอกข้อมูลประจำ${headerMonthDisplay} ${headerYearDisplay}`;
+    allWorksheet.addRow([titleText]);
+    allWorksheet.mergeCells('A1:D1'); // 4 คอลัมน์
+    const titleCell = allWorksheet.getCell('A1');
+    titleCell.font = { ...angsanaNewFont, bold: true, size: 16 };
+    titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
 
+    // หัวข้อรอง
+    allWorksheet.addRow(['สรุปสมาชิกทั้งหมด']);
+    allWorksheet.mergeCells('A2:D2'); // 4 คอลัมน์
+    allWorksheet.getCell('A2').font = { ...angsanaNewFont, bold: true, size: 14 };
+    allWorksheet.getCell('A2').alignment = { vertical: 'middle', horizontal: 'left' };
+
+    allWorksheet.addRow([]); // แถวที่ 3
+
+    // หัวข้อตาราง
+    allWorksheet.addRow(['ที่', 'บริษัท', 'ประเภทสมาชิก', headerYearDisplay]); // เพิ่ม 'ประเภทสมาชิก'
+    const allHeaderRow4 = allWorksheet.getRow(4);
+    allHeaderRow4.font = { ...angsanaNewFont, bold: true };
+    allHeaderRow4.alignment = { vertical: 'middle', horizontal: 'center' };
+    allHeaderRow4.eachCell({ includeEmpty: true }, (cell: Cell) => {
+        cell.border = thinBlackBorder;
+    });
+
+    allWorksheet.addRow(['', '', '', headerMonthDisplay]); // เพิ่มช่องว่าง
+    const allHeaderRow5 = allWorksheet.getRow(5);
+    allHeaderRow5.font = { ...angsanaNewFont, bold: true };
+    allHeaderRow5.alignment = { vertical: 'middle', horizontal: 'center' };
+    allHeaderRow5.eachCell({ includeEmpty: true }, (cell: Cell) => {
+        cell.border = thinBlackBorder;
+    });
+
+    // Merge หัวข้อตาราง
+    allWorksheet.mergeCells('A4:A5');
+    allWorksheet.mergeCells('B4:B5');
+    allWorksheet.mergeCells('C4:C5'); // Merge คอลัมน์ใหม่
+    allWorksheet.mergeCells('D4:D5'); // คอลัมน์สถานะเลื่อนเป็น D
+
+    // วนลูปข้อมูล "สมาชิกทั้งหมด"
+    members.value.forEach((member, index) => {
+        const statusIndicator = member.status === 'กรอกข้อมูลเรียบร้อย' ? '✓' : '';
+        const row = allWorksheet.addRow([
+            index + 1,
+            member.fullname,
+            member.member_type, // เพิ่มข้อมูลประเภท
+            statusIndicator
+        ]);
+
+        row.eachCell({ includeEmpty: true }, (cell: Cell) => {
+            cell.alignment = { vertical: 'middle', horizontal: 'left' };
+            cell.font = angsanaNewFont;
+            cell.border = thinBlackBorder;
+
+            if (member.status === 'ยังไม่กรอกข้อมูล') {
+                cell.fill = {
+                    type: 'pattern',
+                    pattern: 'solid',
+                    fgColor: { argb: 'FFFF9999' } // สีแดงอ่อน
+                };
+            } else {
+                cell.fill = {
+                    type: 'pattern',
+                    pattern: 'solid',
+                    fgColor: { argb: 'FFFFFFFF' }
+                };
+            }
+            
+            if (cell.col === 'D') { // จัดกลางคอลัมน์ D (สถานะ)
+                cell.alignment = { vertical: 'middle', horizontal: 'center' };
+            }
+        });
+    });
+
+    // แถวสรุป (สำหรับชีต "สมาชิกทั้งหมด")
+    allWorksheet.addRow([]);
+    const totalRowAll = allWorksheet.addRow(['รวม', '', '', totalMembersOverall]);
+    allWorksheet.mergeCells(totalRowAll.getCell(1).address + ':' + totalRowAll.getCell(3).address); // Merge A-C
+    totalRowAll.font = { ...angsanaNewFont, bold: true };
+    totalRowAll.getCell(1).alignment = { horizontal: 'right' };
+    totalRowAll.getCell(4).alignment = { horizontal: 'center' }; // ข้อมูลรวม ở คอลัมน์ D
+    totalRowAll.eachCell({ includeEmpty: true }, (cell: Cell) => {
+        cell.border = thinBlackBorder;
+    });
+
+    const missingRowAll = allWorksheet.addRow(['ยังไม่กรอกข้อมูล', '', '', missingMembersOverall]);
+    allWorksheet.mergeCells(missingRowAll.getCell(1).address + ':' + missingRowAll.getCell(3).address); // Merge A-C
+    missingRowAll.font = { ...angsanaNewFont, bold: true };
+    missingRowAll.getCell(1).alignment = { horizontal: 'right' };
+    missingRowAll.getCell(4).alignment = { horizontal: 'center' }; // ข้อมูลรวม ở คอลัมน์ D
+    missingRowAll.eachCell({ includeEmpty: true }, (cell: Cell) => {
+        cell.border = thinBlackBorder;
+    });
+
+    // ตั้งค่าความกว้างคอลัมน์ (สำหรับชีต "สมาชิกทั้งหมด")
+    allWorksheet.columns = [
+        { key: 'ลำดับ', width: 10 },
+        { key: 'ชื่อบริษัท', width: 30 },
+        { key: 'ประเภทสมาชิก', width: 20 }, // คอลัมน์ใหม่
+        { key: 'สถานะเดือน', width: 25 }
+    ];
+
+    // เพิ่มสรุปผลรวมทั้งหมด (เฉพาะในชีต "สมาชิกทั้งหมด")
+    const bufferRows = 5;
+    for (let i = 0; i < bufferRows; i++) {
+        allWorksheet.addRow([]);
+    }
+
+    const filledLabelRow = allWorksheet.addRow(['', '', 'กรอกข้อมูลแล้ว', filledMembersOverall]);
+    filledLabelRow.getCell(3).alignment = { horizontal: 'right' };
+    filledLabelRow.getCell(4).alignment = { horizontal: 'center' };
+    filledLabelRow.getCell(3).font = { ...angsanaNewFont, bold: true };
+    filledLabelRow.getCell(3).border = thinBlackBorder;
+    filledLabelRow.getCell(4).border = thinBlackBorder;
+
+    const missingLabelRow = allWorksheet.addRow(['', '', 'ยังไม่กรอกข้อมูล', missingMembersOverall]);
+    missingLabelRow.getCell(3).alignment = { horizontal: 'right' };
+    missingLabelRow.getCell(4).alignment = { horizontal: 'center' };
+    missingLabelRow.getCell(3).font = { ...angsanaNewFont, bold: true };
+    missingLabelRow.getCell(3).border = thinBlackBorder;
+    missingLabelRow.getCell(4).border = thinBlackBorder;
+    // --- [จบส่วนชีต "สมาชิกทั้งหมด"] ---
+
+
+    // --- [ปรับปรุง] ส่วนที่ 2: วนลูปสร้างชีตตามประเภท (3 คอลัมน์) ---
     for (const memberType of Object.keys(groupedByType)) {
         const worksheet = workbook.addWorksheet(memberType);
 
-
-        worksheet.addRow([memberType]);
+        // หัวข้อหลัก
+        worksheet.addRow([titleText]);
         worksheet.mergeCells('A1:C1');
-        worksheet.getCell('A1').font = { ...angsanaNewFont, bold: true, size: 14 };
-        worksheet.getCell('A1').alignment = { vertical: 'middle', horizontal: 'left' };
+        const typeTitleCell = worksheet.getCell('A1');
+        typeTitleCell.font = { ...angsanaNewFont, bold: true, size: 16 };
+        typeTitleCell.alignment = { vertical: 'middle', horizontal: 'center' };
 
-        worksheet.addRow([]);
+        // หัวข้อรอง (ประเภทสมาชิก)
+        worksheet.addRow([memberType]);
+        worksheet.mergeCells('A2:C2');
+        worksheet.getCell('A2').font = { ...angsanaNewFont, bold: true, size: 14 };
+        worksheet.getCell('A2').alignment = { vertical: 'middle', horizontal: 'left' };
 
+        worksheet.addRow([]); // แถวที่ 3
+
+        // หัวข้อตาราง
         worksheet.addRow(['ที่', 'บริษัท', headerYearDisplay]);
-        const headerRow3 = worksheet.getRow(3);
-        headerRow3.font = { ...angsanaNewFont, bold: true };
-        headerRow3.alignment = { vertical: 'middle', horizontal: 'center' };
-        headerRow3.eachCell({ includeEmpty: true }, (cell: Cell) => {
-
-            cell.border = thinBlackBorder;
-        });
-
-        worksheet.addRow(['', '', headerMonthDisplay]);
         const headerRow4 = worksheet.getRow(4);
         headerRow4.font = { ...angsanaNewFont, bold: true };
         headerRow4.alignment = { vertical: 'middle', horizontal: 'center' };
         headerRow4.eachCell({ includeEmpty: true }, (cell: Cell) => {
-
             cell.border = thinBlackBorder;
         });
 
+        worksheet.addRow(['', '', headerMonthDisplay]);
+        const headerRow5 = worksheet.getRow(5);
+        headerRow5.font = { ...angsanaNewFont, bold: true };
+        headerRow5.alignment = { vertical: 'middle', horizontal: 'center' };
+        headerRow5.eachCell({ includeEmpty: true }, (cell: Cell) => {
+            cell.border = thinBlackBorder;
+        });
 
-        worksheet.mergeCells('A3:A4');
-        worksheet.mergeCells('B3:B4');
-        worksheet.mergeCells('C3:C4');
+        worksheet.mergeCells('A4:A5');
+        worksheet.mergeCells('B4:B5');
+        worksheet.mergeCells('C4:C5');
 
+        // วนลูปข้อมูล (เฉพาะประเภท)
         let totalMembersInType = 0;
         let missingMembersInType = 0;
 
@@ -403,9 +537,7 @@ async function exportToExcel() {
             const statusIndicator = member.status === 'กรอกข้อมูลเรียบร้อย' ? '✓' : '';
             const row = worksheet.addRow([index + 1, member.fullname, statusIndicator]);
 
-
             row.eachCell({ includeEmpty: true }, (cell: Cell) => {
-
                 cell.alignment = { vertical: 'middle', horizontal: 'left' };
                 cell.font = angsanaNewFont;
                 cell.border = thinBlackBorder;
@@ -414,13 +546,13 @@ async function exportToExcel() {
                     cell.fill = {
                         type: 'pattern',
                         pattern: 'solid',
-                        fgColor: { argb: 'FFFF9999' }
+                        fgColor: { argb: 'FFFF9999' } // สีแดงอ่อน
                     };
                 } else {
                     cell.fill = {
                         type: 'pattern',
                         pattern: 'solid',
-                        fgColor: { argb: 'FFFFFFFF' }
+                        fgColor: { argb: 'FFFFFFFF' } // สีขาว
                     };
                 }
 
@@ -435,15 +567,14 @@ async function exportToExcel() {
             }
         });
 
+        // แถวสรุป (เฉพาะประเภท)
         worksheet.addRow([]);
-
         const totalRow = worksheet.addRow(['รวม', '', totalMembersInType]);
         worksheet.mergeCells(totalRow.getCell(1).address + ':' + totalRow.getCell(2).address);
         totalRow.font = { ...angsanaNewFont, bold: true };
         totalRow.getCell(1).alignment = { horizontal: 'right' };
         totalRow.getCell(3).alignment = { horizontal: 'center' };
         totalRow.eachCell({ includeEmpty: true }, (cell: Cell) => {
-
             cell.border = thinBlackBorder;
         });
 
@@ -453,43 +584,48 @@ async function exportToExcel() {
         missingRow.getCell(1).alignment = { horizontal: 'right' };
         missingRow.getCell(3).alignment = { horizontal: 'center' };
         missingRow.eachCell({ includeEmpty: true }, (cell: Cell) => {
-
             cell.border = thinBlackBorder;
         });
 
+        // ตั้งค่าความกว้างคอลัมน์ (เฉพาะประเภท)
         worksheet.columns = [
             { key: 'ลำดับ', width: 10 },
             { key: 'ชื่อบริษัท', width: 30 },
             { key: 'สถานะเดือน', width: 25 }
         ];
-
-        const bufferRows = 5;
-        for (let i = 0; i < bufferRows; i++) {
-            worksheet.addRow([]);
-        }
-
-        const filledLabelRow = worksheet.addRow(['', '', 'กรอกข้อมูลแล้ว', filledMembersOverall]);
-
-        filledLabelRow.getCell(3).alignment = { horizontal: 'right' };
-        filledLabelRow.getCell(4).alignment = { horizontal: 'center' };
-        filledLabelRow.getCell(3).font = { ...angsanaNewFont, bold: true };
-        filledLabelRow.getCell(3).border = thinBlackBorder;
-        filledLabelRow.getCell(4).border = thinBlackBorder;
-
-        const missingLabelRow = worksheet.addRow(['', '', 'ยังไม่กรอกข้อมูล', missingMembersOverall]);
-        missingLabelRow.getCell(3).alignment = { horizontal: 'right' };
-        missingLabelRow.getCell(4).alignment = { horizontal: 'center' };
-        missingLabelRow.getCell(3).font = { ...angsanaNewFont, bold: true };
-        missingLabelRow.getCell(3).border = thinBlackBorder;
-        missingLabelRow.getCell(4).border = thinBlackBorder;
     }
+    // --- [จบส่วนวนลูปตามประเภท] ---
 
+
+    // --- [ปรับปรุง] ส่วนที่ 3: สร้างและดาวน์โหลดไฟล์ (พร้อมชื่อไฟล์แบบไดนามิก) ---
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'members_report.xlsx';
+
+    // --- สร้างชื่อไฟล์แบบไดนามิก ---
+    let fileName = 'members_report';
+
+    if (selectedYearFilter.value) {
+        // selectedYearFilter.value คือปี พ.ศ. เช่น "2568"
+        fileName += `_${selectedYearFilter.value}`;
+    }
+
+    if (selectedMonthFilter.value && selectedYearFilter.value) { 
+        // selectedMonthFilter.value คือ "2025-11"
+        const [year, monthNum] = selectedMonthFilter.value.split('-');
+        const monthIndex = parseInt(monthNum) - 1;
+        // monthNames[monthIndex] คือชื่อเดือน เช่น "พฤศจิกายน"
+        fileName += `_${monthNames[monthIndex]}`;
+    }
+
+    // เพิ่มนามสกุล .xlsx
+    fileName += '.xlsx';
+    
+    // --- ใช้ชื่อไฟล์ใหม่ ---
+    a.download = fileName;
+    
     a.click();
     window.URL.revokeObjectURL(url);
 }
@@ -519,9 +655,9 @@ async function exportToExcel() {
                             </div>
                         </div>
 
-                        <div class="v-col-md-6 v-col-12 text-right">
-                            <div class="d-flex justify-end v-col-md-12 v-col-lg-12 v-col-12">
-                                <v-btn-group color="#b2d7ef" density="comfortable" rounded="pill" divided>
+                        <div class="v-col-md-6 v-col-12 text-right" >
+                            <div class="d-flex justify-end v-col-md-12 v-col-lg-12 v-col-12" >
+                                <v-btn-group color="#b2d7ef" density="comfortable" rounded="pill" divided v-if="currentUserRole === 'master'">
                                     <v-btn
                                         class="v-btn v-btn--flat v-theme--BLUE_THEME bg-primary v-btn--density-default v-btn--rounded v-btn--size-default">
                                         <div class="text-none font-weight-regular primary">เพิ่มข้อมูลสมาชิกสมาคม</div>
