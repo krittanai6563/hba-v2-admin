@@ -1,9 +1,43 @@
 <script setup lang="ts">
+import { onMounted, ref } from 'vue'; // ⭐️ NEW: Import ref และ onMounted
+import { useRoute } from 'vue-router'; // ⭐️ NEW: Import useRoute เพื่ออ่าน Query Parameter
+
 import Logo from '@/layouts/full/logo/DarkLogo.vue';
 /* Login form */
 import LoginForm from '@/components/auth/LoginForm.vue';
+
+// ⭐️ NEW: State สำหรับ Snackbar ในหน้า Login
+const snackbar = ref(false);
+const snackbarText = ref('');
+const snackbarColor = ref('success');
+
+const route = useRoute(); // ⭐️ NEW: เรียกใช้ useRoute
+
+onMounted(() => {
+    // ⭐️ โค้ดตรวจสอบ Query Parameter 'loggedOut'
+    if (route.query.loggedOut === 'success') {
+        snackbarText.value = 'ออกจากระบบสำเร็จ!';
+        snackbarColor.value = 'success';
+        snackbar.value = true;
+        
+        // **[หมายเหตุ]:** คุณอาจต้องการลบ query parameter ออกจาก URL หลังจากแสดงแล้ว
+        // หากต้องการลบ query ออก ให้ใช้โค้ดดังนี้ (ต้อง import useRouter ด้วย):
+        // 
+        // import { useRoute, useRouter } from 'vue-router'; 
+        // const router = useRouter(); 
+        // const query = { ...route.query };
+        // delete query.loggedOut;
+        // router.replace({ query }); 
+        
+    }
+});
 </script>
+
 <template>
+    <v-snackbar v-model="snackbar" :color="snackbarColor" :timeout="3000" location="top right">
+        {{ snackbarText }}
+    </v-snackbar>
+    
     <div class="authentication">
         <v-container fluid class="pa-3">
             <v-row class="h-screen d-flex justify-center align-center">
@@ -11,19 +45,8 @@ import LoginForm from '@/components/auth/LoginForm.vue';
                     <v-card rounded="md" elevation="10" class="px-sm-1 px-0 mx-auto" max-width="450">
                         <v-card-item class="pa-sm-8">
                             <div class="d-flex justify-center py-4 mb-3"><Logo /></div>
-                            <!-- <div class="text-h6 text-medium-emphasis text-center mb-6">SALE REPORT SYSTEM</div> -->
                             <LoginForm />
-                            <!-- <h6 class="text-h6 text-medium-emphasis d-flex justify-center align-center mt-3">
-                                New to MaterialPro?
-                                <v-btn
-                                    class="pl-0 text-primary text-body-1 opacity-1 pl-2"
-                                    height="auto"
-                                    to="/auth/register"
-                                    variant="text"
-                                    >Create an account</v-btn
-                                >
-                            </h6> -->
-                        </v-card-item>
+                            </v-card-item>
                     </v-card>
                 </v-col>
             </v-row>

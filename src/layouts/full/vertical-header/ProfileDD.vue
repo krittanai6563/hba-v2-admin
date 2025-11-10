@@ -4,6 +4,7 @@ import { onMounted, onUnmounted, ref, watch, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import defaultAvatar from '@/assets/images/users/img-logo_0.png';  
 
+
 const router = useRouter();
 const profileImageUrl = ref<string>(defaultAvatar);
 
@@ -11,6 +12,7 @@ const profileImageUrl = ref<string>(defaultAvatar);
 const profileDialog = ref(false);
 const passwordDialog = ref(false);
 const confirmChangeDialog = ref(false);
+const logoutConfirmDialog = ref(false); 
 
 // --- State สำหรับ Snackbar ---
 const snackbar = ref(false);
@@ -24,6 +26,7 @@ const passwordForm = ref<any>(null); // สำหรับควบคุมก�
 const userId = ref<string | null>(null);
 const fullname = ref('');
 const email = ref('');
+const member_type = ref(''); 
 // (สำหรับ Popup 1)
 const selectedFile = ref<File | null>(null);
 const imagePreviewUrl = ref<string | null>(null);
@@ -33,6 +36,9 @@ const newPassword = ref('');
 const confirmPassword = ref('');
 const showPass = ref(false);
 
+// ⭐️ [เพิ่ม] ตัวเลือกสำหรับประเภทสมาชิก (อิงจากไฟล์ users.sql)
+const memberTypeOptions = ref(['สามัญ', 'วิสามัญ ก', 'สมทบ', 'ผู้ดูแลระบบ']);
+
 // ⭐️ [จุดที่ 3] เพิ่ม Rules สำหรับฟอร์มรหัสผ่าน
 const oldPasswordRules = [
     (v: string) => !!v || 'กรุณากรอกรหัสผ่านเดิม'
@@ -41,27 +47,43 @@ const newPasswordRules = [
     (v: string) => !!v || 'กรุณากรอกรหัสผ่านใหม่',
     (v: string) => (v && v.length >= 8) || 'รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร'
 ];
-// ใช้ computed เพื่อให้ rule นี้อัปเดตตาม newPassword.value
 const confirmPasswordRules = computed(() => [
     (v: string) => !!v || 'กรุณายืนยันรหัสผ่าน',
     (v: string) => v === newPassword.value || 'รหัสผ่านใหม่ไม่ตรงกัน'
 ]);
 
 
+// ⭐️ [แก้ไข] อัปเดตฟังก์ชันนี้ ให้มีตรรกะการแก้ไขลิงก์รูป (จาก Main.vue)
 function loadUserData() {
   try {
     const userData = sessionStorage.getItem('user') || localStorage.getItem('user');
     if (userData) {
       const user = JSON.parse(userData);
-      profileImageUrl.value = user?.profile_image || defaultAvatar;
+      
+      // ⭐️⭐️ Logic แก้ไข URL จาก Main.vue ⭐️⭐️
+      const userProfileImage = user?.profile_image;
+      
+      if (userProfileImage && userProfileImage.trim() !== '') {
+        const pi = decodeURIComponent(userProfileImage.trim());
+        if (/^https?:\/\//.test(pi)) {
+            profileImageUrl.value = pi;
+        } else {
+            profileImageUrl.value = 'https://uat.hba-sales.org/backend' + pi;
+        }
+      } else {
+          profileImageUrl.value = defaultAvatar;
+      }
+      // ⭐️⭐️ สิ้นสุด Logic แก้ไข URL ⭐️⭐️
+      
       fullname.value = user?.fullname || '';
       email.value = user?.email || '';
+      member_type.value = user?.member_type || ''; 
       userId.value = user?.id || localStorage.getItem('user_id');
     } else {
-      profileImageUrl.value = defaultAvatar;
+      profileImageUrl.value = defaultAvatar; // กรณีไม่พบข้อมูล user เลย
     }
   } catch {
-    profileImageUrl.value = defaultAvatar;
+    profileImageUrl.value = defaultAvatar; // กรณี Error
   }
 }
 
@@ -90,6 +112,7 @@ watch(passwordDialog, (newValue) => {
 watch(profileDialog, (newValue) => {
     if (newValue === false) {
         selectedFile.value = null;
+        imagePreviewUrl.value = null; // ล้างพรีวิวรูปเมื่อปิด
     }
 });
 
@@ -106,7 +129,15 @@ onUnmounted(() => {
   }
 });
 
+// ⭐️ [เพิ่ม] ฟังก์ชันเปิดกล่องยืนยัน
+const confirmLogout = () => {
+    logoutConfirmDialog.value = true;
+};
+
+
 const logout = async () => {
+  logoutConfirmDialog.value = false; 
+  
   await fetch('https://uat.hba-sales.org/backend/logout.php', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' }
@@ -114,31 +145,42 @@ const logout = async () => {
   localStorage.removeItem('user_id');
   localStorage.removeItem('user');
   sessionStorage.removeItem('user');
-  router.push({ name: 'Login' });
+  
+  // ⭐️⭐️ NEW: ส่ง query parameter ไปที่หน้า Login ⭐️⭐️
+  router.push({ name: 'Login', query: { loggedOut: 'success' } });
 };
 
-async function handleProfileUpdate() {
-    // (ฟังก์ชันนี้เหมือนเดิม ไม่มีการเปลี่ยนแปลง)
+// ⭐️⭐️ [FIX TS ERROR] เปลี่ยนเป็น const Arrow Function ⭐️⭐️
+const handleProfileUpdate = async () => {
     if (!userId.value) return;
     try {
         const formData = new FormData();
         formData.append('id', userId.value);
         formData.append('fullname', fullname.value);
         formData.append('email', email.value);
+        formData.append('member_type', member_type.value); 
+
         if (selectedFile.value) {
             formData.append('profile_image', selectedFile.value);
-        } else {
-            profileDialog.value = false;
-            return;
-        }
+        } 
+        
         const res = await fetch('https://uat.hba-sales.org/backend/edit_profile.php', {
             method: 'POST',
             body: formData
         });
         const text = await res.text();
-        if (!res.ok) throw new Error(text || 'Update failed');
+        
+        if (!res.ok) {
+            try {
+                const data = JSON.parse(text);
+                throw new Error(data.message || 'Update failed');
+            } catch {
+                throw new Error(text || 'Update failed');
+            }
+        }
+
         const data = JSON.parse(text);
-        snackbarText.value = data.message || 'อัปเดตรูปโปรไฟล์สำเร็จ!';
+        snackbarText.value = data.message || 'อัปเดตโปรไฟล์สำเร็จ!';
         snackbarColor.value = 'success';
         snackbar.value = true;
         profileDialog.value = false;
@@ -146,13 +188,7 @@ async function handleProfileUpdate() {
             const updatedUser = JSON.stringify(data.user);
             sessionStorage.setItem('user', updatedUser); 
             localStorage.setItem('user', updatedUser);   
-            loadUserData();
-        } else if (data.profile_image_url) {
-            const oldUserData = JSON.parse(sessionStorage.getItem('user') || localStorage.getItem('user') || '{}');
-            oldUserData.profile_image = data.profile_image_url;
-            sessionStorage.setItem('user', JSON.stringify(oldUserData));
-            localStorage.setItem('user', JSON.stringify(oldUserData));
-            loadUserData();
+            loadUserData(); 
         } else {
             loadUserData();
         }
@@ -161,36 +197,34 @@ async function handleProfileUpdate() {
         snackbarColor.value = 'error';
         snackbar.value = true;
     }
-}
+};
 
-// ⭐️ [จุดที่ 4] แก้ไขฟังก์ชันนี้ให้ใช้การ validate()
-async function promptChangePassword() {
+// ⭐️⭐️ [FIX TS ERROR] เปลี่ยนเป็น const Arrow Function ⭐️⭐️
+const promptChangePassword = async () => {
     if (!passwordForm.value) return; 
 
-    // 1. ตรวจสอบฟอร์มทั้งหมด (รหัสเดิม, รหัสใหม่, ยืนยัน)
     const { valid } = await passwordForm.value.validate();
 
-    // 2. ถ้าฟอร์ม (รวม rules ทั้งหมด) ผ่าน
     if (valid) {
-        // ค่อยเปิดหน้าต่างยืนยัน
         confirmChangeDialog.value = true;
     }
-    // ถ้าไม่ผ่าน (invalid), Vuetify จะแสดง error message ใต้ช่องอัตโนมัติ
-    // (เราไม่จำเป็นต้องใช้ snackbar แจ้งเตือน error อีกต่อไป)
-}
+};
 
-
-async function handleChangePassword() {
-    // (ฟังก์ชันนี้เหมือนเดิม ไม่มีการเปลี่ยนแปลง)
+// ⭐️⭐️ [FIX TS ERROR] เปลี่ยนเป็น const Arrow Function ⭐️⭐️
+const handleChangePassword = async () => {
     if (!userId.value) return;
     confirmChangeDialog.value = false;
     try {
         const formData = new FormData();
         formData.append('id', userId.value);
-        formData.append('fullname', fullname.value);
-        formData.append('email', email.value);
+        
+        formData.append('fullname', fullname.value); 
+        formData.append('email', email.value); 
+        formData.append('member_type', member_type.value); 
+        
         formData.append('old_password', oldPassword.value);
-        formData.append('password', newPassword.value);
+        formData.append('password', newPassword.value); 
+        
         const res = await fetch('https://uat.hba-sales.org/backend/edit_profile.php', {
             method: 'POST',
             body: formData
@@ -214,14 +248,13 @@ async function handleChangePassword() {
         snackbarColor.value = 'error';
         snackbar.value = true;
     }
-}
+};
 </script>
 
 <template>
     <v-snackbar v-model="snackbar" :color="snackbarColor" :timeout="3000" location="top right">
         {{ snackbarText }}
     </v-snackbar>
-
     <v-dialog v-model="profileDialog" max-width="600">
         <template v-slot:default="{ isActive }">
             <v-card rounded="lg">
@@ -232,30 +265,43 @@ async function handleChangePassword() {
                 <v-divider></v-divider>
                 
                 <v-card-text>
-                    <v-row>
-                        <v-col cols="12" sm="6">
-                            <v-label>ชื่อบริษัท</v-label>
-                            <v-text-field v-model="fullname" readonly density="compact" variant="outlined"></v-text-field>
+                    <v-form @submit.prevent="handleProfileUpdate">
+                        <v-row>
+                            <v-col cols="12" sm="6">
+                                <v-label>ชื่อบริษัท</v-label>
+                                <v-text-field v-model="fullname" density="compact" variant="outlined"></v-text-field>
+                            </v-col>
+                              <v-col cols="12" sm="6">
+                            <v-label>ประเภทสมาชิก</v-label>
+                            <v-select
+                                v-model="member_type"
+                                :items="memberTypeOptions"
+                                density="compact"
+                                variant="outlined"
+                                readonly  
+                            ></v-select>
                         </v-col>
-                        <v-col cols="12" sm="6">
-                            <v-label>อีเมล</v-label>
-                            <v-text-field v-model="email" readonly density="compact" variant="outlined"></v-text-field>
-                        </v-col>
-                        <v-divider class="my-2"></v-divider>
-                        <v-col cols="12" class="d-flex justify-center align-center py-0">
-                            <v-avatar size="100" rounded="lg" color="grey-lighten-3">
-                                <v-img 
-                                    :src="imagePreviewUrl || profileImageUrl || defaultAvatar" 
-                                    alt="Profile Preview"
-                                    cover
-                                ></v-img>
-                            </v-avatar>
-                        </v-col>
-                        <v-col cols="12">
-                            <v-label>อัพโหลดรูปโปรไฟล์ใหม่</v-label>
-                            <v-file-input v-model="selectedFile" label="เลือกไฟล์..." accept="image/*" density="compact" variant="outlined"></v-file-input>
-                        </v-col>
-                    </v-row>
+                            <v-col cols="12" sm="12">
+                                <v-label>อีเมล</v-label>
+                                <v-text-field v-model="email" density="compact" variant="outlined" type="email"></v-text-field>
+                            </v-col>
+                          
+                            <v-divider class="my-2"></v-divider>
+                            <v-col cols="12" class="d-flex justify-center align-center py-0">
+                                <v-avatar size="100" rounded="lg" color="grey-lighten-3">
+                                    <v-img 
+                                        :src="imagePreviewUrl || profileImageUrl || defaultAvatar" 
+                                        alt="Profile Preview"
+                                        cover
+                                    ></v-img>
+                                </v-avatar>
+                            </v-col>
+                            <v-col cols="12">
+                                <v-label>อัพโหลดรูปโปรไฟล์ใหม่</v-label>
+                                <v-file-input v-model="selectedFile" label="เลือกไฟล์..." accept="image/*" density="compact" variant="outlined"></v-file-input>
+                            </v-col>
+                        </v-row>
+                    </v-form>
                 </v-card-text>
 
                 <v-divider></v-divider>
@@ -352,10 +398,10 @@ async function handleChangePassword() {
 
 
     <v-menu :close-on-content-click="false">
-        <template v-slot:activator="{ props }">
+   <template v-slot:activator="{ props }">
             <v-btn class=" custom-hover-primary" rounded="pill" variant="text" v-bind="props" icon>
                 <v-avatar size="35">
-                   <img :src="profileImageUrl" height="35" alt="user" />
+                   <img :src="profileImageUrl" height="35" alt="user" /> 
                 </v-avatar>
             </v-btn>
         </template>
@@ -378,8 +424,28 @@ async function handleChangePassword() {
             <v-divider></v-divider>
 
             <div class="pt-4 pb-4 px-5">
-                <v-btn  @click="logout" color="primary" variant="outlined" block style="width: 100%;">Logout</v-btn>
+                <v-btn  @click="confirmLogout" color="primary" variant="outlined" block style="width: 100%;">Logout</v-btn>
             </div>
         </v-sheet>
     </v-menu>
+
+    <v-dialog v-model="logoutConfirmDialog" max-width="400">
+        <v-card>
+            <v-card-title class="text-h6">
+                ยืนยันการออกจากระบบ
+            </v-card-title>
+            <v-card-text>
+                คุณแน่ใจที่จะออกจากระบบหรือไม่?
+            </v-card-text>
+            <v-card-actions>
+                <v-spacer></v-spacer>
+                <v-btn color="grey" text @click="logoutConfirmDialog = false">
+                    ยกเลิก
+                </v-btn>
+                <v-btn color="primary" variant="flat" @click="logout">
+                    ตกลง
+                </v-btn>
+            </v-card-actions>
+        </v-card>
+    </v-dialog>
 </template>
