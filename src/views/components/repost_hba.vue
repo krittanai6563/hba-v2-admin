@@ -9,16 +9,26 @@ import { useDate } from 'vuetify/lib/framework.mjs'; // Import useDate for findi
 const date = useDate(); // Initialize date utilities
 const tab = ref('monthly');
 
+// Define the structure of the data object returned for each price range
+interface Metrics {
+    total_value: number;
+    total_area: number;
+    total_units: number;
+    average_price_per_sqm: number;
+}
+
 interface SummaryData {
-    // ข้อมูลจาก API มีเพียงมูลค่ารวมเป็นตัวเลข (number) เท่านั้น
-    yearly_data: Record<string, Record<string, number>>;
-    monthly_data: Record<string, Record<number, Record<string, number>>>;
+    // UPDATED: Now expects a Metrics object for each price range
+    yearly_data: Record<string, Record<string, Metrics>>;
+    monthly_data: Record<string, Record<number, Record<string, Metrics>>>;
+    quarterly_data?: Record<string, Record<number, Record<string, Metrics>>>;
     region_data?: Record<string, any>;
-    quarterly_data?: Record<string, Record<number, Record<string, number>>>;
+    membership_data?: Record<string, any>;
 }
 
 const selectyear = ref<string[]>([]);
 const selectMonths = ref<string[]>([]);
+const selectQuarters = ref<string[]>([]); // 👈 NEW: State for selected quarters
 
 const year = ['2568', '2567', '2566', '2565'];
 const Months = [
@@ -36,6 +46,16 @@ const Months = [
     'ธันวาคม'
 ];
 
+// 👈 NEW: Quarter Definitions and Mappings
+const Quarters = [
+    { name: 'ไตรมาส 1', index: 1, months: [1, 2, 3], names: ['มกราคม', 'กุมภาพันธ์', 'มีนาคม'] },
+    { name: 'ไตรมาส 2', index: 2, months: [4, 5, 6], names: ['เมษายน', 'พฤษภาคม', 'มิถุนายน'] },
+    { name: 'ไตรมาส 3', index: 3, months: [7, 8, 9], names: ['กรกฎาคม', 'สิงหาคม', 'กันยายน'] },
+    { name: 'ไตรมาส 4', index: 4, months: [10, 11, 12], names: ['ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'] },
+];
+const quarterMap = Quarters.reduce((acc, q) => { acc[q.name] = q.index; return acc; }, {} as Record<string, number>);
+
+
 const userId = localStorage.getItem('user_id');
 const userRole = localStorage.getItem('user_role') || 'user';
 const summaryData = ref<SummaryData | null>(null);
@@ -47,12 +67,28 @@ const categoryOrder = ['ไม่เกิน 2.50 ล้านบาท', '2.51
 // มูลค่าบ้านสำหรับคำนวณ (ไม่รวม 'รวม')
 const valueCategories = categoryOrder.filter(cat => cat !== 'รวม'); 
 
-// นิยามแถว Metric ที่ต้องการแสดงผลในตาราง
+// นิยามแถว Metric ที่ต้องการแสดงผลในตาราง (แก้ไขให้มีทศนิยม 2 ตำแหน่ง)
 const metricRows = [
-    { key: 'units', name: 'จำนวนหลัง', format: (v: number) => v.toLocaleString('th-TH') },
-    { key: 'value', name: 'มูลค่ารวม (บาท)', format: (v: number) => v.toLocaleString('th-TH', { maximumFractionDigits: 0 }) },
-    { key: 'area', name: 'พื้นที่ใช้สอย (ตร.ม.)', format: (v: number) => v.toLocaleString('th-TH', { maximumFractionDigits: 0 }) },
-    { key: 'avg_price_sqm', name: 'ราคาเฉลี่ย/ตร.ม.', format: (v: number) => v.toLocaleString('th-TH', { maximumFractionDigits: 0 }) },
+    { 
+        key: 'total_units', 
+        name: 'จำนวนหลัง', 
+        format: (v: number) => v.toLocaleString('th-TH', { maximumFractionDigits: 0 }) 
+    },
+    { 
+        key: 'total_value', 
+        name: 'มูลค่ารวม (บาท)', 
+        format: (v: number) => v.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    },
+    { 
+        key: 'total_area', 
+        name: 'พื้นที่ใช้สอย (ตร.ม.)', 
+        format: (v: number) => v.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    },
+    { 
+        key: 'average_price_per_sqm', 
+        name: 'ราคาเฉลี่ย/ตร.ม.', 
+        format: (v: number) => v.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    },
 ];
 
 
@@ -86,17 +122,16 @@ const fetchSummary = async () => {
     const { currentBuddhistYear } = getCurrentPeriod();
 
     // 🚀 NEW LOGIC: Default to current year if nothing is selected
-    if (!selectyear.value || selectyear.value.length === 0) {
-        if (year.includes(currentBuddhistYear)) {
-             selectyear.value = [currentBuddhistYear];
-             // Continue to fetch
-        } else {
-             console.error('Please select at least one year.');
-             summaryData.value = null;
-             chartSeries.value = [];
-             return; 
-        }
+    if (!selectyear.value || selectyear.value.length === 0) { 
+    if (year.includes(currentBuddhistYear)) {
+         selectyear.value = [currentBuddhistYear]; 
+    } else {
+         console.error('Please select at least one year.'); 
+         summaryData.value = null;
+         chartSeries.value = [];
+         return; 
     }
+}
 
     const data: any = {
         user_id: userId,
@@ -104,8 +139,12 @@ const fetchSummary = async () => {
         role: userRole
     };
 
-    // Note: API still fetches data based on selected filters only (no automatic default month filtering for API call)
-    if (selectMonths.value.length > 0) {
+    // 👈 NEW LOGIC: Priority Quarter selection for API call
+    if (selectQuarters.value.length > 0) {
+        data.quarters = selectQuarters.value.map((quarterName: string) => quarterMap[quarterName] || null);
+        // Clear months to prevent ambiguity in API filtering, though backend ignores empty arrays anyway
+        data.months = []; 
+    } else if (selectMonths.value.length > 0) {
         data.months = selectMonths.value.map((month: string) => monthMap[month] || null);
     }
     
@@ -140,6 +179,7 @@ const fetchSummary = async () => {
     }
 };
 
+// 🚀 LOGIC UPDATED: To extract 'total_value' from the nested Metrics object for the chart
 const updateChartData = (data: SummaryData) => {
     const finalSeries: any[] = [];
     const dataForAverageCalc: number[][] = [];
@@ -147,18 +187,37 @@ const updateChartData = (data: SummaryData) => {
 
     const selectedYears = selectyear.value;
     const selectedMonths = selectMonths.value;
+    const selectedQuarters = selectQuarters.value; // 👈 NEW: Use quarters filter
+    const getValue = (dataObj: Metrics | undefined) => (dataObj?.total_value || 0);
 
-    // ... (Chart logic remains the same) ...
-    if (selectedYears.length === 1 && selectedMonths.length > 1) {
-        // กรณี: เทียบเดือน (ในปีเดียวกัน)
+    // Helper to get month indices covered by current selection (used for filtering monthlyData)
+    const getSelectedMonthIndices = () => {
+        if (selectedQuarters.length > 0) {
+            let months: number[] = [];
+            selectedQuarters.forEach(qName => {
+                const quarter = Quarters.find(q => q.name === qName);
+                if (quarter) months.push(...quarter.months);
+            });
+            return Array.from(new Set(months)).sort((a, b) => a - b);
+        } else if (selectedMonths.length > 0) {
+            return selectedMonths.map(m => monthMap[m]).sort((a, b) => a - b);
+        }
+        return [];
+    };
+
+    const targetMonths = getSelectedMonthIndices();
+
+
+    if (selectedYears.length === 1 && (selectedMonths.length > 1 || selectedQuarters.length > 0)) {
+        // กรณี: เทียบเดือน (ในปีเดียวกัน) หรือเลือกไตรมาส
         finalCategories = categoryOrder; 
         const selectedYear = selectedYears[0];
+        const monthsToDisplay = selectedQuarters.length > 0 ? targetMonths : targetMonths;
 
-        selectedMonths.forEach((month) => {
-            const monthIndex = monthMap[month];
+        monthsToDisplay.forEach((monthIndex) => {
             const monthlyData = categoryOrder.map((category) => {
-                const monthData = data.monthly_data[selectedYear]?.[monthIndex];
-                return monthData && monthData[category] !== undefined ? monthData[category] : 0;
+                const dataObj = data.monthly_data[selectedYear]?.[monthIndex]?.[category];
+                return getValue(dataObj);
             });
             
             dataForAverageCalc.push(monthlyData);
@@ -168,56 +227,52 @@ const updateChartData = (data: SummaryData) => {
                 data: monthlyData
             });
         });
-    } else if (selectedYears.length > 1 && selectedMonths.length > 1) {
-        // กรณี: เทียบปีและเดือน (โค้ดเดิมของคุณจำกัดที่ 2 ซีรีส์)
+    } else if (selectedYears.length > 1 && (selectedMonths.length > 1 || selectedQuarters.length > 0)) {
+        // กรณี: เทียบปีและเดือน/ไตรมาส (โค้ดเดิมของคุณจำกัดที่ 2 ซีรีส์)
         finalCategories = categoryOrder;
+        const monthsToDisplay = selectedQuarters.length > 0 ? targetMonths : targetMonths;
+
         const firstYear = selectedYears[0];
         const secondYear = selectedYears[1];
 
-        selectedMonths.forEach((month, index) => {
-            const monthIndex = monthMap[month];
-            if (index === 0) {
-                const monthlyData1 = categoryOrder.map((category) => (data.monthly_data[firstYear]?.[monthIndex]?.[category] || 0));
-                dataForAverageCalc.push(monthlyData1);
-                finalSeries.push({ name: `${Months[monthIndex - 1]} ${firstYear}`, type: 'column', data: monthlyData1 });
-            }
-            if (index === 1 && secondYear) {
-                const monthlyData2 = categoryOrder.map((category) => (data.monthly_data[secondYear]?.[monthIndex]?.[category] || 0));
+        // Only compare the first selected month/quarter period across years for simplicity
+        if (monthsToDisplay.length > 0) {
+            const monthIndex = monthsToDisplay[0];
+            const monthName = Months[monthIndex - 1];
+
+            // Series 1 (First Year)
+            const monthlyData1 = categoryOrder.map((category) => getValue(data.monthly_data[firstYear]?.[monthIndex]?.[category]));
+            dataForAverageCalc.push(monthlyData1);
+            finalSeries.push({ name: `${monthName} ${firstYear}`, type: 'column', data: monthlyData1 });
+
+            // Series 2 (Second Year)
+            if (secondYear) {
+                const monthlyData2 = categoryOrder.map((category) => getValue(data.monthly_data[secondYear]?.[monthIndex]?.[category]));
                 dataForAverageCalc.push(monthlyData2);
-                finalSeries.push({ name: `${Months[monthIndex - 1]} ${secondYear}`, type: 'column', data: monthlyData2 });
+                finalSeries.push({ name: `${monthName} ${secondYear}`, type: 'column', data: monthlyData2 });
             }
-        });
-    } else if (selectedYears.length === 1 && selectedMonths.length === 0) { 
-        // กรณี: สรุปรายปี 1 ปี
+        }
+    } else if (selectedYears.length === 1 && selectedMonths.length === 0 && selectedQuarters.length === 0) { 
+        // กรณี: สรุปรายปี 1 ปี (และไม่มีเดือน/ไตรมาส)
         finalCategories = categoryOrder;
-        const yearlyData = categoryOrder.map((category) => (data.yearly_data[selectedYears[0]]?.[category] || 0));
+        const yearlyData = categoryOrder.map((category) => getValue(data.yearly_data[selectedYears[0]]?.[category]));
         dataForAverageCalc.push(yearlyData);
         finalSeries.push({ name: `ปี ${selectedYears[0]}`, type: 'column', data: yearlyData });
-    } else if (selectMonths.value.length === 1 && selectedYears.length >= 2) { 
-        // กรณี: เทียบปี (ในเดือนเดียวกัน)
-        finalCategories = categoryOrder;
-        const monthIndex = monthMap[selectMonths.value[0]];
-        
-        selectedYears.forEach((year) => {
-            const monthlyData = categoryOrder.map((category) => (data.monthly_data[year]?.[monthIndex]?.[category] || 0));
-            dataForAverageCalc.push(monthlyData);
-            finalSeries.push({ name: `${selectMonths.value[0]} ${year}`, type: 'column', data: monthlyData });
-        });
-    } else if (selectMonths.value.length === 0 && selectedYears.length > 1) { 
-        // กรณี: เทียบปี (สรุปรายปี)
+    } else if (selectedMonths.length === 0 && selectedQuarters.length === 0 && selectedYears.length > 1) { 
+        // กรณี: เทียบปี (สรุปรายปี) (และไม่มีเดือน/ไตรมาส)
         finalCategories = categoryOrder;
         selectedYears.forEach((year) => {
-            const yearlyData = categoryOrder.map((category) => (data.yearly_data[year]?.[category] || 0));
+            const yearlyData = categoryOrder.map((category) => getValue(data.yearly_data[year]?.[category]));
             dataForAverageCalc.push(yearlyData);
             finalSeries.push({ name: `ปี ${year}`, type: 'column', data: yearlyData });
         });
-    } else if (selectedYears.length === 1 && selectedMonths.length === 1) { 
-        // กรณี: สรุป 1 เดือน 1 ปี
+    } else if (selectedYears.length === 1 && selectedMonths.length === 1 && selectedQuarters.length === 0) { 
+        // กรณี: สรุป 1 เดือน 1 ปี (ไม่มีไตรมาส)
         finalCategories = categoryOrder;
         const selectedYear = selectedYears[0];
         const monthIndex = monthMap[selectedMonths[0]];
         
-        const monthlyData = categoryOrder.map((category) => (data.monthly_data[selectedYear]?.[monthIndex]?.[category] || 0));
+        const monthlyData = categoryOrder.map((category) => getValue(data.monthly_data[selectedYear]?.[monthIndex]?.[category]));
         dataForAverageCalc.push(monthlyData);
         finalSeries.push({ name: `${selectedMonths[0]} ${selectedYear}`, type: 'column', data: monthlyData });
     }
@@ -249,40 +304,64 @@ const updateChartData = (data: SummaryData) => {
     
    
 const chartSubtitle = computed(() => {
-    // Logic remains mostly the same for explicit selections
-    if (selectMonths.value.length === 1 && selectyear.value.length === 1) {
-        const selectedMonth = selectMonths.value[0];
-        const selectedYear = selectyear.value[0];
+    const selectedYears = selectyear.value;
+    const selectedMonths = selectMonths.value;
+    const selectedQuarters = selectQuarters.value;
+
+    const yearText = selectedYears.length === 1 ? `ปี ${selectedYears[0]}` : 
+                     selectedYears.length > 1 ? `ปี ${selectedYears[0]} - ปี ${selectedYears[selectedYears.length - 1]}` : '';
+
+    // 1. Priority: Quarters Selected (Explicit selection)
+    if (selectedQuarters.length > 0) {
+        const quarterNames = selectedQuarters.join(', ');
+        return `ไตรมาส: ${quarterNames} ${yearText}`;
+    }
+
+    // 2. Check for Month Grouping (Check if selected months form a perfect quarter for single year)
+    if (selectedMonths.length > 0 && selectedYears.length === 1) {
+        const monthIndices = selectedMonths.map(m => monthMap[m]).sort((a, b) => a - b).join(',');
+        
+        const Q = Quarters.find(q => q.months.join(',') === monthIndices);
+        
+        if (Q) {
+            return `${yearText} - ${Q.name} (${Q.names.join(' - ')})`; // 👈 รูปแบบที่ผู้ใช้ต้องการ
+        }
+    }
+    
+    // 3. Fallback to existing logic
+
+    if (selectedMonths.length === 1 && selectedYears.length === 1) {
+        const selectedMonth = selectedMonths[0];
+        const selectedYear = selectedYears[0];
         return `เดือน ${selectedMonth} ปี ${selectedYear}`;
-    } else if (selectMonths.value.length > 1 && selectyear.value.length === 1) {
-        const months = selectMonths.value.join(' - ');
-        const selectedYear = selectyear.value[0];
+    } else if (selectedMonths.length > 1 && selectedYears.length === 1) {
+        const months = selectedMonths.join(' - ');
+        const selectedYear = selectedYears[0];
         return `เดือน ${months} ปี ${selectedYear}`;
-    } else if (selectMonths.value.length === 1 && selectyear.value.length > 1) {
-        const firstYear = selectyear.value[0];
-        const lastYear = selectyear.value[selectyear.value.length - 1];
-        const selectedMonth = selectMonths.value[0];
+    } else if (selectedMonths.length === 1 && selectedYears.length > 1) {
+        const firstYear = selectedYears[0];
+        const lastYear = selectedYears[selectedYears.length - 1];
+        const selectedMonth = selectedMonths[0];
         return `เดือน ${selectedMonth} ปี ${firstYear} - ปี ${lastYear}`;
-    } else if (selectMonths.value.length > 1 && selectyear.value.length > 1) {
-        const months = selectMonths.value.join(' - ');
-        const firstYear = selectyear.value[0];
-        const lastYear = selectyear.value[selectyear.value.length - 1];
+    } else if (selectedMonths.length > 1 && selectedYears.length > 1) {
+        const months = selectedMonths.join(' - ');
+        const firstYear = selectedYears[0];
+        const lastYear = selectedYears[selectedYears.length - 1];
         return `เดือน ${months} ปี ${firstYear} - ปี ${lastYear}`;
-    } else if (selectyear.value.length === 1 && selectMonths.value.length === 0) { 
-        const selectedYear = selectyear.value[0];
+    } else if (selectedYears.length === 1 && selectedMonths.length === 0) { 
+        const selectedYear = selectedYears[0];
         return `สรุปรายปี ${selectedYear}`; 
-    } else if (selectyear.value.length > 1 && selectMonths.value.length === 0) { 
-        const firstYear = selectyear.value[0];
-        const lastYear = selectyear.value[selectyear.value.length - 1];
+    } else if (selectedYears.length > 1 && selectedMonths.length === 0) { 
+        const firstYear = selectedYears[0];
+        const lastYear = selectedYears[selectedYears.length - 1];
         return `เปรียบเทียบรายปี ${firstYear} - ปี ${lastYear}`; 
     }
 
-    // 🚀 NEW LOGIC: Default when 0 selection
+    // Default when 0 selection
     const { currentBuddhistYear } = getCurrentPeriod();
     const currentMonthName = Months[new Date().getMonth()];
     
-    // ตรวจสอบว่า selectyear ถูกกำหนดค่าเริ่มต้นโดย fetchSummary แล้วหรือไม่
-    if (selectyear.value.length === 1 && selectyear.value[0] === currentBuddhistYear) {
+    if (selectedYears.length === 1 && selectedYears[0] === currentBuddhistYear) {
          return `สรุปยอดเซ็นสัญญา ถึงเดือน ${currentMonthName} ปี ${currentBuddhistYear}`;
     }
     
@@ -290,8 +369,12 @@ const chartSubtitle = computed(() => {
 });
 
 watch(
-    [selectyear, selectMonths],
+    [selectyear, selectMonths, selectQuarters], // 👈 NEW: Watch Quarters
     () => {
+        // Clear conflicting selection: If quarters selected, clear months (only update local ref, API call handles the final data array)
+        if (selectQuarters.value.length > 0 && selectMonths.value.length > 0) {
+            selectMonths.value = [];
+        }
         fetchSummary();
     },
     { immediate: true } 
@@ -380,12 +463,38 @@ const chartOptions = ref({
 const tablePeriods = computed(() => {
     const selectedYears = selectyear.value;
     const selectedMonths = selectMonths.value;
+    const selectedQuarters = selectQuarters.value; // 👈 NEW: Use quarters filter
     const { currentBuddhistYear, currentMonthIndex } = getCurrentPeriod();
     
     let periods: { key: string, label: string, year: string, monthIndex?: number }[] = [];
 
-    // --- Case A: Months are explicitly selected (Compare Months or Compare Years by Month) ---
-    if (selectedMonths.length > 0) {
+    // --- Case A: Quarters are explicitly selected ---
+    if (selectedQuarters.length > 0) {
+        const selectedQuarterMonths: number[] = [];
+        
+        selectQuarters.value.forEach(qName => {
+            const quarter = Quarters.find(q => q.name === qName);
+            if (quarter) {
+                selectedQuarterMonths.push(...quarter.months);
+            }
+        });
+        
+        // Ensure unique months and sort them
+        const uniqueMonths = Array.from(new Set(selectedQuarterMonths)).sort((a, b) => a - b);
+
+        selectedYears.forEach(year => {
+            uniqueMonths.forEach(monthIndex => {
+                periods.push({
+                    key: `M${monthIndex}Y${year}`,
+                    label: `${Months[monthIndex - 1]} ${year}`,
+                    year: year,
+                    monthIndex: monthIndex
+                });
+            });
+        });
+    }
+    // --- Case B: Months are explicitly selected (Original logic) ---
+    else if (selectedMonths.length > 0) {
         selectedYears.forEach(year => {
             selectedMonths.forEach(monthName => {
                 const monthIndex = monthMap[monthName];
@@ -400,7 +509,7 @@ const tablePeriods = computed(() => {
             });
         });
     } 
-    // --- Case B: No Months selected ---
+    // --- Case C: No Months/Quarters selected (Original default logic) ---
     else {
         // B1: Single Year selected (current year) AND no month -> Default to Jan - Current Month of current year
         if (selectedYears.length === 1 && selectedYears[0] === currentBuddhistYear) {
@@ -460,7 +569,7 @@ interface TableCellData {
     [key: string]: number; // Key is the period key (e.g., 'M1Y2567', 'TOTAL_PERIODS')
 }
 interface TableRow {
-    metricKey: string; // 'units', 'value', 'area', 'avg_price_sqm'
+    metricKey: keyof Metrics | 'average_price_per_sqm'; // Use keyof Metrics
     metricName: string;
     format: (v: number) => string;
     data: TableCellData;
@@ -478,34 +587,30 @@ const monthlyReportTableData = computed<TableCategory[]>(() => {
 
     const currentPeriods = tablePeriods.value;
     const grandTotalPeriodKey = 'TOTAL_PERIODS';
-    
-    // แยก periods ที่ไม่ใช่ 'รวมทุกช่วง' ออกมาก่อน เพื่อใช้ดึงข้อมูล
-    const dataPeriods = currentPeriods.filter(p => p.key !== grandTotalPeriodKey); 
-    
-    // --- Step 1: ดึงข้อมูล 'value' จาก API ตาม Category และ Period ---
-    const valueDataByPeriodAndCategory: Record<string, Record<string, number>> = {}; 
-    const categoriesToMap = [...valueCategories, 'รวม']; 
+    const allCategories = [...valueCategories, 'รวม']; // Categories to display
 
-    categoriesToMap.forEach(cat => {
-        valueDataByPeriodAndCategory[cat] = {};
-        dataPeriods.forEach(p => {
-             let value = 0;
-            // Check if it's a monthly period or a yearly period key
-            if (p.monthIndex && p.monthIndex !== 0) {
-                // Monthly Data: ใช้ monthly_data
-                value = summaryData.value?.monthly_data[p.year]?.[p.monthIndex]?.[cat] || 0;
-            } else if (!p.monthIndex) {
-                // Yearly Data: ใช้ yearly_data 
-                value = summaryData.value?.yearly_data[p.year]?.[cat] || 0;
-            }
+    // Function to get Metrics object for a given period and category
+    const getMetrics = (period: typeof currentPeriods[0], category: string): Metrics => {
+        let metrics: Metrics | undefined;
+        
+        // Use monthly data if month index is available (for month-by-month and quarter views)
+        if (period.monthIndex && period.monthIndex !== 0) {
+            metrics = summaryData.value?.monthly_data[period.year]?.[period.monthIndex]?.[category];
+        } 
+        // Use yearly data if no month index is available (for year summary views)
+        else if (!period.monthIndex) {
+            metrics = summaryData.value?.yearly_data[period.year]?.[category];
+        }
+        
+        // Return initialized metrics if data is missing, ensures keys exist
+        if (!metrics) {
+            return { total_value: 0, total_area: 0, total_units: 0, average_price_per_sqm: 0 };
+        }
+        return metrics;
+    };
 
-            valueDataByPeriodAndCategory[cat][p.key] = value; 
-        });
-    });
 
-    // --- Step 2: จัดโครงสร้างผลลัพธ์สุดท้ายและคำนวณ 'รวม' ---
     const finalTable: TableCategory[] = [];
-    const allCategories = [...valueCategories, 'รวม'];
 
     allCategories.forEach(categoryName => {
         const categoryData: TableCategory = {
@@ -515,40 +620,52 @@ const monthlyReportTableData = computed<TableCategory[]>(() => {
 
         metricRows.forEach(metric => {
             const row: TableRow = {
-                metricKey: metric.key,
+                metricKey: metric.key as keyof Metrics | 'average_price_per_sqm', // Cast to correct type
                 metricName: metric.name,
                 format: metric.format,
                 data: {}
             };
             
-            let totalMetricValue = 0; // รวมค่า Metric นี้ตลอดทุก Period
+            let totalMetricValue = 0; // Sum of Metric Value for 'รวมทุกช่วง' (for total_value, total_area, total_units)
+            let totalValueForAvg = 0; // Temp variable for calculating overall avg_price_per_sqm
+            let totalAreaForAvg = 0; // Temp variable for calculating overall avg_price_per_sqm
 
-            dataPeriods.forEach(p => {
+            // 1. Process data for each data period
+            currentPeriods.filter(p => p.key !== grandTotalPeriodKey).forEach(p => {
                 const periodKey = p.key;
-                let metricValue = 0;
+                
+                // Get the Metrics object from summaryData
+                const metrics = getMetrics(p, categoryName);
+                
+                // Extract the specific metric value
+                let metricValue: number = metrics[metric.key as keyof Metrics] || 0; 
+                
+                // Store metric value for this period
+                row.data[periodKey] = metricValue;
 
-                if (metric.key === 'value') {
-                     let rawValue = valueDataByPeriodAndCategory[categoryName][periodKey] || 0;
-                     if (categoryName === 'รวม') {
-                        // สำหรับแถว 'รวม' (ในแต่ละคอลัมน์): คำนวณผลรวมของ 'value' จากทุก valueCategories ใน Period นี้
-                        rawValue = valueCategories.reduce((sum, cat) => {
-                            return sum + (valueDataByPeriodAndCategory[cat][periodKey] || 0);
-                        }, 0);
-                    } 
-                    metricValue = rawValue;
-                } 
-                // สำหรับ Metric อื่นๆ (units, area, avg_price_sqm) ให้แสดงเป็น 0/N/A
-                else {
-                    metricValue = 0; 
+                // 2. Accumulate values for 'รวมทุกช่วง' (Only for summetric, not for average)
+                if (metric.key !== 'average_price_per_sqm') {
+                    totalMetricValue += metricValue;
                 }
                 
-                row.data[periodKey] = metricValue;
-                totalMetricValue += metricValue; 
+                // 3. Accumulate total value and total area across periods for final average calculation
+                totalValueForAvg += metrics.total_value;
+                totalAreaForAvg += metrics.total_area;
             }); 
 
-            // Add 'รวมทุกช่วง' column
-            if (currentPeriods.find(p => p.key === grandTotalPeriodKey)) {
-                row.data[grandTotalPeriodKey] = totalMetricValue;
+            // 4. Calculate and add 'รวมทุกช่วง' column
+            if (currentPeriods.some(p => p.key === grandTotalPeriodKey)) {
+                let grandTotalMetricValue: number;
+
+                if (metric.key === 'average_price_per_sqm') {
+                    // Recalculate average price for the total period
+                    grandTotalMetricValue = totalAreaForAvg > 0 ? (totalValueForAvg / totalAreaForAvg) : 0;
+                } else {
+                    // Use the simple sum for total_value, total_area, total_units
+                    grandTotalMetricValue = totalMetricValue;
+                }
+                
+                row.data[grandTotalPeriodKey] = grandTotalMetricValue;
             }
 
             categoryData.rows.push(row);
@@ -586,7 +703,7 @@ const monthlyReportTableData = computed<TableCategory[]>(() => {
                             <v-tabs v-model="tab" color="primary" grow>
                                 <v-tab value="monthly">
                                     <v-icon start>mdi-calendar-month</v-icon>
-                                    เปรียบเทียบรายเดือน
+                                    เปรียบเทียบรายเดือน/ไตรมาส
                                 </v-tab>
                             </v-tabs>
 
@@ -595,13 +712,13 @@ const monthlyReportTableData = computed<TableCategory[]>(() => {
                                     <v-container fluid class="pa-0">
                                         <v-alert density="compact" variant="tonal" color="info" class="mb-4">
                                             <b>วิธีใช้งาน:</b><br />
-                                            - <b>ไม่เลือกปี/เดือน:</b> แสดงข้อมูลของปีปัจจุบันถึงเดือนปัจจุบัน<br />
-                                            - <b>เทียบเดือน (ในปีเดียวกัน):</b> เลือก 1 ปี และเลือกหลายเดือน<br />
-                                            - <b>เทียบปี (ในเดือนเดียวกัน):</b> เลือกหลายปี และเลือก 1 เดือน
+                                            - <b>ไม่เลือกปี/เดือน/ไตรมาส:</b> แสดงข้อมูลของปีปัจจุบันถึงเดือนปัจจุบัน<br />
+                                            - <b>เทียบเดือน/ไตรมาส (ในปีเดียวกัน):</b> เลือก 1 ปี และเลือกหลายเดือน/ไตรมาส<br />
+                                            - <b>เทียบปี (ในเดือน/ไตรมาสเดียวกัน):</b> เลือกหลายปี และเลือก 1 เดือน/ไตรมาส
                                         </v-alert>
 
                                         <v-row>
-                                            <v-col cols="12" md="6">
+                                            <v-col cols="12" md="4">
                                                 <v-combobox
                                                     v-model="selectyear"
                                                     :items="year"
@@ -613,7 +730,19 @@ const monthlyReportTableData = computed<TableCategory[]>(() => {
                                                     density="comfortable"
                                                 ></v-combobox>
                                             </v-col>
-                                            <v-col cols="12" md="6">
+                                            <v-col cols="12" md="4">
+                                                <v-combobox
+                                                    v-model="selectQuarters"
+                                                    :items="Quarters.map(q => q.name)"
+                                                    label="เลือกไตรมาส"
+                                                    chips
+                                                    multiple
+                                                    clearable
+                                                    variant="outlined"
+                                                    density="comfortable"
+                                                ></v-combobox>
+                                            </v-col>
+                                            <v-col cols="12" md="4">
                                                 <v-combobox
                                                     v-model="selectMonths"
                                                     :items="Months"
@@ -695,9 +824,9 @@ const monthlyReportTableData = computed<TableCategory[]>(() => {
                                                 <td v-for="period in tablePeriods" 
                                                     :key="period.key"
                                                     class="text-right text-subtitle-2"
-                                                    :class="{'text-primary font-weight-bold': category.categoryName === 'รวม' && row.metricKey === 'value', 'border-e': period.key !== tablePeriods[tablePeriods.length - 1].key}"
+                                                    :class="{'text-primary font-weight-bold': category.categoryName === 'รวม' && row.metricKey === 'total_value', 'border-e': period.key !== tablePeriods[tablePeriods.length - 1].key}"
                                                 >
-                                                    {{ row.metricKey === 'value' && (row.data[period.key] || 0) != 0 ? row.format(row.data[period.key] || 0) : '-' }}
+                                                    {{ (row.data[period.key] || 0) !== 0 ? row.format(row.data[period.key] || 0) : '-' }}
                                                 </td>
                                             </tr>
                                         </template>
@@ -707,12 +836,6 @@ const monthlyReportTableData = computed<TableCategory[]>(() => {
                                     </tr>
                                 </tbody>
                             </v-table>
-                            <p class="text-caption mt-4">
-                                ⚠️ <b>หมายเหตุ:</b> ข้อมูล **จำนวนหลัง**, **พื้นที่ใช้สอย**, และ **ราคาเฉลี่ย/ตร.ม.** ในตารางนี้แสดงค่า `-` หรือ **0** เนื่องจากโครงสร้างข้อมูล 
-                                (`summaryData.monthly_data` และ `summaryData.yearly_data`) ที่มาจาก `repost_admin.php` 
-                                ในปัจจุบัน มีเพียง **มูลค่ารวม (Total Value)** เท่านั้น หากต้องการแสดงผลลัพธ์ที่สมบูรณ์ 
-                                ต้องปรับปรุง API ให้ส่งข้อมูล Metric ทั้งหมดมาด้วย
-                             </p>
                         </v-card-text>
                     </v-card>
                 </v-col>
