@@ -137,11 +137,17 @@ onMounted(() => {
             selectyear.value = [currentBuddhistYear];
         }
     }
-    fetchSummary();
+    // ส่งค่า state ปัจจุบันเข้าไป
+    fetchSummary(selectyear.value, selectMonths.value, selectQuarters.value);
 });
 
-const fetchSummary = async () => {
-    if (!selectyear.value || selectyear.value.length === 0) {
+const fetchSummary = async (
+    currentYears: string[],
+    currentMonths: string[],
+    currentQuarters: string[]
+) => {
+    // 1. ใช้ค่าที่ส่งเข้ามา (arguments)
+    if (!currentYears || currentYears.length === 0) {
         console.error('Please select at least one year.');
         summaryData.value = null;
         chartSeries.value = [];
@@ -149,29 +155,41 @@ const fetchSummary = async () => {
     }
     const data: any = {
         user_id: userId,
-        buddhist_year: selectyear.value,
+        buddhist_year: currentYears, // <--- ใช้ค่าที่ส่งเข้ามา
         role: userRole
     };
 
-    // 🚀 START: 1. (แก้ไข) fetchSummary
-    // ใช้ `combinedTargetMonthIndices` และลบตรรกะ if/else ที่ผิดพลาด
-    const monthsToFetch = combinedTargetMonthIndices.value; // <--- ใช้ "ศูนย์กลาง"
-    const quartersToFetch = selectQuarters.value.map((quarterName: string) => quarterMap[quarterName] || null).filter(Boolean);
+    // 2. สร้างตรรกะ "รวมเดือน" *ข้างในนี้*
+    // เพื่อให้แน่ใจว่าใช้ค่าที่สดใหม่
+    let indices: number[] = [];
+    if (currentQuarters.length > 0) {
+        currentQuarters.forEach(qName => {
+            const quarter = Quarters.find(q => q.name === qName);
+            if (quarter) indices.push(...quarter.months);
+        });
+    }
+    const manualMonthIndices = currentMonths.map(m => monthMap[m]).filter(Boolean) as number[];
+    if (manualMonthIndices.length > 0) {
+        indices.push(...manualMonthIndices);
+    }
 
+    const monthsToFetch = Array.from(new Set(indices)).sort((a, b) => a - b);
+    const quartersToFetch = currentQuarters.map((quarterName: string) => quarterMap[quarterName] || null).filter(Boolean);
+    // --- สิ้นสุดตรรกะ "รวมเดือน" ---
+
+    // 3. ส่งข้อมูล (ที่ถูกต้อง) ไป PHP
     if (monthsToFetch.length > 0) {
         data.months = monthsToFetch;
     }
-
-    if (quartersToFetch.length > 0) { // <--- ลบ 'else' ออก
+    if (quartersToFetch.length > 0) {
         data.quarters = quartersToFetch;
     }
-    // 🚀 END: 1. (แก้ไข) fetchSummary
 
-    console.log('Sending data to backend:', data);
+    console.log('Sending data to backend:', data); // <-- บรรทัดนี้จะแสดงค่าที่ถูกต้อง
 
     try {
-        // 1. URL ต้องเป็น string '...' ที่สมบูรณ์ในพารามิเตอร์แรก
-        // 2. พารามิเตอร์ที่สองต้องเป็น object ที่ครอบด้วย { ... }
+        // ... (rest of fetch logic is unchanged) ...
+        // (โค้ด try...catch... ของคุณ)
         const res = await fetch('https://uat.hba-sales.org/backend/repost_admin.php', {
             method: 'POST',
             headers: {
@@ -197,7 +215,6 @@ const fetchSummary = async () => {
         summaryData.value = null;
         chartSeries.value = [];
     }
-
 }; //
 
 // 🚀 START: 2. (ลบ) targetMonthIndices
@@ -206,6 +223,9 @@ const fetchSummary = async () => {
 
 // 🚀 START: 3. (เพิ่ม) "ศูนย์กลางความจริง"
 // สร้าง `computed` ตัวใหม่นี้ขึ้นมาแทนที่ตัวเก่า
+// (ลบบล็อก const targetMonthIndices... ของเก่าทิ้งไปก่อน)
+
+// ⬇️ วางโค้ด "ศูนย์กลาง" ใหม่นี้เข้าไปแทน (ประมาณบรรทัด 202) ⬇️
 // (ลบบล็อก const targetMonthIndices... ของเก่าทิ้งไปก่อน)
 
 // ⬇️ วางโค้ด "ศูนย์กลาง" ใหม่นี้เข้าไปแทน (ประมาณบรรทัด 202) ⬇️
@@ -452,14 +472,13 @@ watch(selectQuarters, (newQuarters) => {
 
 watch(
     [selectyear, selectMonths, selectQuarters],
-    () => {
-
-        fetchSummary();
+    // 1. รับค่าใหม่ ([newYears, newMonths, newQuarters])
+    ([newYears, newMonths, newQuarters]) => {
+        // 2. ส่งค่าที่สดใหม่เข้าไปใน fetchSummary
+        fetchSummary(newYears, newMonths, newQuarters);
     },
-
-    { immediate: false }
+    { immediate: false, deep: true } // 3. เพิ่ม deep: true เพื่อความแน่นอน
 );
-
 
 const chartOptions = ref({
 
@@ -1920,7 +1939,7 @@ const growthRateReportTableData = computed<GrowthRateCategory[]>(() => {
                                     <template v-if="memberMonthlySubmissionTableData.length > 0">
                                         <tr v-for="member in memberMonthlySubmissionTableData" :key="member.name">
                                             <td class="text-left font-weight-bold text-caption border-e">{{ member.name
-                                            }}</td>
+                                                }}</td>
 
                                             <td v-for="period in tablePeriods.filter(p => p.key !== 'TOTAL_PERIODS')"
                                                 :key="period.key" class="text-center text-subtitle-2"
