@@ -9,24 +9,22 @@ import { useDate } from 'vuetify/lib/framework.mjs'; // Import useDate for findi
 const date = useDate(); // Initialize date utilities
 const tab = ref('monthly');
 
-// Define the structure of the data object returned for each price range
 interface Metrics {
     total_value: number;
     total_area: number;
     total_units: number;
     average_price_per_sqm: number;
 }
-
 interface SummaryData {
     // UPDATED: Now expects a Metrics object for each price range
     yearly_data: Record<string, Record<string, Metrics>>;
     monthly_data: Record<string, Record<number, Record<string, Metrics>>>;
     quarterly_data?: Record<string, Record<number, Record<string, Metrics>>>;
-    // 💡 region_data ถูกใช้ใน Computed Property ใหม่
-    region_data?: Record<string, any>; 
-    membership_data?: Record<string, any>;
+    // 🚀 FIX 2: ปรับโครงสร้าง region_data ให้เข้าถึง Year -> Month -> Region -> PriceRange -> Metrics
+    region_data?: Record<string, Record<number, Record<string, Record<string, Metrics>>>>; 
+    // 🚀 FIX 3: ปรับ membership_data ให้เป็น Array ของ MemberSubmission
+    membership_data?: MemberSubmission[];
 }
-
 const selectyear = ref<string[]>([]);
 const selectMonths = ref<string[]>([]);
 const selectQuarters = ref<string[]>([]); // 👈 NEW: State for selected quarters
@@ -56,8 +54,19 @@ const Quarters = [
 ];
 const quarterMap = Quarters.reduce((acc, q) => { acc[q.name] = q.index; return acc; }, {} as Record<string, number>);
 
+// krittanai6563/hba-v2-admin/hba-v2-admin-c1e20efc25a1e602fca98d0fb2056104c5a1113e/src/views/components/repost_hba.vue (ประมาณบรรทัดที่ 77)
+
 // 🚀 NEW: รายการภูมิภาคที่ใช้ในการแสดงผล
-const regionCategories = ['ภาคกลาง', 'ภาคเหนือ', 'ภาคตะวันออกเฉียงเหนือ', 'ภาคใต้', 'ภาคตะวันออก', 'ภาคตะวันตก', 'รวมทั่วประเทศ'];
+const regionCategories = [
+    'กรุงเทพปริมณฑล', // <-- เพิ่ม: ภูมิภาคหลักที่มีข้อมูลในฐานข้อมูล
+    'ภาคกลาง', 
+    'ภาคเหนือ', 
+    'ภาคตะวันออกเฉียงเหนือ', 
+    'ภาคใต้', 
+    'ภาคตะวันออก', 
+    'ภาคตะวันตก', 
+    'รวมทั่วประเทศ'
+];
 
 
 const userId = localStorage.getItem('user_id');
@@ -537,47 +546,75 @@ interface TableCategory {
 }
 
 // 🚀 Helper Function: ดึงข้อมูล Metrics ตามช่วงเวลาและภูมิภาค (ปรับให้รับ category ด้วย)
+// krittanai6563/hba-v2-admin/hba-v2-admin-c1e20efc25a1e602fca98d0fb2056104c5a1113e/src/views/components/repost_hba.vue (ประมาณบรรทัดที่ 319)
+
+// 🚀 Helper Function: ดึงข้อมูล Metrics ตามช่วงเวลาและภูมิภาค (ปรับให้รับ category ด้วย)
 const getRegionalMetrics = (period: typeof tablePeriods.value[0], region: string, category: string): Metrics => {
     let metrics: Metrics | undefined;
     
-    // 1. Fallback to existing aggregated data for 'รวมทั่วประเทศ' (Uses existing price range data)
+    // 1. Fallback: Aggregate National Totals ('รวมทั่วประเทศ') จาก monthly/yearly data ปกติ
     if (region === 'รวมทั่วประเทศ') {
          if (period.monthIndex && period.monthIndex !== 0) {
+             // ใช้ monthly_data สำหรับเดือน-เดือน (Monthly total)
              metrics = summaryData.value?.monthly_data[period.year]?.[period.monthIndex]?.[category];
          } else if (!period.monthIndex && period.year !== 'TOTAL') {
+             // ใช้ yearly_data สำหรับสรุปปี (Yearly total)
              metrics = summaryData.value?.yearly_data[period.year]?.[category];
          }
     }
     
-    // 2. [WARNING/PLACEHOLDER]: THIS BLOCK MUST BE REPLACED BY YOUR REAL API LOGIC
-    if (!metrics) {
-        // *** START: โค้ดที่คุณต้องลบและแทนที่ด้วยการดึงข้อมูลจริง ***
-        if (region !== 'รวมทั่วประเทศ') {
-             // ตัวอย่างการเรียก API จริง (ปรับตามโครงสร้าง JSON ของคุณ):
-             // metrics = summaryData.value?.region_data?.[period.year]?.[period.monthIndex]?.[region]?.[category];
+    // 2. ดึงข้อมูลจาก region_data
+    if (!metrics && region !== 'รวมทั่วประเทศ') {
+         // regionDataForYear เป็น Record<number, Record<string, Record<string, Metrics>>>
+         const regionDataForYear = summaryData.value?.region_data?.[period.year];
+         
+         if (period.monthIndex && period.monthIndex !== 0) {
+             // กรณี: ข้อมูลรายเดือน/ไตรมาส (Lookup by specific month)
+             metrics = regionDataForYear?.[period.monthIndex]?.[region]?.[category]; 
+         } 
+         
+         // 🚀 FIX: กรณี: ข้อมูลสรุปรายปี (ไม่มี monthIndex) -> ต้องรวมยอดรายเดือนทั้งหมดใน Vue
+         else if (!period.monthIndex && period.year !== 'TOTAL' && regionDataForYear) { 
              
-             // โค้ด Mock Data (สำหรับสาธิตการทำงานของกราฟและตาราง)
-             const regionFactor = regionCategories.indexOf(region) + 1;
-             const categoryFactor = categoryOrder.indexOf(category) + 1;
-             const total_units = 100 * (regionFactor) * (5/categoryFactor);
+             // 🚀 FIX Error 2: Initialize with the full Metrics type
+             let annualMetrics: Metrics = { 
+                 total_value: 0, 
+                 total_area: 0, 
+                 total_units: 0,
+                 average_price_per_sqm: 0 // กำหนดค่าเริ่มต้นแล้ว
+             };
+             let foundData = false;
              
-             if (total_units > 0) {
-                 return {
-                    total_value: 100000000 * regionFactor * (5/categoryFactor) * (period.year === '2568' ? 1.2 : 1) * 0.5, // 0.5 เพื่อให้ตัวเลขดูสมจริงขึ้น
-                    total_area: 50000 * regionFactor * (5/categoryFactor) * 0.5, 
-                    total_units: Math.floor(total_units * 0.5), 
-                    average_price_per_sqm: 30000 + (regionFactor * 500)
-                 };
+             // 🚀 FIX Error 1: Use Object.keys() เพื่อวนซ้ำ Key (เป็น string) แล้วใช้ parseInt แปลงกลับเป็น number
+             const monthKeys = Object.keys(regionDataForYear); 
+             
+             for (const monthKey of monthKeys) { 
+                 const monthIndexAsNumber = parseInt(monthKey); // แปลง Key เป็น Number
+                 
+                 const monthlyMetrics = regionDataForYear[monthIndexAsNumber]?.[region]?.[category];
+
+                 if (monthlyMetrics) {
+                     annualMetrics.total_value += monthlyMetrics.total_value;
+                     annualMetrics.total_area += monthlyMetrics.total_area;
+                     annualMetrics.total_units += monthlyMetrics.total_units;
+                     foundData = true;
+                 }
              }
-        }
-        // *** END: โค้ดที่คุณต้องลบและแทนที่ ***
-        
+
+             if (foundData) {
+                 // 🚀 FIX Error 2: คำนวณค่าเฉลี่ยและเก็บใน property ที่นิยามไว้แล้ว
+                 annualMetrics.average_price_per_sqm = (annualMetrics.total_area > 0) ? (annualMetrics.total_value / annualMetrics.total_area) : 0;
+                 metrics = annualMetrics;
+             }
+         }
+    }
+    
+    // Return initialized metrics if data is missing
+    if (!metrics) {
         return { total_value: 0, total_area: 0, total_units: 0, average_price_per_sqm: 0 };
     }
     return metrics;
 };
-
-
 // 🚀 LOGIC ใหม่: Computed Property สำหรับกำหนดช่วงเวลาแสดงผลในตาราง (Column Headers)
 const tablePeriods = computed(() => {
     const selectedYears = selectyear.value;
@@ -608,25 +645,39 @@ const tablePeriods = computed(() => {
         });
     }
     // --- Case B: Months are explicitly selected (Original logic) ---
+    // krittanai6563/hba-v2-admin/hba-v2-admin-c1e20efc25a1e602fca98d0fb2056104c5a1113e/src/views/components/repost_hba.vue (ประมาณบรรทัดที่ 499)
+
+// ...
+
+    // --- Case B: Months are explicitly selected (Original logic) ---
+    // krittanai6563/hba-v2-admin/hba-v2-admin-c1e20efc25a1e602fca98d0fb2056104c5a1113e/src/views/components/repost_hba.vue
+
+// ... (ประมาณบรรทัดที่ 499)
+
+    // --- Case B: Months are explicitly selected (Original logic) ---
     else if (selectedMonths.length > 0) {
         // 💡 Note: selectedMonths are already sorted when coming from quartersToMonthsNames
         // หรือมีการเลือกเอง
-        const sortedSelectedMonths = [...selectedMonths].map(m => monthMap[m]).filter(Boolean).sort((a, b) => a - b).map(i => Months[i-1]);
-
+        
+        // 1. Map ชื่อเดือนที่เลือกเป็น Index (Number) และกรองชื่อที่ไม่ถูกต้องออก
+        const monthIndices = selectedMonths.map(m => monthMap[m]).filter(Boolean) as number[];
+        // 2. ลบ Index ซ้ำซ้อน และเรียงลำดับ
+        const sortedUniqueMonthIndices = Array.from(new Set(monthIndices)).sort((a, b) => a - b);
+        
         sortedYears.forEach(year => {
-            sortedSelectedMonths.forEach(monthName => {
-                const monthIndex = monthMap[monthName];
-                if (monthIndex) {
-                    periods.push({
-                        key: `M${monthIndex}Y${year}`,
-                        label: `${monthName} ${year}`,
-                        year: year,
-                        monthIndex: monthIndex
-                    });
-                }
+            sortedUniqueMonthIndices.forEach(monthIndex => {
+                const monthName = Months[monthIndex - 1]; // ดึงชื่อเดือนที่ถูกต้องจาก Index
+                periods.push({
+                    key: `M${monthIndex}Y${year}`,
+                    label: `${monthName} ${year}`,
+                    year: year,
+                    monthIndex: monthIndex
+                });
             });
         });
     } 
+// ...
+// ...
     // --- Case C: No Months/Quarters selected (Original default logic) ---
     else {
         // B1: Single Year selected (current year) AND no month -> Default to Jan - Current Month of current year
@@ -1092,33 +1143,32 @@ const polarChartOptions = computed(() => ({
 }));
 
 
-// --- START NEW MEMBER REPORT LOGIC ---
-
-// 💡 Helper: Mock Member Data Structure
 interface MemberSubmission {
     member_id: string;
     name: string;
-    role: 'user' | 'admin';
+    // 🚀 FIX 1: เพิ่ม 'master' เพื่อรองรับบทบาทผู้ดูแลระบบสูงสุด
+    role: 'user' | 'admin' | 'master'; 
     total_submitted_count: number; // All time total
     submissions_by_year: Record<string, number>; // e.g., {'2568': 10, '2567': 5}
-    submissions_in_period: Record<string, number[]>; // key=year, value=array of submitted month indices (1-12) 🚀 NEW FIELD
+    submissions_in_period: Record<string, number[]>; // key=year, value=array of submitted month indices (1-12)
 }
 
 // ⚠️ MOCK FUNCTION: REPLACE THIS WITH REAL API PARSING OF summaryData.value.membership_data
 const generateMockMemberData = (): MemberSubmission[] => {
-    // โค้ดนี้จำลองข้อมูลสมาชิก
-    const mockUsers: MemberSubmission[] = [
-        { member_id: 'u1', name: 'สมบัติ ใจดี (ภาคเหนือ)', role: 'user', total_submitted_count: 55, submissions_by_year: {'2568': 20, '2567': 35}, submissions_in_period: {'2568': [1, 2, 3, 4], '2567': [1, 5, 9, 12]} },
-        { member_id: 'u2', name: 'มานะ พากเพียร (กลาง)', role: 'user', total_submitted_count: 120, submissions_by_year: {'2568': 80, '2567': 40}, submissions_in_period: {'2568': [1, 2, 3, 4, 5, 6, 7, 8], '2567': [1, 2, 3, 4]} },
-        { member_id: 'u3', name: 'ชูใจ รักเรียน (ใต้)', role: 'user', total_submitted_count: 10, submissions_by_year: {'2568': 0, '2567': 10}, submissions_in_period: {'2568': [10], '2567': [1, 2, 3]} },
-        { member_id: 'u4', name: 'ปิติ อดทน (อีสาน)', role: 'user', total_submitted_count: 0, submissions_by_year: {'2568': 0, '2567': 0}, submissions_in_period: {} },
-        { member_id: 'u5', name: 'แก้วตา สวยใส (ตะวันออก)', role: 'user', total_submitted_count: 2, submissions_by_year: {'2568': 2, '2567': 0}, submissions_in_period: {'2568': [1, 2], '2567': []} },
-        { member_id: 'u6', name: 'สุภาพร ผู้ดูแล', role: 'admin', total_submitted_count: 5, submissions_by_year: {'2568': 5}, submissions_in_period: {'2568': [1, 2]} },
-        { member_id: 'u7', name: 'ไม่เคยกรอก', role: 'user', total_submitted_count: 0, submissions_by_year: {}, submissions_in_period: {} },
-    ];
-    // 🚀 FIX: คืนค่าตัวแปรที่ถูกต้อง
-    return mockUsers;
+    const memberData = summaryData.value?.membership_data || [];
+
+    // ตรวจสอบและคืนค่าเป็น Array ของ MemberSubmission
+    if (Array.isArray(memberData)) {
+        return memberData as MemberSubmission[];
+    }
+    
+    console.warn('Membership data format is incorrect or empty:', memberData);
+    return [];
 };
+
+// **หมายเหตุ:** คุณอาจต้องเปลี่ยนชื่อฟังก์ชันนี้ในโค้ด Vue จาก 'generateMockMemberData'
+// เป็น 'getMemberData' และอัปเดตการเรียกใน computed properties 'memberSubmissionSummary', 'memberListChartData', และ 'memberMonthlySubmissionTableData' ด้วย
+// เพื่อให้สอดคล้องกับการเปลี่ยนเป็นข้อมูลจริง
 
 // 🚀 NEW LOGIC: Summary Data for Table/Donut Chart
 const memberSubmissionSummary = computed(() => {
@@ -1202,7 +1252,9 @@ const memberListChartData = computed(() => {
 const barChartOptions = computed(() => ({
     chart: {
         type: 'bar',
-        height: 350 + (memberListChartData.value.categories.length * 30), // Dynamic height based on members
+       height: memberListChartData.value.categories.length > 0 
+                ? 350 + (memberListChartData.value.categories.length * 30) 
+                : 350,
         fontFamily: 'inherit',
         foreColor: '#adb0bb',
         toolbar: { show: false },
@@ -1339,20 +1391,15 @@ interface RegionCategoryGroup {
     categories: TableCategory[]; // TableCategory structure: categoryName (Price Range) -> rows (Metrics)
 }
 
-
-// --- START NEW MEMBER REPORT LOGIC ---
-
-// 💡 Helper: Mock Member Data Structure
 interface MemberSubmission {
     member_id: string;
     name: string;
-    role: 'user' | 'admin';
-    total_submitted_count: number; // All time total
-    submissions_by_year: Record<string, number>; // e.g., {'2568': 10, '2567': 5}
-    submissions_in_period: Record<string, number[]>; // key=year, value=array of submitted month indices (1-12) 🚀 NEW FIELD
+    // 🚀 FIX: เพิ่ม 'master' เพื่อรองรับบทบาทผู้ดูแลระบบสูงสุด
+    role: 'user' | 'admin' | 'master'; 
+    total_submitted_count: number; 
+    submissions_by_year: Record<string, number>;
+    submissions_in_period: Record<string, number[]>;
 }
-
-
 
 
 // ... (existing interfaces: Metrics, SummaryData) ...
