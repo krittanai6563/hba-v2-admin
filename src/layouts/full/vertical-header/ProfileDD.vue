@@ -1,5 +1,4 @@
 <script setup lang="ts">
-// ⭐️ [จุดที่ 1] เพิ่ม 'computed' เข้ามาใน import
 import { onMounted, onUnmounted, ref, watch, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import defaultAvatar from '@/assets/images/users/img-logo_0.png';  
@@ -14,32 +13,29 @@ const passwordDialog = ref(false);
 const confirmChangeDialog = ref(false);
 const logoutConfirmDialog = ref(false); 
 
-// --- State สำหรับ Snackbar ---
+// --- State สำหรับ Snackbar (ใช้สำหรับแสดง ERROR เท่านั้น) ---
 const snackbar = ref(false);
 const snackbarText = ref('');
-const snackbarColor = ref('success');
+const snackbarColor = ref('error'); 
 
-// ⭐️ [จุดที่ 2] เพิ่ม ref สำหรับ VForm
-const passwordForm = ref<any>(null); // สำหรับควบคุมการ validate
+// --- VForm Ref ---
+const passwordForm = ref<any>(null); 
 
 // --- State สำหรับ Form Fields ---
 const userId = ref<string | null>(null);
 const fullname = ref('');
 const email = ref('');
 const member_type = ref(''); 
-// (สำหรับ Popup 1)
 const selectedFile = ref<File | null>(null);
 const imagePreviewUrl = ref<string | null>(null);
-// (สำหรับ Popup 2)
 const oldPassword = ref('');
 const newPassword = ref('');
 const confirmPassword = ref('');
 const showPass = ref(false);
 
-// ⭐️ [เพิ่ม] ตัวเลือกสำหรับประเภทสมาชิก (อิงจากไฟล์ users.sql)
 const memberTypeOptions = ref(['สามัญ', 'วิสามัญ ก', 'สมทบ', 'ผู้ดูแลระบบ']);
 
-// ⭐️ [จุดที่ 3] เพิ่ม Rules สำหรับฟอร์มรหัสผ่าน
+// --- Validation Rules ---
 const oldPasswordRules = [
     (v: string) => !!v || 'กรุณากรอกรหัสผ่านเดิม'
 ];
@@ -53,14 +49,13 @@ const confirmPasswordRules = computed(() => [
 ]);
 
 
-// ⭐️ [แก้ไข] อัปเดตฟังก์ชันนี้ ให้มีตรรกะการแก้ไขลิงก์รูป (จาก Main.vue)
+// ฟังก์ชันโหลดข้อมูลผู้ใช้จาก Storage
 function loadUserData() {
   try {
     const userData = sessionStorage.getItem('user') || localStorage.getItem('user');
     if (userData) {
       const user = JSON.parse(userData);
       
-      // ⭐️⭐️ Logic แก้ไข URL จาก Main.vue ⭐️⭐️
       const userProfileImage = user?.profile_image;
       
       if (userProfileImage && userProfileImage.trim() !== '') {
@@ -73,17 +68,16 @@ function loadUserData() {
       } else {
           profileImageUrl.value = defaultAvatar;
       }
-      // ⭐️⭐️ สิ้นสุด Logic แก้ไข URL ⭐️⭐️
       
       fullname.value = user?.fullname || '';
       email.value = user?.email || '';
       member_type.value = user?.member_type || ''; 
       userId.value = user?.id || localStorage.getItem('user_id');
     } else {
-      profileImageUrl.value = defaultAvatar; // กรณีไม่พบข้อมูล user เลย
+      profileImageUrl.value = defaultAvatar; 
     }
   } catch {
-    profileImageUrl.value = defaultAvatar; // กรณี Error
+    profileImageUrl.value = defaultAvatar; 
   }
 }
 
@@ -105,14 +99,14 @@ watch(passwordDialog, (newValue) => {
         confirmPassword.value = '';
         showPass.value = false;
         confirmChangeDialog.value = false;
-        passwordForm.value?.resetValidation(); // ⭐️ [แก้ไข] ล้าง error เมื่อปิด
+        passwordForm.value?.resetValidation(); 
     }
 });
 
 watch(profileDialog, (newValue) => {
     if (newValue === false) {
         selectedFile.value = null;
-        imagePreviewUrl.value = null; // ล้างพรีวิวรูปเมื่อปิด
+        imagePreviewUrl.value = null; 
     }
 });
 
@@ -129,7 +123,6 @@ onUnmounted(() => {
   }
 });
 
-// ⭐️ [เพิ่ม] ฟังก์ชันเปิดกล่องยืนยัน
 const confirmLogout = () => {
     logoutConfirmDialog.value = true;
 };
@@ -146,11 +139,10 @@ const logout = async () => {
   localStorage.removeItem('user');
   sessionStorage.removeItem('user');
   
-  // ⭐️⭐️ NEW: ส่ง query parameter ไปที่หน้า Login ⭐️⭐️
   router.push({ name: 'Login', query: { loggedOut: 'success' } });
 };
 
-// ⭐️⭐️ [FIX TS ERROR] เปลี่ยนเป็น const Arrow Function ⭐️⭐️
+// ⭐️⭐️ ฟังก์ชันอัปเดตโปรไฟล์: บังคับ Log out และ Redirect ⭐️⭐️
 const handleProfileUpdate = async () => {
     if (!userId.value) return;
     try {
@@ -171,27 +163,25 @@ const handleProfileUpdate = async () => {
         const text = await res.text();
         
         if (!res.ok) {
+            let errorMessage = 'การอัปเดตข้อมูลโปรไฟล์ล้มเหลว';
             try {
                 const data = JSON.parse(text);
-                throw new Error(data.message || 'Update failed');
+                errorMessage = data.message || errorMessage;
             } catch {
-                throw new Error(text || 'Update failed');
+                errorMessage = text || errorMessage;
             }
+            throw new Error(errorMessage);
         }
 
-        const data = JSON.parse(text);
-        snackbarText.value = data.message || 'อัปเดตโปรไฟล์สำเร็จ!';
-        snackbarColor.value = 'success';
-        snackbar.value = true;
+        // การดำเนินการเมื่อสำเร็จ: ล้าง Storage และ Redirect ไปหน้า Login
+        localStorage.removeItem('user_id');
+        localStorage.removeItem('user');
+        sessionStorage.removeItem('user');
         profileDialog.value = false;
-        if (data.user) {
-            const updatedUser = JSON.stringify(data.user);
-            sessionStorage.setItem('user', updatedUser); 
-            localStorage.setItem('user', updatedUser);   
-            loadUserData(); 
-        } else {
-            loadUserData();
-        }
+        
+        // Redirect ไปหน้า Login พร้อม Query Parameter เพื่อแสดง Snackbar
+        router.push({ name: 'Login', query: { updated: 'profile', message: 'อัปเดตข้อมูลโปรไฟล์สำเร็จแล้ว กรุณาเข้าสู่ระบบอีกครั้ง' } }); 
+
     } catch (error: any) {
         snackbarText.value = 'อัปเดตล้มเหลว: ' + error.message;
         snackbarColor.value = 'error';
@@ -199,7 +189,6 @@ const handleProfileUpdate = async () => {
     }
 };
 
-// ⭐️⭐️ [FIX TS ERROR] เปลี่ยนเป็น const Arrow Function ⭐️⭐️
 const promptChangePassword = async () => {
     if (!passwordForm.value) return; 
 
@@ -210,9 +199,18 @@ const promptChangePassword = async () => {
     }
 };
 
-// ⭐️⭐️ [FIX TS ERROR] เปลี่ยนเป็น const Arrow Function ⭐️⭐️
+// ⭐️⭐️ ฟังก์ชันเปลี่ยนรหัสผ่าน: บังคับ Log out และ Redirect ⭐️⭐️
 const handleChangePassword = async () => {
-    if (!userId.value) return;
+    
+    // Pre-check ข้อมูลโปรไฟล์ที่จำเป็น
+    if (!userId.value || !fullname.value || !email.value || !member_type.value) {
+        confirmChangeDialog.value = false; 
+        snackbarText.value = 'ข้อผิดพลาด: ข้อมูลโปรไฟล์ไม่สมบูรณ์ กรุณาเข้าสู่ระบบใหม่อีกครั้ง';
+        snackbarColor.value = 'error';
+        snackbar.value = true;
+        return; 
+    }
+    
     confirmChangeDialog.value = false;
     try {
         const formData = new FormData();
@@ -222,29 +220,40 @@ const handleChangePassword = async () => {
         formData.append('email', email.value); 
         formData.append('member_type', member_type.value); 
         
-        formData.append('old_password', oldPassword.value);
+        // ส่งรหัสผ่านเดิมและรหัสผ่านใหม่ไปให้ PHP ตรวจสอบและประมวลผล
+        formData.append('old_password', oldPassword.value); 
         formData.append('password', newPassword.value); 
         
         const res = await fetch('https://uat.hba-sales.org/backend/edit_profile.php', {
             method: 'POST',
             body: formData
         });
+        
         const text = await res.text();
+        
         if (!res.ok) {
+            let errorMessage = 'การเปลี่ยนรหัสผ่านล้มเหลว';
             try {
-                const data = JSON.parse(text);
-                throw new Error(data.message || 'Update failed');
-            } catch {
-                throw new Error(text || 'Update failed');
+                const data = JSON.parse(text); 
+                errorMessage = data.message || errorMessage;
+            } catch (e) {
+                errorMessage = text || errorMessage;
             }
+            throw new Error(errorMessage);
         }
-        const data = JSON.parse(text);
-        snackbarText.value = data.message || 'เปลี่ยนรหัสผ่านสำเร็จ!';
-        snackbarColor.value = 'success';
-        snackbar.value = true;
+
+        // การดำเนินการเมื่อสำเร็จ: ล้าง Storage และ Redirect ไปหน้า Login
+        localStorage.removeItem('user_id');
+        localStorage.removeItem('user');
+        sessionStorage.removeItem('user');
         passwordDialog.value = false;
+        
+        // Redirect ไปหน้า Login พร้อม Query Parameter
+        router.push({ name: 'Login', query: { updated: 'password', message: 'เปลี่ยนรหัสผ่านสำเร็จแล้ว กรุณาเข้าสู่ระบบด้วยรหัสผ่านใหม่' } }); 
+
     } catch (error: any) {
-        snackbarText.value = 'อัปเดตล้มเหลว: ' + error.message;
+        // แสดงข้อความ Error ที่ดึงมาจาก PHP ใน Snackbar
+        snackbarText.value = 'อัปเดตล้มเหลว: ' + error.message; 
         snackbarColor.value = 'error';
         snackbar.value = true;
     }
@@ -370,8 +379,9 @@ const handleChangePassword = async () => {
                             <v-card-title class="text-h6">
                                 ยืนยันการเปลี่ยนแปลง
                             </v-card-title>
+                            <!-- ⭐️⭐️ [จุดที่แก้ไข] เพิ่มข้อความแจ้งเตือนการออกจากระบบ ⭐️⭐️ -->
                             <v-card-text>
-                                คุณแน่ใจที่จะเปลี่ยนรหัสผ่านใช่หรือไม่?
+                                คุณแน่ใจที่จะเปลี่ยนรหัสผ่านใช่หรือไม่? เมื่อทำการยืนยันแล้ว ระบบจะทำการออกจากระบบโดยอัตโนมัติ และคุณจะต้องเข้าสู่ระบบใหม่ด้วยรหัสผ่านที่คุณตั้งไว้
                             </v-card-text>
                             <v-card-actions>
                                 <v-spacer></v-spacer>

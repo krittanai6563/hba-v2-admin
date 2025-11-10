@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import Quarterly_Value_Report from '@/components/dashboard/Quarterly_Value_Report.vue';
 import Regional_report from '@/components/dashboard/Regional_report.vue';
+// --- NEW IMPORTS ---
+import MonthContractTableMaster from '@/components/shared/MonthContractTableMaster.vue';
+import MemberStatusReport from '@/components/dashboard/MemberStatusReport.vue';
+// -------------------
 import { ref, computed, onMounted, watch } from 'vue';
 const tab = ref('monthly');
 
@@ -424,6 +428,9 @@ const chartOptions = ref({
                     </v-card>
                 </v-col>
 
+                <MemberStatusReport />
+
+                <MonthContractTableMaster />
                 
             <Quarterly_Value_Report />
 

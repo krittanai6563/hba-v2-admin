@@ -160,7 +160,7 @@ const selectedYear = ref(currentJsYear + 543);
 const selectedQuarter = ref('all');
 const selectedMonths = ref<number[]>([]);
 const yearOptions = ref(
-    Array.from({ length: 5 }, (_, i) => currentJsYear + 543 - i)
+    Array.from({ length: 2 }, (_, i) => currentJsYear + 543 - i)
 );
 const quarterOptions = ref([
     { title: 'ทุกไตรมาส / ทุกเดือน', value: 'all' },
@@ -1122,84 +1122,111 @@ const monthlyComparisonTableHeaders = computed(() => {
         </v-row>
 
         <v-row class="mt-4">
-            <v-col cols="12" sm="6" md="3">
-                <v-card class="clickable-card" :variant="activeMetric === 'units' ? 'tonal' : 'elevated'" elevation="2"
-                    @click="activeMetric = 'units'" :color="activeMetric === 'units' ? 'primary' : undefined">
-                    <v-card-text class="pa-5">
-                        <div class="d-flex align-center ga-4">
-                            <v-btn icon color="primary" variant="elevated" elevation="0" density="default">
-                                <v-icon icon="mdi-home-group" size="24"></v-icon>
-                            </v-btn>
-                            <div>
-                                <h4 class="text-h4" :class="{ 'text-grey': loading }">
-                                    {{ loading ? '...' : formattedSummary.units }}
-                                </h4>
-                                <p class="text-subtitle-1 text-grey-darken-1 mt-1">จำนวนหลัง (รวม)</p>
-                            </div>
-                        </div>
-                    </v-card-text>
-                </v-card>
-            </v-col>
+    <v-col cols="12" sm="6" md="3">
+        <v-card class="clickable-card" :variant="activeMetric === 'units' ? 'tonal' : 'elevated'" elevation="2"
+            @click="activeMetric = 'units'" :color="activeMetric === 'units' ? 'primary' : undefined">
+            <v-card-text class="pa-5">
+                <div class="d-flex align-center ga-4">
+                    <v-btn icon color="primary" variant="elevated" elevation="0" density="default">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+                            <g fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path
+                                    d="M2 12.204c0-2.289 0-3.433.52-4.381c.518-.949 1.467-1.537 3.364-2.715l2-1.241C9.889 2.622 10.892 2 12 2s2.11.622 4.116 1.867l2 1.241c1.897 1.178 2.846 1.766 3.365 2.715S22 9.915 22 12.203v1.522c0 3.9 0 5.851-1.172 7.063S17.771 22 14 22h-4c-3.771 0-5.657 0-6.828-1.212S2 17.626 2 13.725z" />
+                                <path stroke-linecap="round" d="M12 15v3" />
+                            </g>
+                        </svg>
+                    </v-btn>
+                    <div>
+                        <h4 class="text-h4" :class="{ 'text-grey': loading }">
+                            {{ loading ? '...' : formattedSummary.units }}
+                        </h4>
+                        <p class="text-subtitle-1 text-grey-darken-1 mt-1">จำนวนหลัง (รวม)</p>
+                    </div>
+                </div>
+            </v-card-text>
+        </v-card>
+    </v-col>
 
-            <v-col cols="12" sm="6" md="3">
-                <v-card class="clickable-card" :color="activeMetric === 'value' ? 'primary' : undefined"
-                    :variant="activeMetric === 'value' ? 'tonal' : 'elevated'" elevation="2"
-                    @click="activeMetric = 'value'">
-                    <v-card-text class="pa-5">
-                        <div class="d-flex align-center ga-4">
-                            <v-btn icon color="secondary" variant="elevated" elevation="0" density="default">
-                                <v-icon icon="mdi-cash-multiple" size="24"></v-icon>
-                            </v-btn>
-                            <div>
-                                <h4 class="text-h4" :class="{ 'text-grey': loading }">
-                                    {{ loading ? '...' : formattedSummary.value }}
-                                </h4>
-                                <p class="text-subtitle-1 text-grey-darken-1 mt-1">จำนวนมูลค่า (รวม)</p>
-                            </div>
-                        </div>
-                    </v-card-text>
-                </v-card>
-            </v-col>
+    <v-col cols="12" sm="6" md="3">
+        <v-card class="clickable-card" :color="activeMetric === 'value' ? 'primary' : undefined"
+            :variant="activeMetric === 'value' ? 'tonal' : 'elevated'" elevation="2" @click="activeMetric = 'value'">
+            <v-card-text class="pa-5">
+                <div class="d-flex align-center ga-4">
+                    <v-btn icon color="secondary" variant="elevated" elevation="0" density="default">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+                            <g fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path
+                                    d="M2 14c0-3.771 0-5.657 1.172-6.828S6.229 6 10 6h4c3.771 0 5.657 0 6.828 1.172S22 10.229 22 14s0 5.657-1.172 6.828S17.771 22 14 22h-4c-3.771 0-5.657 0-6.828-1.172S2 17.771 2 14Zm14-8c0-1.886 0-2.828-.586-3.414S13.886 2 12 2s-2.828 0-3.414.586S8 4.114 8 6" />
+                                <path stroke-linecap="round"
+                                    d="M12 17.333c1.105 0 2-.746 2-1.666S13.105 14 12 14s-2-.746-2-1.667c0-.92.895-1.666 2-1.666m0 6.666c-1.105 0-2-.746-2-1.666m2 1.666V18m0-8v.667m0 0c1.105 0 2 .746 2 1.666" />
+                            </g>
+                        </svg>
+                    </v-btn>
+                    <div>
+                        <h4 class="text-h4" :class="{ 'text-grey': loading }">
+                            {{ loading ? '...' : formattedSummary.value }}
+                        </h4>
+                        <p class="text-subtitle-1 text-grey-darken-1 mt-1">จำนวนมูลค่า (รวม)</p>
+                    </div>
+                </div>
+            </v-card-text>
+        </v-card>
+    </v-col>
 
-            <v-col cols="12" sm="6" md="3">
-                <v-card class="clickable-card" :variant="activeMetric === 'area' ? 'tonal' : 'elevated'" elevation="2"
-                    @click="activeMetric = 'area'" :color="activeMetric === 'area' ? 'primary' : undefined">
-                    <v-card-text class="pa-5">
-                        <div class="d-flex align-center ga-4">
-                            <v-btn icon color="error" variant="elevated" elevation="0" density="default">
-                                <v-icon icon="mdi-floor-plan" size="24"></v-icon>
-                            </v-btn>
-                            <div>
-                                <h4 class="text-h4" :class="{ 'text-grey': loading }">
-                                    {{ loading ? '...' : formattedSummary.area }}
-                                </h4>
-                                <p class="text-subtitle-1 text-grey-darken-1 mt-1">พื้นที่ใช้สอย (รวม)</p>
-                            </div>
-                        </div>
-                    </v-card-text>
-                </v-card>
-            </v-col>
+    <v-col cols="12" sm="6" md="3">
+        <v-card class="clickable-card" :variant="activeMetric === 'area' ? 'tonal' : 'elevated'" elevation="2"
+            @click="activeMetric = 'area'" :color="activeMetric === 'area' ? 'primary' : undefined">
+            <v-card-text class="pa-5">
+                <div class="d-flex align-center ga-4">
+                    <v-btn icon color="error" variant="elevated" elevation="0" density="default">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+                            <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5">
+                                <path
+                                    d="M11 2c-4.055.007-6.178.107-7.536 1.464C2 4.928 2 7.285 2 11.999s0 7.071 1.464 8.536C4.93 21.999 7.286 21.999 12 21.999s7.071 0 8.535-1.464c1.358-1.357 1.457-3.48 1.464-7.536" />
+                                <path stroke-linejoin="round" d="m13 11l9-9m0 0h-5.344M22 2v5.344M21 3l-9 9m0 0h4m-4 0V8" />
+                            </g>
+                        </svg>
+                    </v-btn>
+                    <div>
+                        <h4 class="text-h4" :class="{ 'text-grey': loading }">
+                            {{ loading ? '...' : formattedSummary.area }}
+                        </h4>
+                        <p class="text-subtitle-1 text-grey-darken-1 mt-1">พื้นที่ใช้สอย (รวม)</p>
+                    </div>
+                </div>
+            </v-card-text>
+        </v-card>
+    </v-col>
 
-            <v-col cols="12" sm="6" md="3">
-                <v-card class="clickable-card" :variant="activeMetric === 'valuePerSqm' ? 'tonal' : 'elevated'"
-                    elevation="2" @click="activeMetric = 'valuePerSqm'"
-                    :color="activeMetric === 'valuePerSqm' ? 'primary' : undefined">
-                    <v-card-text class="pa-5">
-                        <div class="d-flex align-center ga-4">
-                            <v-btn icon color="warning" variant="elevated" elevation="0" density="default">
-                                <v-icon icon="mdi-chart-bar" size="24"></v-icon>
-                            </v-btn>
-                            <div>
-                                <h4 class="text-h4" :class="{ 'text-grey': loading }">
-                                    {{ loading ? '...' : formattedSummary.valuePerSqm }}
-                                </h4>
-                                <p class="text-subtitle-1 text-grey-darken-1 mt-1">มูลค่าเฉลี่ย / ตร.ม.</p>
-                            </div>
-                        </div>
-                    </v-card-text>
-                </v-card>
-            </v-col>
-        </v-row>
+    <v-col cols="12" sm="6" md="3">
+        <v-card class="clickable-card" :variant="activeMetric === 'valuePerSqm' ? 'tonal' : 'elevated'"
+            elevation="2" @click="activeMetric = 'valuePerSqm'"
+            :color="activeMetric === 'valuePerSqm' ? 'primary' : undefined">
+            <v-card-text class="pa-5">
+                <div class="d-flex align-center ga-4">
+                    <v-btn icon color="warning" variant="elevated" elevation="0" density="default">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+                            <g fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path
+                                    d="M4.979 9.685C2.993 8.891 2 8.494 2 8s.993-.89 2.979-1.685l2.808-1.123C9.773 4.397 10.767 4 12 4s2.227.397 4.213 1.192l2.808 1.123C21.007 7.109 22 7.506 22 8s-.993.89-2.979 1.685l-2.808 1.124C14.227 11.603 13.233 12 12 12s-2.227-.397-4.213-1.191z" />
+                                <path
+                                    d="m5.766 10l-.787.315C2.993 11.109 2 11.507 2 12s.993.89 2.979 1.685l2.808 1.124C9.773 15.603 10.767 16 12 16s2.227-.397 4.213-1.191l2.808-1.124C21.007 12.891 22 12.493 22 12s-.993-.89-2.979-1.685L18.234 10" />
+                                <path
+                                    d="m5.766 14l-.787.315C2.993 15.109 2 15.507 2 16s.993.89 2.979 1.685l2.808 1.124C9.773 19.603 10.767 20 12 20s2.227-.397 4.213-1.192l2.808-1.123C21.007 16.891 22 16.494 22 16c0-.493-.993-.89-2.979-1.685L18.234 14" />
+                            </g>
+                        </svg>
+                    </v-btn>
+                    <div>
+                        <h4 class="text-h4" :class="{ 'text-grey': loading }">
+                            {{ loading ? '...' : formattedSummary.valuePerSqm }}
+                        </h4>
+                        <p class="text-subtitle-1 text-grey-darken-1 mt-1">มูลค่าเฉลี่ย / ตร.ม.</p>
+                    </div>
+                </div>
+            </v-card-text>
+        </v-card>
+    </v-col>
+</v-row>
 
         <v-row class="mt-4">
             <v-col cols="12">

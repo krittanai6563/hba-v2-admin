@@ -1,34 +1,50 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'; // ⭐️ NEW: Import ref และ onMounted
-import { useRoute } from 'vue-router'; // ⭐️ NEW: Import useRoute เพื่ออ่าน Query Parameter
+import { onMounted, ref } from 'vue';
+// ⭐️ NEW: Import useRouter เพิ่มเข้ามาด้วย
+import { useRoute, useRouter } from 'vue-router'; 
 
 import Logo from '@/layouts/full/logo/DarkLogo.vue';
 /* Login form */
 import LoginForm from '@/components/auth/LoginForm.vue';
 
-// ⭐️ NEW: State สำหรับ Snackbar ในหน้า Login
+// ⭐️ State สำหรับ Snackbar ในหน้า Login
 const snackbar = ref(false);
 const snackbarText = ref('');
 const snackbarColor = ref('success');
 
-const route = useRoute(); // ⭐️ NEW: เรียกใช้ useRoute
+const route = useRoute(); 
+const router = useRouter(); // ⭐️ NEW: เรียกใช้ useRouter
 
 onMounted(() => {
-    // ⭐️ โค้ดตรวจสอบ Query Parameter 'loggedOut'
+    // ⭐️ NEW: คัดลอก Query Parameter เพื่อเตรียมลบออก
+    const query = { ...route.query }; 
+    let shouldUpdateRoute = false;
+
+    // ⭐️ โค้ดตรวจสอบ Query Parameter 'loggedOut' (โค้ดเดิม)
     if (route.query.loggedOut === 'success') {
         snackbarText.value = 'ออกจากระบบสำเร็จ!';
         snackbarColor.value = 'success';
         snackbar.value = true;
         
-        // **[หมายเหตุ]:** คุณอาจต้องการลบ query parameter ออกจาก URL หลังจากแสดงแล้ว
-        // หากต้องการลบ query ออก ให้ใช้โค้ดดังนี้ (ต้อง import useRouter ด้วย):
-        // 
-        // import { useRoute, useRouter } from 'vue-router'; 
-        // const router = useRouter(); 
-        // const query = { ...route.query };
-        // delete query.loggedOut;
-        // router.replace({ query }); 
+        // ลบ query 'loggedOut' ออก
+        delete query.loggedOut;
+        shouldUpdateRoute = true;
+    }
+    
+    // ⭐️ NEW: โค้ดตรวจสอบ Query Parameter 'loggedIn'
+    if (route.query.loggedIn === 'success') {
+        snackbarText.value = 'เข้าสู่ระบบสำเร็จ!';
+        snackbarColor.value = 'success';
+        snackbar.value = true;
         
+        // ลบ query 'loggedIn' ออก
+        delete query.loggedIn;
+        shouldUpdateRoute = true;
+    }
+
+    // ลบ query parameter ออกจาก URL (เช่น /auth/login?loggedIn=success จะกลายเป็น /auth/login)
+    if (shouldUpdateRoute) {
+        router.replace({ query });
     }
 });
 </script>
