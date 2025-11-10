@@ -8,7 +8,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     header('Access-Control-Allow-Origin: *');
     header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
     header('Access-Control-Allow-Headers: Content-Type, Authorization');
-    http_response_code(200); 
+    http_response_code(200);
     exit;
 }
 
@@ -29,27 +29,48 @@ $months = $data['months'] ?? [];  // Array of selected months (may be empty)
 $quarters = $data['quarters'] ?? []; // Array of selected quarters (may be empty)
 
 if (!$years || count($years) < 1) {
-    http_response_code(400);
-    echo json_encode(['error' => 'Missing or invalid year']);
-    exit;
+    // กำหนดปีปัจจุบันเป็นค่าเริ่มต้นหากไม่มีการเลือกปี (เหมือนกับ logic ใน Vue)
+    $currentYear = (new DateTime('now', new DateTimeZone('Asia/Bangkok')))->format('Y') + 543;
+    $years = [(string)$currentYear];
 }
+
+// 🚀 START: ส่วนที่แก้ไข 1/3
+// --- สร้าง Array ของปีที่ต้องดึงข้อมูล
+// เราต้องการปีก่อนหน้าด้วยเสมอ เพื่อคำนวณ YoY
+$comparisonYears = [];
+if ($years) {
+    foreach ($years as $year) {
+        // ถ้าผู้ใช้เลือกปี 2568, เราต้องการปี 2567 มาเปรียบเทียบด้วย
+        $comparisonYears[] = (int)$year - 1;
+    }
+}
+// รวมปีที่เลือก และ ปีที่ต้องใช้เปรียบเทียบ เข้าด้วยกัน (ป้องกันการซ้ำซ้อน)
+$allYearsToFetch = array_unique(array_merge($years, $comparisonYears));
+// 🚀 END: ส่วนที่แก้ไข 1/3
+
 
 $whereConditions = [];
 $params = [];
 
-// Adding year filtering to the query
-$placeholders = implode(',', array_fill(0, count($years), '?'));
+// 1. ขยาย Main Query เพื่อรวม metrics ทั้งหมด: total_value, total_units, total_area
+
+// 🚀 START: ส่วนที่แก้ไข 2/3
+// --- ใช้ $allYearsToFetch แทน $years
+$placeholders = implode(',', array_fill(0, count($allYearsToFetch), '?'));
+// 🚀 END: ส่วนที่แก้ไข 2/3
+
 $sql = "
-   SELECT s.buddhist_year, 
-          d.price_range,
-          SUM(d.total_value) AS value,
-          MONTH(s.submitted_at) AS month,          
-          MONTHNAME(s.submitted_at) AS month_name,  
-          s.quarter AS quarter,    
-          d.region                                 
-   FROM contract_submission s
-   INNER JOIN contract_detail d ON s.id = d.contract_submission_id
-   WHERE s.buddhist_year IN ($placeholders)
+    SELECT s.buddhist_year,
+           d.price_range,
+           SUM(d.total_value) AS total_value,
+           SUM(d.unit) AS total_units,
+           SUM(d.area) AS total_area,
+           MONTH(s.submitted_at) AS month,
+           s.quarter AS quarter,
+           d.region
+    FROM contract_submission s
+    INNER JOIN contract_detail d ON s.id = d.contract_submission_id
+    WHERE s.buddhist_year IN ($placeholders)
 ";
 
 // Add month filtering if months are provided
@@ -64,8 +85,11 @@ if (!empty($quarters)) {
     $sql .= " AND s.quarter IN ($quarterPlaceholders)";
 }
 
-// Prepare parameters array with selected years, months, and quarters (if any)
-$params = array_merge($params, $years, $months, $quarters);
+// 🚀 START: ส่วนที่แก้ไข 3/3
+// --- ใช้ $allYearsToFetch แทน $years
+$params = array_merge($params, $allYearsToFetch, $months, $quarters);
+// 🚀 END: ส่วนที่แก้ไข 3/3
+
 
 // If the user is not an admin or master, filter by user_id
 if ($role !== 'admin' && $role !== 'master') {
@@ -74,323 +98,328 @@ if ($role !== 'admin' && $role !== 'master') {
         echo json_encode(['error' => 'Missing user_id for non-admin']);
         exit;
     }
-    $sql .= " AND s.user_id = ?"; 
+    $sql .= " AND s.user_id = ?";
     $params[] = $userId;
 }
 
-$sql .= " GROUP BY s.buddhist_year, MONTH(s.submitted_at), s.quarter, d.price_range, d.region 
-          ORDER BY s.buddhist_year ASC, MONTH(s.submitted_at) ASC, s.quarter ASC, d.price_range ASC";
+$sql .= " GROUP BY s.buddhist_year, MONTH(s.submitted_at), s.quarter, d.price_range, d.region
+          ORDER BY s.buddhist_year ASC, MONTH(s.submitted_at) ASC, d.price_range ASC, d.region ASC";
 
 // Prepare the statement and execute with the correct parameters
 $stmt = $conn->prepare($sql);
 $stmt->execute($params);
 $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Initialize data for each section
+// Initialize data structure
 $data = [
     'yearly_data' => [],
     'monthly_data' => [],
-    'quarterly_data' => [],
-    'quarterly_month_comparison' => [],
     'region_data' => [],
-    'membership_data' => [] // This will be populated by the new logic
+    'membership_data' => []
 ];
 
-// Process results from the database
+// 2. ปรับปรุง Data Processing Loop (จัดโครงสร้างและคำนวณ Metrics)
 foreach ($results as $row) {
     $year = $row['buddhist_year'];
-    $month = $row['month']; // Extract month
-    $quarter = $row['quarter']; // Extract quarter
+    $month = (int)$row['month'];
     $range = $row['price_range'];
-    $value = (float)$row['value'];
     $region = $row['region'];
-
-    // Process yearly data
-    if (!isset($data['yearly_data'][$year])) {
-        $data['yearly_data'][$year] = [];
-    }
-    if (!isset($data['yearly_data'][$year][$range])) {
-        $data['yearly_data'][$year][$range] = 0;
-    }
-    $data['yearly_data'][$year][$range] += $value;
-
-    // Process monthly data
-    if (!isset($data['monthly_data'][$year])) {
-        $data['monthly_data'][$year] = [];
-    }
-    if (!isset($data['monthly_data'][$year][$month])) {
-        $data['monthly_data'][$year][$month] = [];
-    }
-    if (!isset($data['monthly_data'][$year][$month][$range])) {
-        $data['monthly_data'][$year][$month][$range] = 0;
-    }
-    $data['monthly_data'][$year][$month][$range] += $value;
-
-    // Process quarterly data
-    if (!isset($data['quarterly_data'][$year])) {
-        $data['quarterly_data'][$year] = [];
-    }
-    if (!isset($data['quarterly_data'][$year][$quarter])) {
-        $data['quarterly_data'][$year][$quarter] = [];
-    }
-    if (!isset($data['quarterly_data'][$year][$quarter][$range])) {
-        $data['quarterly_data'][$year][$quarter][$range] = 0;
-    }
-    $data['quarterly_data'][$year][$quarter][$range] += $value;
-
-    // Process region data and group by region, year, and quarter
-    if (!isset($data['region_data'][$region])) {
-        $data['region_data'][$region] = [];
-    }
-    if (!isset($data['region_data'][$region][$year])) {
-        $data['region_data'][$region][$year] = [];
-    }
-    if (!isset($data['region_data'][$region][$year][$quarter])) {
-        $data['region_data'][$region][$year][$quarter] = 0;  // Initialize the value for this region, year, and quarter
-    }
-
-    // Add the value for this region, year, and quarter
-    $data['region_data'][$region][$year][$quarter] += $value;
-
-    // Process quarterly month comparison data (new logic for monthly data within each quarter)
-    if (!isset($data['quarterly_month_comparison'][$year])) {
-        $data['quarterly_month_comparison'][$year] = [];
-    }
-    if (!isset($data['quarterly_month_comparison'][$year][$quarter])) {
-        $data['quarterly_month_comparison'][$year][$quarter] = [];
-    }
-
-    // Get the months in the selected quarter
-    $monthsInQuarter = getMonthsInQuarter($quarter);
-
-    // Process each month within the quarter
-    foreach ($monthsInQuarter as $monthIndex) {
-        // Ensure that the month is properly set as an array before using it
-        if (!isset($data['quarterly_month_comparison'][$year][$quarter][$monthIndex])) {
-            $data['quarterly_month_comparison'][$year][$quarter][$monthIndex] = [];
-        }
-
-        // Ensure that the range for the month is properly set as an array before using it
-        if (!isset($data['quarterly_month_comparison'][$year][$quarter][$monthIndex][$range])) {
-            $data['quarterly_month_comparison'][$year][$quarter][$monthIndex][$range] = 0;
-        }
-
-        // Add value to the corresponding month and range
-        $data['quarterly_month_comparison'][$year][$quarter][$monthIndex][$range] += $value;
-    }
-}
-
-// If no region data was found, return an empty array
-if (empty($data['region_data'])) {
-    $data['region_data'] = [];
-}
-
-
-// Add total sums for each section (yearly, monthly, quarterly, and quarterly month comparison)
-foreach ($data['yearly_data'] as $year => $rangesData) {
-    $total = 0;
-    foreach ($rangesData as $range => $value) {
-        $total += $value;
-    }
-    $data['yearly_data'][$year]['รวม'] = $total;
-}
-
-foreach ($data['monthly_data'] as $year => $monthsData) {
-    foreach ($monthsData as $month => $rangeData) {
-        $total = 0;
-        foreach ($rangeData as $range => $value) {
-            $total += $value;
-        }
-        $data['monthly_data'][$year][$month]['รวม'] = $total;
-    }
-}
-
-foreach ($data['quarterly_data'] as $year => $quartersData) {
-    foreach ($quartersData as $quarter => $rangeData) {
-        $total = 0;
-        foreach ($rangeData as $range => $value) {
-            $total += $value;
-        }
-        $data['quarterly_data'][$year][$quarter]['รวม'] = $total;
-    }
-}
-
-// Add totals for the quarterly month comparison
-foreach ($data['quarterly_month_comparison'] as $year => $quartersData) {
-    foreach ($quartersData as $quarter => $monthsData) {
-        $total = 0;
-        foreach ($monthsData as $month => $rangeData) {
-            foreach ($rangeData as $range => $value) {
-                $total += $value;
-            }
-        }
-        $data['quarterly_month_comparison'][$year][$quarter]['รวม'] = $total;
-    }
-}
-
-// Ensure that missing months and quarters are returned as 0
-foreach ($data['monthly_data'] as $year => $monthsData) {
-    foreach ($monthsData as $month => $rangeData) {
-        foreach ($categoryOrder as $range) {
-            if (!isset($data['monthly_data'][$year][$month][$range])) {
-                $data['monthly_data'][$year][$month][$range] = 0;
-            }
-        }
-    }
-}
-
-foreach ($data['quarterly_data'] as $year => $quartersData) {
-    foreach ($quartersData as $quarter => $rangeData) {
-        foreach ($categoryOrder as $range) {
-            if (!isset($data['quarterly_data'][$year][$quarter][$range])) {
-                $data['quarterly_data'][$year][$quarter][$range] = 0;
-            }
-        }
-    }
-}
-foreach ($data['quarterly_month_comparison'] as $year => $quartersData) {
-    foreach ($quartersData as $quarter => $monthsData) {
-        // ตรวจสอบให้แน่ใจว่าแต่ละเดือนในไตรมาสมีการสร้างขึ้น
-        $monthsInQuarter = getMonthsInQuarter($quarter);
-        foreach ($monthsInQuarter as $monthIndex) {
-            // ตรวจสอบว่าเดือนนั้นๆ ถูกสร้างขึ้นแล้วหรือยัง
-            if (!isset($data['quarterly_month_comparison'][$year][$quarter][$monthIndex])) {
-                $data['quarterly_month_comparison'][$year][$quarter][$monthIndex] = [];
-            }
-
-            // คำนวณผลรวมของมูลค่าทั้งหมดในแต่ละเดือน
-            $totalMonthValue = 0;
-
-            // ตรวจสอบเพื่อดึงข้อมูลจาก 'monthly_data' สำหรับแต่ละเดือน
-            if (isset($data['monthly_data'][$year][$monthIndex])) {
-                // คำนวณผลรวมของแต่ละ category (ราคาบ้าน) ในเดือนนั้น
-                foreach ($data['monthly_data'][$year][$monthIndex] as $range => $value) {
-                    if ($range !== 'รวม') { // ตรวจสอบเพื่อไม่รวม 'รวม' ในการคำนวณ
-                        $totalMonthValue += $value;
-                    }
-                }
-            }
-
-            // เก็บแค่ผลรวมในเดือนนั้นๆ
-            $data['quarterly_month_comparison'][$year][$quarter][$monthIndex] = [
-                'รวม' => $totalMonthValue // เก็บแค่ผลรวม
-            ];
-        }
-    }
-}
-
-foreach ($data['region_data'] as $region => $yearsData) {
-    foreach ($yearsData as $year => $quartersData) {
-        $total = 0;
-        foreach ($quartersData as $quarter => $value) {
-            $total += $value;
-        }
-        $data['region_data'][$region][$year]['รวม'] = $total;  // Add totals for region and year
-    }
-}
-
-
-// --- START: New Membership Data Processing Logic ---
-
-// 1. Get total count of 'user' role members
-$sqlTotalUsers = "SELECT COUNT(id) AS total_users FROM users WHERE role = 'user'";
-$stmtTotalUsers = $conn->prepare($sqlTotalUsers);
-$stmtTotalUsers->execute();
-$totalUsersResult = $stmtTotalUsers->fetch(PDO::FETCH_ASSOC);
-$totalUsers = $totalUsersResult['total_users'];
-
-// 2. Determine target months for iteration based on input
-// 2. Determine target months for iteration based on input
-$targetMonths = [];
-if (!empty($quarters)) { // <-- ตรงนี้คือการตรวจสอบว่ามีการส่งค่าไตรมาสมาหรือไม่
-    foreach ($quarters as $quarterNum) {
-        // ถ้ามีการส่งค่าไตรมาสมา จะแปลงไตรมาสนั้นๆ ให้เป็นเดือน
-        $targetMonths = array_merge($targetMonths, getMonthsInQuarter($quarterNum));
-    }
-    $targetMonths = array_unique($targetMonths); // ลบเดือนที่ซ้ำกัน
-    sort($targetMonths); // จัดเรียงเดือน
-} elseif (!empty($months)) { // ถ้าไม่มีไตรมาส แต่มีเดือน ก็ใช้เดือนที่ระบุ
-    $targetMonths = $months;
-} else { // ถ้าไม่มีทั้งไตรมาสและเดือน ก็ใช้ทั้ง 12 เดือน
-    $targetMonths = range(1, 12); 
-}
-// 3. Fetch distinct user_ids who submitted for each selected year and month
-$submittedUserIdsPerMonthYear = [];
-if (!empty($years)) { // Only query if years are selected
-    $yearPlaceholdersForSubmitted = implode(',', array_fill(0, count($years), '?'));
     
-    $submittedSql = "
-        SELECT DISTINCT user_id, buddhist_year, MONTH(submitted_at) AS month_num
-        FROM contract_submission
-        WHERE buddhist_year IN ($yearPlaceholdersForSubmitted)
-    ";
+    // Extract raw metrics
+    $total_value = (float)$row['total_value'];
+    $total_units = (int)$row['total_units'];
+    $total_area = (float)$row['total_area'];
+    
+    // Calculate derived metric
+    $average_price_per_sqm = ($total_area > 0) ? round($total_value / $total_area, 2) : 0.00;
 
-    $submittedParams = $years;
-if (!empty($targetMonths)) {
-        $monthPlaceholdersForSubmitted = implode(',', array_fill(0, count($targetMonths), '?'));
-        $submittedSql .= " AND MONTH(submitted_at) IN ($monthPlaceholdersForSubmitted)"; // <-- กรองตามเดือนที่ได้จากไตรมาส
-        $submittedParams = array_merge($submittedParams, $targetMonths);
+    $metrics = [
+        'total_value' => $total_value,
+        'total_area' => $total_area,
+        'total_units' => $total_units,
+        'average_price_per_sqm' => $average_price_per_sqm,
+    ];
+
+    // --- 1. Process for Monthly Data ---
+    if (!isset($data['monthly_data'][$year])) $data['monthly_data'][$year] = [];
+    if (!isset($data['monthly_data'][$year][$month])) $data['monthly_data'][$year][$month] = [];
+    
+    // 🚀 START: แก้ไข Bug (monthly_data)
+    //  
+    // Bug เดิม: $data['monthly_data'][$year][$month][$range] = $metrics; (เป็นการเขียนทับ)
+    // แก้ไข: ต้องบวกสะสม (+=) เพื่อให้ได้ยอดรวมของทุกภูมิภาค
+    //
+    if (!isset($data['monthly_data'][$year][$month][$range])) {
+        $data['monthly_data'][$year][$month][$range] = ['total_value' => 0, 'total_area' => 0, 'total_units' => 0, 'average_price_per_sqm' => 0];
     }
+    $data['monthly_data'][$year][$month][$range]['total_value'] += $total_value;
+    $data['monthly_data'][$year][$month][$range]['total_area'] += $total_area;
+    $data['monthly_data'][$year][$month][$range]['total_units'] += $total_units;
+    // (average_price_per_sqm จะถูกคำนวณใหม่ใน Loop 3.2 หลังจากรวมยอดเสร็จ)
+    // 🚀 END: แก้ไข Bug (monthly_data)
 
-    $stmtSubmitted = $conn->prepare($submittedSql);
-    $stmtSubmitted->execute($submittedParams);
-    $submittedResults = $stmtSubmitted->fetchAll(PDO::FETCH_ASSOC);
 
-    foreach ($submittedResults as $row) {
-        $y = $row['buddhist_year'];
-        $m = $row['month_num'];
-        $uid = $row['user_id'];
-        if (!isset($submittedUserIdsPerMonthYear[$y])) $submittedUserIdsPerMonthYear[$y] = [];
-        if (!isset($submittedUserIdsPerMonthYear[$y][$m])) $submittedUserIdsPerMonthYear[$y][$m] = [];
-        $submittedUserIdsPerMonthYear[$y][$m][$uid] = true; // Use associative array for O(1) lookup
+    // --- 2. Process for Yearly Aggregation ---
+    if (!isset($data['yearly_data'][$year])) $data['yearly_data'][$year] = [];
+
+    // 🚀 START: แก้ไข Bug (yearly_data)
+    //  
+    // Bug เดิม: โค้ดที่คล้ายกันนี้ ทำให้ยอดรายปีถูกเขียนทับด้วยข้อมูลภูมิภาคสุดท้าย
+    // แก้ไข: ต้องบวกสะสม (+=)
+    //
+    if (!isset($data['yearly_data'][$year][$range])) {
+        $data['yearly_data'][$year][$range] = ['total_value' => 0, 'total_area' => 0, 'total_units' => 0, 'monthly_count' => 0];
     }
+    // Aggregate annual sums
+    $data['yearly_data'][$year][$range]['total_value'] += $total_value;
+    $data['yearly_data'][$year][$range]['total_area'] += $total_area;
+    $data['yearly_data'][$year][$range]['total_units'] += $total_units;
+    // 🚀 END: แก้ไข Bug (yearly_data)
+
+
+    // --- 3. Process for Regional Data (Key for the Vue FE regional tables) ---
+    // (ส่วนนี้ถูกต้องอยู่แล้ว ไม่ต้องแก้ไข)
+    // Structure: region_data[year][month][region][price_range] = Metrics
+    if (!isset($data['region_data'][$year])) $data['region_data'][$year] = [];
+    if (!isset($data['region_data'][$year][$month])) $data['region_data'][$year][$month] = [];
+    if (!isset($data['region_data'][$year][$month][$region])) $data['region_data'][$year][$month][$region] = [];
+    $data['region_data'][$year][$month][$region][$range] = $metrics;
 }
 
-// 4. Initialize and populate membership data
-$membershipData = [
-    'monthly_membership_data' => [],
-    'overall_total_users' => $totalUsers // Total users with 'user' role
-];
 
-foreach ($years as $year) {
-    if (!isset($membershipData['monthly_membership_data'][$year])) {
-        $membershipData['monthly_membership_data'][$year] = [];
+// --- 3. Final Aggregation and Total Calculation ---
+
+// 3.1 Process Yearly Totals (Aggregates price ranges and calculates final average)
+foreach ($data['yearly_data'] as $year => $rangesData) {
+    $total_value_sum = 0;
+    $total_area_sum = 0;
+    $total_units_sum = 0;
+    
+    foreach ($categoryOrder as $range) {
+        $metrics = $rangesData[$range] ?? ['total_value' => 0, 'total_area' => 0, 'total_units' => 0];
+        
+        // Calculate average for non-'รวม' categories
+        $average_price_per_sqm = ($metrics['total_area'] > 0) ? round($metrics['total_value'] / $metrics['total_area'], 2) : 0.00;
+        $data['yearly_data'][$year][$range]['average_price_per_sqm'] = $average_price_per_sqm;
+
+        $total_value_sum += $metrics['total_value'];
+        $total_area_sum += $metrics['total_area'];
+        $total_units_sum += $metrics['total_units'];
+        
+        // Ensure all categories exist in yearly data
+        if (!isset($data['yearly_data'][$year][$range])) {
+             $data['yearly_data'][$year][$range] = ['total_value' => 0.00, 'total_area' => 0.00, 'total_units' => 0, 'average_price_per_sqm' => 0.00];
+        }
     }
-    foreach ($targetMonths as $month) {
-        $filledCount = isset($submittedUserIdsPerMonthYear[$year][$month]) ? count($submittedUserIdsPerMonthYear[$year][$month]) : 0;
-        $notFilledCount = $totalUsers - $filledCount;
+    
+    // Calculate 'รวม' (Grand Total by Price Range for the Year)
+    $total_avg_price_per_sqm = ($total_area_sum > 0) ? round($total_value_sum / $total_area_sum, 2) : 0.00;
+    $data['yearly_data'][$year]['รวม'] = [
+        'total_value' => $total_value_sum,
+        'total_area' => $total_area_sum,
+        'total_units' => $total_units_sum,
+        'average_price_per_sqm' => $total_avg_price_per_sqm,
+    ];
+}
 
-        $membershipData['monthly_membership_data'][$year][$month] = [
-            'filled_count' => $filledCount,
-            'not_filled_count' => $notFilledCount,
-            'total_users_for_month' => $totalUsers // Total users remains constant for each month
+// 3.2 Process Monthly Totals (Aggregates price ranges and ensures all keys exist)
+foreach ($data['monthly_data'] as $year => $monthsData) {
+    for ($month = 1; $month <= 12; $month++) {
+        if (!isset($data['monthly_data'][$year][$month])) {
+            $data['monthly_data'][$year][$month] = [];
+        }
+        
+        $rangesData = $data['monthly_data'][$year][$month];
+        $total_value_sum = 0;
+        $total_area_sum = 0;
+        $total_units_sum = 0;
+
+        foreach ($categoryOrder as $range) {
+            $metrics = $rangesData[$range] ?? ['total_value' => 0, 'total_area' => 0, 'total_units' => 0, 'average_price_per_sqm' => 0];
+
+            // 🚀 START: แก้ไข Bug (monthly_data)
+            // คำนวณ average_price_per_sqm ใหม่
+            // จากยอดรวม (total_value, total_area) ที่เราบวกสะสม (+=) มาจาก Loop 2
+            $average_price_per_sqm = ($metrics['total_area'] > 0) ? round($metrics['total_value'] / $metrics['total_area'], 2) : 0.00;
+            // 🚀 END: แก้ไข Bug
+            
+            // Ensure all non-submitted price ranges exist with zero values
+            if (!isset($data['monthly_data'][$year][$month][$range])) {
+                 $data['monthly_data'][$year][$month][$range] = ['total_value' => 0.00, 'total_area' => 0.00, 'total_units' => 0, 'average_price_per_sqm' => 0.00];
+            }
+            
+            // 🚀 START: แก้ไข Bug (monthly_data)
+            // บันทึกค่า average ที่คำนวณใหม่
+            $data['monthly_data'][$year][$month][$range]['average_price_per_sqm'] = $average_price_per_sqm;
+            // 🚀 END: แก้ไข Bug
+
+            $total_value_sum += $metrics['total_value'];
+            $total_area_sum += $metrics['total_area'];
+            $total_units_sum += $metrics['total_units'];
+        }
+        
+        // Calculate 'รวม' (Grand Total by Price Range for the Month)
+        $total_avg_price_per_sqm = ($total_area_sum > 0) ? round($total_value_sum / $total_area_sum, 2) : 0.00;
+        $data['monthly_data'][$year][$month]['รวม'] = [
+            'total_value' => $total_value_sum,
+            'total_area' => $total_area_sum,
+            'total_units' => $total_units_sum,
+            'average_price_per_sqm' => $total_avg_price_per_sqm,
         ];
     }
 }
 
-// Add the membership data to the final response
-$data['membership_data'] = $membershipData;
 
-// --- END: New Membership Data Processing Logic ---
+// 3.3 Process Regional Totals (Aggregates price ranges and regions)
+$regionCategories = ['ภาคกลาง', 'ภาคเหนือ', 'ภาคตะวันออกเฉียงเหนือ', 'ภาคใต้', 'ภาคตะวันออก', 'ภาคตะวันตก', 'กรุงเทพปริมณฑล'];
 
+foreach ($data['region_data'] as $year => $monthsData) {
+    for ($month = 1; $month <= 12; $month++) { // ⚠️ แก้ไข: วน Loop 12 เดือนเพื่อให้แน่ใจว่ามีข้อมูลครบ
+        if (!isset($data['region_data'][$year][$month])) {
+            $data['region_data'][$year][$month] = [];
+        }
+        $regionsData = $data['region_data'][$year][$month];
+        
+        $nationalTotals = ['total_value' => 0, 'total_area' => 0, 'total_units' => 0];
+
+        foreach ($regionCategories as $region) {
+            // Aggregate price ranges within the current region/month/year to get the region's 'รวม' total
+            $regionTotals = ['total_value' => 0, 'total_area' => 0, 'total_units' => 0];
+            $currentRegionData = $regionsData[$region] ?? [];
+
+            foreach ($categoryOrder as $range) {
+                $metrics = $currentRegionData[$range] ?? ['total_value' => 0, 'total_area' => 0, 'total_units' => 0, 'average_price_per_sqm' => 0];
+                
+                $regionTotals['total_value'] += $metrics['total_value'];
+                $regionTotals['total_area'] += $metrics['total_area'];
+                $regionTotals['total_units'] += $metrics['total_units'];
+
+                // Ensure non-submitted price ranges exist with zero values for the combined table
+                if (!isset($data['region_data'][$year][$month][$region][$range])) {
+                     $data['region_data'][$year][$month][$region][$range] = $metrics;
+                }
+            }
+            
+            // Calculate Region 'รวม' metric
+            $regionTotals['average_price_per_sqm'] = ($regionTotals['total_area'] > 0) ? round($regionTotals['total_value'] / $regionTotals['total_area'], 2) : 0.00;
+            
+            // Add the region's total metrics under the 'รวม' price range category
+            $data['region_data'][$year][$month][$region]['รวม'] = $regionTotals;
+
+            // Accumulate for National Totals
+            $nationalTotals['total_value'] += $regionTotals['total_value'];
+            $nationalTotals['total_area'] += $regionTotals['total_area'];
+            $nationalTotals['total_units'] += $regionTotals['total_units'];
+            
+             // Ensure all regions exist in the month's data
+            if (!isset($data['region_data'][$year][$month][$region])) {
+                $data['region_data'][$year][$month][$region] = [];
+            }
+        }
+        
+        // Calculate National 'รวมทั่วประเทศ' metrics
+        $nationalTotals['average_price_per_sqm'] = ($nationalTotals['total_area'] > 0) ? round($nationalTotals['total_value'] / $nationalTotals['total_area'], 2) : 0.00;
+        
+        // Store National Totals under 'รวมทั่วประเทศ' with 'รวม' price range category
+        $data['region_data'][$year][$month]['รวมทั่วประเทศ']['รวม'] = $nationalTotals;
+    }
+}
+
+
+// --- 4. Comprehensive Membership Data Processing Logic ---
+
+// 1. Fetch all users (user, admin, master)
+$sqlAllUsers = "
+    SELECT id, email, fullname, role
+    FROM users
+    ORDER BY role DESC, fullname ASC";
+$stmtAllUsers = $conn->prepare($sqlAllUsers);
+$stmtAllUsers->execute();
+$allUsers = $stmtAllUsers->fetchAll(PDO::FETCH_ASSOC);
+
+$userIds = [];
+if (!empty($allUsers)) {
+    $userIds = array_column($allUsers, 'id');
+} else {
+    // ไม่มี user ในระบบ, ส่งข้อมูลว่าง
+    $data['membership_data'] = [];
+    echo json_encode($data, JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+
+// 2. Fetch all contract submissions for these users
+$userIdPlaceholders = implode(',', array_fill(0, count($userIds), '?'));
+$sqlSubmissions = "
+    SELECT user_id, buddhist_year, month_number
+    FROM contract_submission
+    WHERE user_id IN ($userIdPlaceholders)
+    ORDER BY user_id, buddhist_year, month_number";
+$stmtSubmissions = $conn->prepare($sqlSubmissions);
+$stmtSubmissions->execute($userIds);
+$submissions = $stmtSubmissions->fetchAll(PDO::FETCH_ASSOC);
+
+// 3. Process data into the structure expected by Vue's MemberSubmission interface
+$membershipData = [];
+
+// Initialize the structure for all users
+foreach ($allUsers as $user) {
+    $membershipData[$user['id']] = [
+        'member_id' => (string)$user['id'],
+        'name' => $user['fullname'] ?? $user['email'],
+        'role' => $user['role'],
+        'total_submitted_count' => 0,
+        'submissions_by_year' => new stdClass(), // ใช้ stdClass() เพื่อให้เป็น {}
+        'submissions_in_period' => new stdClass(), // ใช้ stdClass() เพื่อให้เป็น {}
+    ];
+}
+
+// Populate the submission data
+foreach ($submissions as $sub) {
+    $uid = (int)$sub['user_id'];
+    $year = (string)$sub['buddhist_year'];
+    $month = (int)$sub['month_number'];
+    
+    if (isset($membershipData[$uid])) {
+        // Total submitted count (lifetime: assuming each row in contract_submission is one submission)
+        $membershipData[$uid]['total_submitted_count'] += 1;
+        
+        // Submissions by year
+        if (!isset($membershipData[$uid]['submissions_by_year']->{$year})) {
+            $membershipData[$uid]['submissions_by_year']->{$year} = 0;
+        }
+        $membershipData[$uid]['submissions_by_year']->{$year} += 1;
+        
+        // Submissions in period (months submitted by year)
+        if (!isset($membershipData[$uid]['submissions_in_period']->{$year})) {
+            $membershipData[$uid]['submissions_in_period']->{$year} = [];
+        }
+        // Only add unique month number to the array
+        if (!in_array($month, $membershipData[$uid]['submissions_in_period']->{$year})) {
+             $membershipData[$uid]['submissions_in_period']->{$year}[] = $month;
+        }
+    }
+}
+
+// Final array conversion (only the array of users is needed)
+$data['membership_data'] = array_values($membershipData);
 
 // Return the data as JSON
 echo json_encode($data, JSON_UNESCAPED_UNICODE);
-
 
 // Helper function to get months in a given quarter
 function getMonthsInQuarter($quarter) {
     switch ($quarter) {
         case 1:
-            return [1, 2, 3];  // January, February, March
+            return [1, 2, 3];
         case 2:
-            return [4, 5, 6];  // April, May, June
+            return [4, 5, 6];
         case 3:
-            return [7, 8, 9];  // July, August, September
+            return [7, 8, 9];
         case 4:
-            return [10, 11, 12];  // October, November, December
+            return [10, 11, 12];
         default:
-            return [];  // Return an empty array if an invalid quarter is provided
+            return [];
     }
 }
 

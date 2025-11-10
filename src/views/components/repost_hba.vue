@@ -1305,15 +1305,19 @@ const memberListChartData = computed(() => {
     };
 });
 
+// ก้อนที่ 1: computed สำหรับความสูง (แยกออกมา)
+const barChartHeight = computed(() => {
+    const len = memberListChartData.value.categories.length;
+    return len > 0
+        ? 350 + (len * 30)
+        : 350;
+});
 
-
+// ก้อนที่ 2: computed สำหรับ Options (ที่ "ไม่มี" height อยู่ข้างใน)
 const barChartOptions = computed(() => ({
     chart: {
         type: 'bar',
-
-        height: memberListChartData.value.categories.length > 0
-            ? 350 + (memberListChartData.value.categories.length * 30)
-            : 350,
+        // สังเกต!!: height ที่เคยอยู่ตรงนี้ "ถูกลบออกไปแล้ว"
         fontFamily: 'inherit',
         foreColor: '#adb0bb',
         toolbar: { show: false },
@@ -1350,7 +1354,6 @@ const barChartOptions = computed(() => ({
     },
     legend: { show: false }
 }));
-
 
 const donutChartOptions = computed(() => ({
     chart: {
@@ -1900,8 +1903,7 @@ const growthRateReportTableData = computed<GrowthRateCategory[]>(() => {
                                             (ปีที่เลือก)</v-card-title>
                                         <v-card-text class="pa-2">
                                             <apexchart id="barChartMember" type="bar" :options="barChartOptions"
-                                                :series="memberListChartData.series"
-                                                :height="barChartOptions.chart.height" />
+                                                :series="memberListChartData.series" :height="barChartHeight" />
                                         </v-card-text>
                                     </v-card>
                                 </v-col>
@@ -1939,7 +1941,7 @@ const growthRateReportTableData = computed<GrowthRateCategory[]>(() => {
                                     <template v-if="memberMonthlySubmissionTableData.length > 0">
                                         <tr v-for="member in memberMonthlySubmissionTableData" :key="member.name">
                                             <td class="text-left font-weight-bold text-caption border-e">{{ member.name
-                                                }}</td>
+                                            }}</td>
 
                                             <td v-for="period in tablePeriods.filter(p => p.key !== 'TOTAL_PERIODS')"
                                                 :key="period.key" class="text-center text-subtitle-2"
