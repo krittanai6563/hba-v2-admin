@@ -153,21 +153,19 @@ const fetchSummary = async () => {
         role: userRole
     };
 
-    const monthsToFetch = targetMonthIndices.value;
+    const monthsToFetch = combinedTargetMonthIndices.value; // <--- 1. ใช้ตัวใหม่
+    const quartersToFetch = selectQuarters.value.map((quarterName: string) => quarterMap[quarterName] || null).filter(Boolean);
 
-
-    if (monthsToFetch.length > 0) {
+    if (monthsToFetch.length > 0) { // <--- 2. ส่งเดือนที่รวมแล้ว
         data.months = monthsToFetch;
     }
-    else if (selectQuarters.value.length > 0) {
 
-        data.quarters = selectQuarters.value.map((quarterName: string) => quarterMap[quarterName] || null);
+    if (quartersToFetch.length > 0) { // <--- 3. ลบ 'else' ออก
+        data.quarters = quartersToFetch;
     }
-    console.log('Sending data to backend:', data);
 
     try {
-        // 1. URL ต้องเป็น string '...' ที่สมบูรณ์ในพารามิเตอร์แรก
-        // 2. พารามิเตอร์ที่สองต้องเป็น object ที่ครอบด้วย { ... }
+        // นี่คือบรรทัดที่ 171 (หรือใกล้เคียง)
         const res = await fetch('https://uat.hba-sales.org/backend/repost_admin.php', {
             method: 'POST',
             headers: {
@@ -196,30 +194,27 @@ const fetchSummary = async () => {
 
 }; //
 
-const targetMonthIndices = computed<number[]>(() => {
-    const selectedMonths = selectMonths.value;
+// เพิ่มโค้ดบล็อกนี้เข้าไปแทนที่ (ประมาณบรรทัด 202)
+const combinedTargetMonthIndices = computed<number[]>(() => {
+    let indices: number[] = [];
+
+    // 1. ดึงเดือนจาก "ไตรมาส" ที่เลือก
     const selectedQuarters = selectQuarters.value;
-
-    let monthIndices: number[] = [];
-
-
     if (selectedQuarters.length > 0) {
         selectedQuarters.forEach(qName => {
             const quarter = Quarters.find(q => q.name === qName);
-            if (quarter) monthIndices.push(...quarter.months);
+            if (quarter) indices.push(...quarter.months);
         });
     }
 
-
-
-    const manualMonthIndices = selectedMonths.map(m => monthMap[m]).filter(Boolean) as number[];
+    // 2. ดึงเดือนจาก "เดือน" ที่เลือก
+    const manualMonthIndices = selectMonths.value.map(m => monthMap[m]).filter(Boolean) as number[];
     if (manualMonthIndices.length > 0) {
-        monthIndices.push(...manualMonthIndices);
+        indices.push(...manualMonthIndices);
     }
 
-
-
-    return Array.from(new Set(monthIndices)).sort((a, b) => a - b);
+    // 3. คืนค่าเป็นรายการเดือนที่ไม่ซ้ำกัน และเรียงลำดับแล้ว
+    return Array.from(new Set(indices)).sort((a, b) => a - b);
 });
 
 const updateChartData = (data: SummaryData) => {
@@ -236,27 +231,9 @@ const updateChartData = (data: SummaryData) => {
     const getValue = (dataObj: Metrics | undefined) => (dataObj?.total_value || 0);
 
 
-    const getSelectedMonthIndices = () => {
 
-        const monthIndices = selectMonths.value.map(m => monthMap[m]).filter(Boolean) as number[];
-        if (monthIndices.length > 0) {
-            return Array.from(new Set(monthIndices)).sort((a, b) => a - b);
-        }
+    const targetMonths = combinedTargetMonthIndices.value;
 
-
-        if (selectedQuarters.length > 0) {
-            let months: number[] = [];
-            selectedQuarters.forEach(qName => {
-                const quarter = Quarters.find(q => q.name === qName);
-                if (quarter) months.push(...quarter.months);
-            });
-            return Array.from(new Set(months)).sort((a, b) => a - b);
-        }
-
-        return [];
-    };
-
-    const targetMonths = getSelectedMonthIndices();
 
 
     if (selectedYears.length === 1 && (selectedMonths.length > 1 || selectedQuarters.length > 0)) {
@@ -345,6 +322,29 @@ const updateChartData = (data: SummaryData) => {
     chartSeries.value = finalChartSeries;
 };
 
+const getSelectedMonthIndices = () => {
+    let combinedTargetMonthIndices: number[] = [];
+
+    // 1. ดึงเดือนจาก "ไตรมาส" ที่เลือก
+    const selectedQuarters = selectQuarters.value;
+    if (selectedQuarters.length > 0) {
+        selectedQuarters.forEach(qName => {
+            const quarter = Quarters.find(q => q.name === qName);
+            if (quarter) combinedTargetMonthIndices.push(...quarter.months);
+        });
+    }
+
+    // 2. ดึงเดือนจาก "เดือน" ที่เลือก
+    const manualMonthIndices = selectMonths.value.map(m => monthMap[m]).filter(Boolean) as number[];
+    if (manualMonthIndices.length > 0) {
+        combinedTargetMonthIndices.push(...manualMonthIndices);
+    }
+
+    // 3. สร้างรายการเดือนเป้าหมายที่ชัดเจน
+    return Array.from(new Set(combinedTargetMonthIndices)).sort((a, b) => a - b);
+};
+
+const targetMonths = getSelectedMonthIndices();
 
 const chartSubtitle = computed(() => {
 
@@ -360,13 +360,19 @@ const chartSubtitle = computed(() => {
 
 
     let monthIndices: number[] = [];
+
+    // 1. ดึงเดือนจาก "ไตรมาส" ที่เลือก
     if (selectedQuarters.length > 0) {
+        selectedQuarters.forEach(qName => {
+            const quarter = Quarters.find(q => q.name === qName);
+            if (quarter) monthIndices.push(...quarter.months);
+        });
+    }
 
-        monthIndices = selectedMonths.map(m => monthMap[m]).filter(Boolean);
-
-    } else if (selectedMonths.length > 0) {
-
-        monthIndices = selectedMonths.map(m => monthMap[m]).filter(Boolean);
+    // 2. ดึงเดือนจาก "เดือน" ที่เลือก
+    const manualMonthIndices = selectedMonths.map(m => monthMap[m]).filter(Boolean) as number[];
+    if (manualMonthIndices.length > 0) {
+        monthIndices.push(...manualMonthIndices);
     }
 
     const sortedMonthIndices = Array.from(new Set(monthIndices)).sort((a, b) => a - b);
@@ -642,17 +648,26 @@ const tablePeriods = computed(() => {
 
     const sortedYears = [...selectedYears].sort((a, b) => a.localeCompare(b, 'th-TH'));
 
+    let combinedTargetMonthIndices: number[] = [];
 
-    /*
-    let targetMonthIndices: number[] = [];
-    ... (ลบออกให้หมด) ...
-    */
+    // 1. ดึงเดือนจาก "ไตรมาส" ที่เลือก
+    const selectedQuarters = selectQuarters.value;
+    if (selectedQuarters.length > 0) {
+        selectedQuarters.forEach(qName => {
+            const quarter = Quarters.find(q => q.name === qName);
+            if (quarter) combinedTargetMonthIndices.push(...quarter.months);
+        });
+    }
 
+    // 2. ดึงเดือนจาก "เดือน" ที่เลือก
+    const manualMonthIndices = selectMonths.value.map(m => monthMap[m]).filter(Boolean) as number[];
+    if (manualMonthIndices.length > 0) {
+        combinedTargetMonthIndices.push(...manualMonthIndices);
+    }
 
-    const currentTargetMonthIndices = targetMonthIndices.value;
-
-
-
+    // 3. สร้างรายการเดือนเป้าหมายที่ชัดเจน (ไม่ซ้ำ และ เรียงลำดับ)
+    const currentTargetMonthIndices = Array.from(new Set(combinedTargetMonthIndices)).sort((a, b) => a - b);
+    // --- END: NEW LOGIC ---
 
     if (currentTargetMonthIndices.length > 0) {
         const yearsToProcess = sortedYears.length > 0 ? sortedYears : [currentBuddhistYear];
@@ -740,6 +755,8 @@ const tablePeriods = computed(() => {
 
 
 
+// 🚀 LOGIC (Reverted to Original): Computed Property สำหรับตารางสรุปมูลค่าบ้าน (Price Range)
+// (กลับมาใช้ Logic นี้ เพราะ PHP แก้ไข Bug ของ monthly_data แล้ว)
 const monthlyReportTableData = computed<TableCategory[]>(() => {
     if (!summaryData.value) {
         return [];
@@ -747,22 +764,23 @@ const monthlyReportTableData = computed<TableCategory[]>(() => {
 
     const currentPeriods = tablePeriods.value;
     const grandTotalPeriodKey = 'TOTAL_PERIODS';
-    const allCategories = [...valueCategories, 'รวม'];
+    const allCategories = [...valueCategories, 'รวม']; // Categories to display
 
-
+    // Function to get Metrics object for a given period and category
+    // (ฟังก์ชันนี้กลับมาทำงานถูกต้องแล้ว เพราะ PHP ส่งข้อมูลที่ถูกต้องมา)
     const getMetrics = (period: typeof currentPeriods[0], category: string): Metrics => {
         let metrics: Metrics | undefined;
 
-
+        // Use monthly data if month index is available (for month-by-month and quarter views)
         if (period.monthIndex && period.monthIndex !== 0) {
             metrics = summaryData.value?.monthly_data[period.year]?.[period.monthIndex]?.[category];
         }
-
+        // Use yearly data if no month index is available (for year summary views)
         else if (!period.monthIndex && period.year !== 'TOTAL') {
             metrics = summaryData.value?.yearly_data[period.year]?.[category];
         }
 
-
+        // Return initialized metrics if data is missing, ensures keys exist
         if (!metrics) {
             return { total_value: 0, total_area: 0, total_units: 0, average_price_per_sqm: 0 };
         }
@@ -780,74 +798,48 @@ const monthlyReportTableData = computed<TableCategory[]>(() => {
 
         metricRows.forEach(metric => {
             const row: TableRow = {
-                metricKey: metric.key as keyof Metrics | 'average_price_per_sqm',
+                metricKey: metric.key as keyof Metrics | 'average_price_per_sqm', // Cast to correct type
                 metricName: metric.name,
                 format: metric.format,
                 data: {}
             };
 
-            let totalMetricValue = 0;
-            let totalValueForAvg = 0;
-            let totalAreaForAvg = 0;
+            let totalMetricValue = 0; // Sum of Metric Value for 'รวมทุกช่วง' (for total_value, total_area, total_units)
+            let totalValueForAvg = 0; // Temp variable for calculating overall avg_price_per_sqm
+            let totalAreaForAvg = 0; // Temp variable for calculating overall avg_price_per_sqm
 
-
+            // 1. Process data for each data period
             currentPeriods.filter(p => p.key !== grandTotalPeriodKey).forEach(p => {
                 const periodKey = p.key;
 
+                // 🚀 (REVERTED) กลับมาใช้ getMetrics แบบง่ายๆ เพราะข้อมูลถูกต้องแล้ว
+                const metrics = getMetrics(p, categoryName);
 
-
-
-                let aggregatedMetrics: Metrics = { total_value: 0, total_area: 0, total_units: 0, average_price_per_sqm: 0 };
-                let foundData = false;
-
-
-                const regionsToSum = regionCategories.filter(r => r !== 'รวมทั่วประเทศ');
-
-
-                regionsToSum.forEach(region => {
-                    const regionalMetric = getRegionalMetrics(p, region, categoryName);
-
-                    if (regionalMetric) {
-                        aggregatedMetrics.total_value += regionalMetric.total_value;
-                        aggregatedMetrics.total_area += regionalMetric.total_area;
-                        aggregatedMetrics.total_units += regionalMetric.total_units;
-                        foundData = true;
-                    }
-                });
-
-
-                if (foundData) {
-                    aggregatedMetrics.average_price_per_sqm = (aggregatedMetrics.total_area > 0) ? (aggregatedMetrics.total_value / aggregatedMetrics.total_area) : 0;
-                }
-
-                const metrics = aggregatedMetrics;
-
-
-
+                // Extract the specific metric value
                 let metricValue: number = metrics[metric.key as keyof Metrics] || 0;
 
-
+                // Store metric value for this period
                 row.data[periodKey] = metricValue;
 
-
+                // 2. Accumulate values for 'รวมทุกช่วง' (Only for summetric, not for average)
                 if (metric.key !== 'average_price_per_sqm') {
                     totalMetricValue += metricValue;
                 }
 
-
+                // 3. Accumulate total value and total area across periods for final average calculation
                 totalValueForAvg += metrics.total_value;
                 totalAreaForAvg += metrics.total_area;
             });
 
-
+            // 4. Calculate and add 'รวมทุกช่วง' column
             if (currentPeriods.some(p => p.key === grandTotalPeriodKey)) {
                 let grandTotalMetricValue: number;
 
                 if (metric.key === 'average_price_per_sqm') {
-
+                    // Recalculate average price for the total period
                     grandTotalMetricValue = totalAreaForAvg > 0 ? (totalValueForAvg / totalAreaForAvg) : 0;
                 } else {
-
+                    // Use the simple sum for total_value, total_area, total_units
                     grandTotalMetricValue = totalMetricValue;
                 }
 
@@ -861,8 +853,6 @@ const monthlyReportTableData = computed<TableCategory[]>(() => {
 
     return finalTable;
 });
-
-
 const regionReportTableData = computed<TableCategory[]>(() => {
     if (!summaryData.value) {
         return [];
@@ -1912,7 +1902,7 @@ const growthRateReportTableData = computed<GrowthRateCategory[]>(() => {
                                     <template v-if="memberMonthlySubmissionTableData.length > 0">
                                         <tr v-for="member in memberMonthlySubmissionTableData" :key="member.name">
                                             <td class="text-left font-weight-bold text-caption border-e">{{ member.name
-                                                }}</td>
+                                            }}</td>
 
                                             <td v-for="period in tablePeriods.filter(p => p.key !== 'TOTAL_PERIODS')"
                                                 :key="period.key" class="text-center text-subtitle-2"
@@ -1979,8 +1969,7 @@ const growthRateReportTableData = computed<GrowthRateCategory[]>(() => {
                                                 <td v-for="period in tablePeriods" :key="period.key"
                                                     class="text-right text-subtitle-2"
                                                     :class="{ 'text-primary font-weight-bold': category.categoryName === 'รวม' && row.metricKey === 'total_value', 'border-e': period.key !== tablePeriods[tablePeriods.length - 1].key }">
-                                                    {{ (row.data[period.key] || 0) !== 0 ?
-                                                    row.format(row.data[period.key] || 0) : '-' }}
+                                                    {{ row.format(row.data[period.key] || 0) }}
                                                 </td>
                                             </tr>
                                         </template>
@@ -2044,8 +2033,7 @@ const growthRateReportTableData = computed<GrowthRateCategory[]>(() => {
                                                 <td v-for="period in tablePeriods" :key="period.key"
                                                     class="text-right text-subtitle-2"
                                                     :class="{ 'text-primary font-weight-bold': region.categoryName === 'รวมทั่วประเทศ' && row.metricKey === 'total_value', 'border-e': period.key !== tablePeriods[tablePeriods.length - 1].key }">
-                                                    {{ (row.data[period.key] || 0) !== 0 ?
-                                                    row.format(row.data[period.key] || 0) : '-' }}
+                                                    {{ row.format(row.data[period.key] || 0) }}
                                                 </td>
                                             </tr>
                                         </template>
@@ -2125,8 +2113,7 @@ const growthRateReportTableData = computed<GrowthRateCategory[]>(() => {
                                                     <td v-for="period in tablePeriods" :key="period.key"
                                                         class="text-right text-subtitle-2"
                                                         :class="{ 'text-primary font-weight-bold': (regionGroup.regionName === 'รวมทั่วประเทศ' || category.categoryName === 'รวม') && row.metricKey === 'total_value', 'border-e': period.key !== tablePeriods[tablePeriods.length - 1].key }">
-                                                        {{ (row.data[period.key] || 0) !== 0 ?
-                                                        row.format(row.data[period.key] || 0) : '-' }}
+                                                        {{ row.format(row.data[period.key] || 0) }}
                                                     </td>
                                                 </tr>
                                             </template>
