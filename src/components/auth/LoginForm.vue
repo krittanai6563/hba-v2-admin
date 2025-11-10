@@ -1,12 +1,18 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
+import { useAlertStore } from '@/stores/alert';
 
 const checkbox = ref(true);
 const email = ref(''); 
 const password = ref('');
 const errorMessage = ref(''); 
 const router = useRouter();
+const alertStore = useAlertStore();
+
+// --- (ส่วนที่เพิ่ม 1: สำหรับปุ่มแสดงรหัสผ่าน) ---
+const showPassword = ref(false);
+// --- (จบส่วนที่เพิ่ม 1) ---
 
 const mainAlert = ref(false);
 const mainAlertType = ref<'success' | 'error'>('success');
@@ -34,8 +40,24 @@ const handleLogin = async () => {
       sessionStorage.setItem('user', JSON.stringify({ ...data.user, loginTime: Date.now() }));
       localStorage.setItem('user_id', data.user.id);
       localStorage.setItem('user_role', data.user.role); 
+      
+      // (ส่วนที่ 1: สั่งยิง ALERT)
+      alertStore.showAlert('เข้าสู่ระบบสำเร็จ!', 'success');
+
       await new Promise(resolve => setTimeout(resolve, 300));
-      router.push({ name: 'Dashboard' });
+
+      // (ส่วนที่ 2: Logic การ Redirect)
+      const userRole = data.user.role;
+      const currentDate = new Date().getDate();
+
+      if (userRole === 'admin' && currentDate < 11) {
+        // ถ้าเป็น admin และ ก่อนวันที่ 11 ให้เด้งไปหน้า 'User' (/ui/user)
+        router.push({ name: 'User' }); 
+      } else {
+        // กรณีอื่นๆ ทั้งหมด (admin หลังวันที่ 11, master, user) ให้เด้งไปหน้า 'Dashboard' (/)
+        router.push({ name: 'Dashboard' });
+      }
+
     } else {
       
       if (data.message === 'Invalid username' || data.message === 'Invalid credentials') { 
@@ -138,11 +160,13 @@ const handleRequestReset = async () => {
           id="password"
           autocomplete="current-password"
           variant="outlined"
-          type="password"
+          :type="showPassword ? 'text' : 'password'"
           hide-details
           color="primary"
+          :append-inner-icon="showPassword ? 'mdi-eye-off' : 'mdi-eye'"
+          @click:append-inner="showPassword = !showPassword"
         />
-      </v-col>
+        </v-col>
       <v-col cols="12" class="pt-0">
         <div class="d-flex flex-wrap align-center ml-n2">
           <v-checkbox v-model="checkbox" color="primary" hide-details>
@@ -236,5 +260,3 @@ const handleRequestReset = async () => {
   font-size: 0.875rem; 
 }
 </style>
-
-

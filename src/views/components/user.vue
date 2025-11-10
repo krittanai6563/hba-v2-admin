@@ -6,6 +6,9 @@ import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
 import type { BorderStyle, Cell } from 'exceljs';
 
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+
 
 const memberTypes = ref(['สามัญ', 'วิสามัญ ก', 'สมทบ']);
 const selectedMemberTypeForm = ref('สามัญ');
@@ -34,6 +37,22 @@ const showMessageBox = ref(false);
 
 const selectedFile = ref<File | null>(null);
 
+
+
+// --- [เพิ่มใหม่ (ถ้ายังไม่มี)] ---
+const exportLoading = ref(false); // สำหรับ v-overlay
+// (คุณมี snackbar, snackbarText, snackbarColor อยู่แล้ว, ใช้ร่วมกันได้)
+
+const blobToDataURL = (blob: Blob): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      resolve(reader.result as string); 
+    };
+    reader.onerror = (error) => reject(error);
+    reader.readAsDataURL(blob); 
+  });
+};
 const handleFileUpload = () => {
     if (selectedFile.value) {
         console.log('File selected:', selectedFile.value);
@@ -382,7 +401,7 @@ async function exportToExcel() {
     allWorksheet.addRow([]); // แถวที่ 3
 
     // หัวข้อตาราง
-    allWorksheet.addRow(['ที่', 'บริษัท', 'ประเภทสมาชิก', headerYearDisplay]); // เพิ่ม 'ประเภทสมาชิก'
+    allWorksheet.addRow(['ที่', 'บริษัท', 'ประเภทสมาชิก', headerMonthDisplay]); // เพิ่ม 'ประเภทสมาชิก'
     const allHeaderRow4 = allWorksheet.getRow(4);
     allHeaderRow4.font = { ...angsanaNewFont, bold: true };
     allHeaderRow4.alignment = { vertical: 'middle', horizontal: 'center' };
@@ -509,7 +528,7 @@ async function exportToExcel() {
         worksheet.addRow([]); // แถวที่ 3
 
         // หัวข้อตาราง
-        worksheet.addRow(['ที่', 'บริษัท', headerYearDisplay]);
+        worksheet.addRow(['ที่', 'บริษัท', headerMonthDisplay]);
         const headerRow4 = worksheet.getRow(4);
         headerRow4.font = { ...angsanaNewFont, bold: true };
         headerRow4.alignment = { vertical: 'middle', horizontal: 'center' };
@@ -629,9 +648,268 @@ async function exportToExcel() {
     a.click();
     window.URL.revokeObjectURL(url);
 }
+
+async function exportToPdf() {
+    exportLoading.value = true;
+    snackbar.value = false;
+
+    try {
+        // --- 1. โหลดทรัพยากร (ฟอนต์และโลโก้) ---
+        
+        // (1.1) โหลดฟอนต์ (Regular)
+        const fontUrl = '/fonts/THSarabunNew.ttf'; // (ตรวจสอบว่ามีไฟล์นี้ใน /public/fonts/)
+        let fontBase64 = '';
+        try {
+            const fontResponse = await fetch(fontUrl);
+            if (!fontResponse.ok) throw new Error('Failed to fetch local font: /fonts/THSarabunNew.ttf');
+            const fontBlob = await fontResponse.blob();
+            const fontDataURL = await blobToDataURL(fontBlob);
+            fontBase64 = fontDataURL.split(',')[1];
+            if (!fontBase64) throw new Error('Failed to parse Base64 from font Data URL');
+        } catch (fontErr: any) {
+            throw new Error(`Font (Regular) loading failed: ${fontErr.message}`);
+        }
+        
+        // ⭐️ [แก้ไขจุดที่ 2] โหลดฟอนต์ (Bold)
+        const fontBoldUrl = '/fonts/THSarabunNew Bold.ttf'; // (ต้องมีไฟล์นี้ใน /public/fonts/)
+        let fontBoldBase64 = '';
+        try {
+            const fontResponse = await fetch(fontBoldUrl);
+            if (!fontResponse.ok) throw new Error('Failed to fetch local font: /fonts/THSarabunNew Bold.ttf');
+            const fontBlob = await fontResponse.blob();
+            const fontDataURL = await blobToDataURL(fontBlob);
+            fontBoldBase64 = fontDataURL.split(',')[1];
+            if (!fontBoldBase64) throw new Error('Failed to parse Base64 from font Data URL');
+        } catch (fontErr: any) {
+            throw new Error(`Font (Bold) loading failed: ${fontErr.message}`);
+        }
+        
+        // ⭐️ [แก้ไขจุดที่ 1] โหลดโลโก้ (ยืมจาก region.vue)
+        const logoUrl = '/assets/images/image-28-2.png'; // (ต้องมีไฟล์นี้ใน /public/assets/images/)
+        let logoDataURL = '';
+        try {
+            const logoResponse = await fetch(logoUrl);
+            if (logoResponse.ok) {
+                const logoBlob = await logoResponse.blob();
+                logoDataURL = await blobToDataURL(logoBlob);
+            } else {
+                console.warn('Logo file not found in /assets/images/image-28-2.png. Skipping logo.');
+            }
+        } catch (imgErr) {
+            console.error('Error fetching logo, skipping:', imgErr);
+        }
+
+
+        // --- 2. สร้าง PDF และตั้งค่าฟอนต์ ---
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const fontName = 'THSarabunNew';
+        
+        // ลงทะเบียนฟอนต์ Regular
+        pdf.addFileToVFS('THSarabunNew.ttf', atob(fontBase64));
+        pdf.addFont('THSarabunNew.ttf', fontName, 'normal');
+        
+        // ⭐️ [แก้ไขจุดที่ 2] ลงทะเบียนฟอนต์ Bold
+        pdf.addFileToVFS('THSarabunNew Bold.ttf', atob(fontBoldBase64));
+        pdf.addFont('THSarabunNew Bold.ttf', fontName, 'bold');
+        
+        pdf.setFont(fontName, 'normal'); // ตั้งค่าเริ่มต้น
+
+        // --- 3. เตรียมข้อมูล (เหมือนเดิม) ---
+        let headerYearDisplay = 'ไม่ระบุปี';
+        let headerMonthDisplay = 'ไม่ระบุเดือน';
+        if (selectedYearFilter.value) {
+            headerYearDisplay = `ปี ${selectedYearFilter.value}`;
+        } else {
+            headerYearDisplay = `ปี ${new Date().getFullYear() + 543}`;
+        }
+        if (selectedMonthFilter.value) {
+            const [year, monthNum] = selectedMonthFilter.value.split('-');
+            const monthIndex = parseInt(monthNum) - 1;
+            headerMonthDisplay = `เดือน${monthNames[monthIndex]}`;
+        } else {
+            headerMonthDisplay = `เดือน${monthNames[new Date().getMonth()]}`;
+        }
+        const titleText = `ข้อมูลสมาชิกที่กรอกข้อมูลประจำ${headerMonthDisplay} ${headerYearDisplay}`;
+        
+        const groupedByType: { [key: string]: Member[] } = {};
+        members.value.forEach((member) => {
+            if (!groupedByType[member.member_type]) {
+                groupedByType[member.member_type] = [];
+            }
+            groupedByType[member.member_type].push(member);
+        });
+        
+        let fileName = 'members_report';
+        if (selectedYearFilter.value) fileName += `_${selectedYearFilter.value}`;
+        if (selectedMonthFilter.value && selectedYearFilter.value) {
+            const [year, monthNum] = selectedMonthFilter.value.split('-');
+            const monthIndex = parseInt(monthNum) - 1;
+            fileName += `_${monthNames[monthIndex]}`;
+        }
+
+        // --- 4. สร้างหน้าปก ---
+        const pageWidth = pdf.internal.pageSize.getWidth();
+        const pageCenter = pageWidth / 2;
+        let currentY = 90; // ตำแหน่งเริ่มต้น Y
+
+        // ⭐️ [แก้ไขจุดที่ 1] เพิ่มโลโก้
+        if (logoDataURL) {
+            const logoWidth = 60;
+            const logoHeight = 70; // (ปรับสัดส่วนตามโลโก้ของคุณ)
+            const logoX = pageCenter - (logoWidth / 2);
+            pdf.addImage(logoDataURL, 'PNG', logoX, currentY, logoWidth, logoHeight);
+            currentY += logoHeight + 15; // เลื่อน Y ลงมาใต้โลโก้
+        } else {
+            currentY = 100; // ถ้าไม่มีโลโก้ ก็เริ่มที่ 100
+        }
+        
+        pdf.setFont(fontName, 'bold'); // ⭐️ ใช้ฟอนต์หนาสำหรับหัวข้อ
+        pdf.setFontSize(20);
+        pdf.text(titleText, pageCenter, currentY, { align: 'center' });
+        currentY += 10;
+        
+        pdf.setFont(fontName, 'normal'); // กลับเป็นฟอนต์ปกติ
+        const today = new Date();
+        const dateString = `อัพเดตข้อมูลวันที่ ${today.getDate()} ${monthNames[today.getMonth()]} ${today.getFullYear() + 543}`;
+        pdf.setFontSize(15);
+        pdf.text(dateString, pageCenter, currentY, { align: 'center' });
+
+
+        // --- 5. สร้างชีต "สมาชิกทั้งหมด" ---
+        pdf.addPage();
+        pdf.setFont(fontName, 'bold');
+        pdf.setFontSize(18);
+        pdf.text("สรุปสมาชิกสมาคมกรอกยอดเซ็นสัญญาทั้งหมด", pageCenter, 20, { align: 'center' });
+         pdf.setFont(fontName, 'normal');
+            pdf.setFontSize(14);
+            pdf.text(titleText, pageCenter, 28, { align: 'center' }); // หัวข้อรอง
+        
+        const allHead = [['ที่', 'บริษัท', 'ประเภทสมาชิก', 'สถานะเดือน']];
+        
+        // ⭐️ [แก้ไขจุดที่ 4] เปลี่ยน '✓' เป็น 'กรอกแล้ว'
+        const allBody = members.value.map((member, index) => {
+            const statusIndicator = member.status === 'กรอกข้อมูลเรียบร้อย' ? 'กรอกแล้ว' : 'ยังไม่กรอก';
+            return [index + 1, member.fullname, member.member_type, statusIndicator];
+        });
+
+        autoTable(pdf, {
+            head: allHead,
+            body: allBody,
+            startY: 30,
+            styles: {
+                font: fontName, // ⭐️ [แก้ไขจุดที่ 2] บอก autoTable ให้ใช้ฟอนต์นี้
+                fontStyle: 'normal',
+                fontSize: 10,
+                cellPadding: 1,
+            },
+            headStyles: {
+                font: fontName, // ⭐️ [แก้ไขจุดที่ 2]
+                fontStyle: 'bold', // ⭐️ ตอนนี้ใช้ 'bold' ได้แล้ว
+                fillColor: [220, 220, 220], 
+                textColor: [0, 0, 0]
+            },
+            columnStyles: {
+                3: { halign: 'left' } 
+            },
+            willDrawCell: (data) => {
+                if (data.section === 'body') {
+                    const member = members.value[data.row.index]; 
+                    if (member && member.status === 'ยังไม่กรอกข้อมูล') {
+                        pdf.setFillColor(255, 153, 153); // สีแดงอ่อน
+                    }
+                }
+            }
+        });
+
+
+        // --- 6. สร้างชีต "แยกตามประเภท" ---
+        for (const memberType of Object.keys(groupedByType)) {
+            pdf.addPage();
+            pdf.setFont(fontName, 'bold');
+            pdf.setFontSize(18);
+           pdf.text(`ประเภทสมาชิก ${memberType}`, pageCenter, 20, { align: 'center' }); // ชื่อประเภท
+            pdf.setFont(fontName, 'normal');
+            pdf.setFontSize(14);
+            pdf.text(titleText, pageCenter, 28, { align: 'center' }); // หัวข้อรอง
+
+            const typeHead = [['ที่', 'บริษัท', 'สถานะเดือน']];
+            
+            // ⭐️ [แก้ไขจุดที่ 4] เปลี่ยน '✓' เป็น 'กรอกแล้ว'
+            const typeBody = groupedByType[memberType].map((member, index) => {
+                 const statusIndicator = member.status === 'กรอกข้อมูลเรียบร้อย' ? 'กรอกแล้ว' : 'ยังไม่กรอก';
+                 return [index + 1, member.fullname, statusIndicator];
+            });
+
+            autoTable(pdf, {
+                head: typeHead,
+                body: typeBody,
+                startY: 35,
+                styles: {
+                    font: fontName, // ⭐️ [แก้ไขจุดที่ 2]
+                    fontStyle: 'normal',
+                    fontSize: 10,
+                    cellPadding: 1,
+                },
+                headStyles: {
+                    font: fontName, // ⭐️ [แก้ไขจุดที่ 2]
+                    fontStyle: 'bold', // ⭐️ ใช้ 'bold' ได้
+                    fillColor: [220, 220, 220],
+                    textColor: [0, 0, 0]
+                },
+                columnStyles: {
+                    2: { halign: 'left' }
+                },
+                willDrawCell: (data) => {
+                    if (data.section === 'body') {
+                        const member = groupedByType[memberType][data.row.index];
+                        if (member && member.status === 'ยังไม่กรอกข้อมูล') {
+                            pdf.setFillColor(255, 153, 153); 
+                        }
+                    }
+                }
+            });
+        }
+        
+        // --- 7. บันทึกไฟล์ ---
+        pdf.save(`${fileName}.pdf`);
+        
+        snackbarText.value = 'สร้างไฟล์ PDF สำเร็จแล้ว';
+        snackbarColor.value = 'success';
+        snackbar.value = true;
+
+    } catch (err: any) {
+        console.error('Error exporting to PDF:', err);
+        snackbarText.value = `ไม่สามารถสร้าง PDF ได้: ${err.message || 'เกิดข้อผิดพลาดไม่ทราบสาเหตุ'}`;
+        snackbarColor.value = 'error';
+        snackbar.value = true;
+    } finally {
+        exportLoading.value = false;
+    }
+}
 </script>
 
 <template>
+
+    <v-snackbar v-model="snackbar" :color="snackbarColor" :timeout="3000" location="top right">
+        </v-snackbar>
+
+    <v-overlay
+        :model-value="exportLoading"
+        class="align-center justify-center"
+        persistent
+        scrim="white"
+        style="opacity: 0.8;"
+    >
+        <div class="text-center">
+            <v-progress-circular
+                color="primary"
+                indeterminate
+                size="64"
+            ></v-progress-circular>
+            <h4 class="text-primary mt-3">กำลังสร้างไฟล์รายงาน...</h4>
+        </div>
+    </v-overlay>
+
      <v-snackbar v-model="snackbar" :color="snackbarColor" :timeout="3000" location="top right">
         {{ snackbarText }}
         <template v-slot:actions>
@@ -746,8 +1024,14 @@ async function exportToExcel() {
 
                                 <!-- Adjust margin between the buttons -->
                                 <v-btn class="text-primary v-btn--size-small ml-4" @click="exportToExcel">
-                                    <div class="text-none font-weight-regular muted">Export to CSV</div>
+                                    <v-icon start>mdi-file-excel</v-icon>
+                                    <div class="text-none font-weight-regular muted">Export to Excel</div>
                                 </v-btn>
+
+                               <v-btn class="text-primary v-btn--size-small ml-4" @click="exportToPdf" :loading="exportLoading">
+    <v-icon start>mdi-file-pdf-box</v-icon>
+    <div class="text-none font-weight-regular muted">Export to PDF</div>
+</v-btn>
                             </div>
                         </div>
                     </div>
@@ -844,34 +1128,35 @@ async function exportToExcel() {
                                                         <v-card rounded="lg">
                                                             <v-card-title> แก้ไขข้อมูลสมาชิก </v-card-title>
                                                             <v-card-text>
-                                                                <form @submit.prevent="updateMember(isActive)">
-                                                                    <v-row>
-                                                                        <v-col cols="12" sm="6">
-                                                                            <v-label>ชื่อบริษัท</v-label>
-                                                                            <v-text-field v-model="fullname"
-                                                                                readonly></v-text-field>
-                                                                        </v-col>
-                                                                        <v-col cols="12" sm="6">
-                                                                            <v-label>ประเภทสมาชิก</v-label>
-                                                                            <v-select v-model="selectedMemberTypeForm"
-                                                                                :items="memberTypes"></v-select>
-                                                                        </v-col>
-                                                                        <v-col cols="12">
-                                                                            <v-label>อีเมล</v-label>
-                                                                            <v-text-field v-model="email"
-                                                                                readonly></v-text-field>
-                                                                        </v-col>
-                                                                        <v-col cols="12">
-                                                                            <v-label>สิทธิการเข้าถึงข้อมูล</v-label>
-                                                                            <v-select v-model="selectedRole"
-                                                                                :items="items"></v-select>
-                                                                        </v-col>
-                                                                        <v-col cols="12">
-                                                                            <v-btn type="submit"
-                                                                                color="primary">บันทึกการแก้ไข</v-btn>
-                                                                        </v-col>
-                                                                    </v-row>
-                                                                </form>
+                                                              <form @submit.prevent="updateMember(isActive)">
+    <v-row>
+        <v-col cols="12" sm="6">
+            <v-label>ชื่อบริษัท</v-label>
+            <v-text-field v-model="fullname"
+                readonly></v-text-field>
+        </v-col>
+        <v-col cols="12" sm="6">
+            <v-label>ประเภทสมาชิก</v-label>
+            <v-select v-model="selectedMemberTypeForm"
+                :items="memberTypes"></v-select> 
+        </v-col>
+        <v-col cols="12">
+            <v-label>อีเมล</v-label>
+            <v-text-field v-model="email"
+                readonly></v-text-field>
+        </v-col>
+        <v-col cols="12">
+            <v-label>สิทธิการเข้าถึงข้อมูล</v-label>
+            <v-select v-model="selectedRole"
+                :items="items"
+                readonly></v-select> 
+        </v-col>
+        <v-col cols="12">
+            <v-btn type="submit"
+                color="primary">บันทึกการแก้ไข</v-btn>
+        </v-col>
+    </v-row>
+</form>
                                                             </v-card-text>
                                                         </v-card>
                                                     </template>
