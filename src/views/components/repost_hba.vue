@@ -1355,12 +1355,186 @@ interface MemberSubmission {
 
 
 
-// 🚀 NEW INTERFACE: สำหรับตารางแสดงสถานะการกรอกรายเดือน
-interface MemberMonthlyData {
-    name: string;
-    submissions: Record<string, string>; // Key is periodKey (M1Y2568), Value is 'X' (submitted) or '-' (not submitted)
+// ... (existing interfaces: Metrics, SummaryData) ...
+
+// --- NEW: Interface สำหรับตารางอัตราการเติบโต ---
+interface GrowthRateMetrics {
+    MoM: number | null; // Month-over-Month %
+    YoY: number | null; // Year-over-Year %
+    QoQ: number | null; // Quarter-over-Quarter %
+    YTD: number | null; // Year-to-Date %
 }
 
+interface GrowthRatePeriods {
+    [key: string]: GrowthRateMetrics; // Key คือ periodKey เช่น M1Y2568
+}
+
+interface GrowthRateCategory {
+    categoryName: string; // ช่วงมูลค่าบ้าน (เช่น 'ไม่เกิน 2.50 ล้านบาท' หรือ 'รวม')
+    total_value: GrowthRatePeriods; // Fixed key for total_value metrics
+    total_units: GrowthRatePeriods; // Fixed key for total_units metrics
+}
+
+// Helper Type เพื่อใช้ใน Logic
+type MetricGrowthKey = 'total_value' | 'total_units';
+
+// 🚀 NEW HELPER: ฟังก์ชันสำหรับรวมยอดสะสมในช่วงเดือนที่กำหนด
+const getAggregatedValue = (year: string, startMonth: number, endMonth: number, category: string, metricKey: keyof Metrics): number => {
+    let sum = 0;
+    const monthlyData = summaryData.value?.monthly_data[year];
+    
+    // YTD/QoQ ควรใช้กับ metrics ที่รวมค่าได้ (total_value, total_units, total_area)
+    if (metricKey === 'average_price_per_sqm') return 0;
+
+    if (!monthlyData) return 0;
+
+    for (let month = startMonth; month <= endMonth; month++) {
+        if (month < 1 || month > 12) continue; // Safety check
+        
+        const metrics = monthlyData[month]?.[category];
+        if (metrics) {
+            sum += metrics[metricKey] || 0;
+        }
+    }
+    return sum;
+};
+// Helper function to get metric value safely
+const getMetricValue = (period: typeof tablePeriods.value[0], category: string, metricKey: keyof Metrics): number => {
+    let metrics: Metrics | undefined;
+    
+    if (period.monthIndex && period.monthIndex !== 0) {
+        metrics = summaryData.value?.monthly_data[period.year]?.[period.monthIndex]?.[category];
+    } else if (!period.monthIndex && period.year !== 'TOTAL') {
+        metrics = summaryData.value?.yearly_data[period.year]?.[category];
+    }
+    
+    return metrics ? (metrics[metricKey as keyof Metrics] || 0) : 0;
+};
+
+// 🚀 NEW LOGIC: Computed Property สำหรับตารางอัตราการเติบโต (MoM%, YoY%, ฯลฯ)
+const growthRateReportTableData = computed<GrowthRateCategory[]>(() => {
+    if (!summaryData.value || tablePeriods.value.length === 0) {
+        return [];
+    }
+
+    // กรองเอาเฉพาะช่วงเวลาที่มีข้อมูล (ไม่รวม 'รวมทุกช่วง')
+    const periodsToCalculate = tablePeriods.value.filter(p => p.key !== 'TOTAL_PERIODS');
+    const allCategories = [...valueCategories, 'รวม']; // Categories to display
+    const finalTable: GrowthRateCategory[] = [];
+    const metricsToTrack: MetricGrowthKey[] = ['total_value', 'total_units'];
+
+    allCategories.forEach(categoryName => {
+        const categoryData: GrowthRateCategory = {
+            categoryName: categoryName,
+            total_value: {},
+            total_units: {},
+        };
+
+        metricsToTrack.forEach(metricKey => {
+            periodsToCalculate.forEach((currentPeriod, index) => {
+                const currentValue = getMetricValue(currentPeriod, categoryName, metricKey as keyof Metrics);
+                const periodKey = currentPeriod.key;
+
+                let MoM: number | null = null;
+                let YoY: number | null = null;
+                let QoQ: number | null = null;
+                let YTD: number | null = null; 
+                
+                // --- Logic สำหรับ YoY (ถ้าเป็น Yearly Summary) ---
+                if (!currentPeriod.monthIndex && currentPeriod.year !== 'TOTAL') { 
+                    const prevYear = (parseInt(currentPeriod.year) - 1).toString();
+                    const prevPeriod: typeof periodsToCalculate[0] = { key: `Y${prevYear}`, label: `สรุปปี ${prevYear}`, year: prevYear };
+                    const prevValue = getMetricValue(prevPeriod, categoryName, metricKey as keyof Metrics);
+
+                    if (prevValue > 0) {
+                        YoY = ((currentValue / prevValue) - 1) * 100;
+                    }
+                }
+
+                if (currentPeriod.monthIndex) {
+                    const currentYear = currentPeriod.year;
+                    const currentMonth = currentPeriod.monthIndex;
+                    
+                    // 1. MoM (Month-over-Month)
+                    if (index > 0) {
+                        const prevPeriod = periodsToCalculate[index - 1];
+                        const isPreviousMonth = (prevPeriod.monthIndex === currentMonth - 1) && (prevPeriod.year === currentYear);
+                        const isJanFromDec = (currentMonth === 1) && (prevPeriod.monthIndex === 12) && (parseInt(prevPeriod.year) === parseInt(currentYear) - 1);
+                        
+                        if (isPreviousMonth || isJanFromDec) {
+                            const prevMonthValue = getMetricValue(prevPeriod, categoryName, metricKey as keyof Metrics);
+                            if (prevMonthValue > 0) {
+                                MoM = ((currentValue / prevMonthValue) - 1) * 100;
+                            }
+                        }
+                    }
+
+                    // 2. YoY (Year-over-Year)
+                    const prevYear = (parseInt(currentYear) - 1).toString();
+                    const prevYearPeriod: typeof periodsToCalculate[0] = { 
+                        key: `M${currentMonth}Y${prevYear}`, label: `${Months[currentMonth - 1]} ${prevYear}`,
+                        year: prevYear, monthIndex: currentMonth
+                    };
+                    const prevYearValue = getMetricValue(prevYearPeriod, categoryName, metricKey as keyof Metrics);
+
+                    if (prevYearValue > 0) {
+                        YoY = ((currentValue / prevYearValue) - 1) * 100;
+                    }
+                    
+                    // 3. YTD (Year-to-Date) - คำนวณเมื่อมีข้อมูลสะสม
+                    const currentYTDValue = getAggregatedValue(currentYear, 1, currentMonth, categoryName, metricKey as keyof Metrics);
+                    const prevYTDValue = getAggregatedValue(prevYear, 1, currentMonth, categoryName, metricKey as keyof Metrics);
+
+                    if (prevYTDValue > 0) {
+                        YTD = ((currentYTDValue / prevYTDValue) - 1) * 100;
+                    }
+                    
+                    // 4. QoQ (Quarter-over-Quarter) - คำนวณเฉพาะเดือนสุดท้ายของไตรมาส
+                    const currentQuarter = Quarters.find(q => q.months.includes(currentMonth));
+                    
+                    if (currentQuarter && currentQuarter.months[currentQuarter.months.length - 1] === currentMonth) {
+                        const currentQuarterIndex = currentQuarter.index;
+                        
+                        let prevQYear = currentYear;
+                        let prevQIndex: number;
+                        
+                        if (currentQuarterIndex > 1) {
+                            prevQIndex = currentQuarterIndex - 1; // Q2 vs Q1 (Same Year)
+                        } else {
+                            prevQIndex = 4; // Q1 vs Q4 (Previous Year)
+                            prevQYear = prevYear;
+                        }
+                        
+                        const prevQuarter = Quarters.find(q => q.index === prevQIndex);
+                        
+                        if (prevQuarter) {
+                            // Sum value for the current quarter
+                            const currentQValue = getAggregatedValue(currentYear, currentQuarter.months[0], currentQuarter.months[currentQuarter.months.length - 1], categoryName, metricKey as keyof Metrics);
+                            
+                            // Sum value for the previous quarter
+                            const prevQValue = getAggregatedValue(prevQYear, prevQuarter.months[0], prevQuarter.months[prevQuarter.months.length - 1], categoryName, metricKey as keyof Metrics);
+                            
+                            if (prevQValue > 0) {
+                                QoQ = ((currentQValue / prevQValue) - 1) * 100;
+                            }
+                        }
+                    }
+                }
+
+                // บันทึกผลลัพธ์
+                categoryData[metricKey][periodKey] = {
+                    MoM,
+                    YoY,
+                    QoQ, 
+                    YTD 
+                };
+            });
+        });
+        finalTable.push(categoryData);
+    });
+
+    return finalTable;
+});
 
 </script>
 
@@ -1449,6 +1623,120 @@ interface MemberMonthlyData {
                     </v-card>
                 </v-col>
 
+
+             <v-col cols="12">
+    <v-card>
+        <v-card-text>
+            <h3 class="card-title mb-1">ตารางอัตราการเติบโต MoM% / YoY% / QoQ% / YTD% (แยกตามมูลค่าบ้าน)</h3>
+            <h5 class="card-subtitle">{{ chartSubtitle }}</h5>
+            
+            <v-table density="compact" class="mt-4 border">
+                <thead>
+                    <tr>
+                        <th rowspan="2" class="text-center text-subtitle-1 border-e" style="min-width: 150px;">ช่วงมูลค่าบ้าน</th>
+                        <th rowspan="2" class="text-center text-subtitle-1 border-e" style="min-width: 150px;">รายละเอียด</th>
+                        
+                        <th 
+                            v-for="period in tablePeriods.filter(p => p.key !== 'TOTAL_PERIODS')" 
+                            :key="period.key" 
+                            :colspan="4" 
+                            class="text-center text-h6 border-b-sm"
+                            :class="{'bg-blue-grey-lighten-5': !period.monthIndex}"
+                        >
+                            {{ period.label }}
+                        </th>
+                    </tr>
+                    <tr>
+                         <template v-for="period in tablePeriods.filter(p => p.key !== 'TOTAL_PERIODS')" :key="period.key">
+                            <th class="text-center text-subtitle-1" style="min-width: 80px;">MoM%</th>
+                            <th class="text-center text-subtitle-1" style="min-width: 80px;">YoY%</th>
+                            <th class="text-center text-subtitle-1" style="min-width: 80px;">QoQ%</th>
+                            <th class="text-center text-subtitle-1 border-e" style="min-width: 80px;">YTD%</th>
+                         </template>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template v-if="growthRateReportTableData.length > 0">
+                        <template v-for="(category, catIndex) in growthRateReportTableData" :key="category.categoryName">
+                            
+                            <template v-for="(metricEntry, rowIndex) in [
+                                { key: 'total_units', name: 'จำนวนหลัง', data: category.total_units },
+                                { key: 'total_value', name: 'มูลค่ารวม (บาท)', data: category.total_value }
+                            ]" :key="`${category.categoryName}-${metricEntry.key}`">
+                                
+                                <tr 
+                                    :class="{ 
+                                        'bg-blue-grey-lighten-5': category.categoryName === 'รวม',
+                                        'border-t': rowIndex === 0,
+                                    }"
+                                >
+                                    <td v-if="rowIndex === 0" 
+                                        :rowspan="2"
+                                        class="text-left font-weight-bold text-subtitle-2 border-e"
+                                        :class="{'text-primary': category.categoryName === 'รวม'}"
+                                    >
+                                        {{ category.categoryName }}
+                                    </td>
+                                    
+                                    <td class="text-left text-caption border-e">
+                                        {{ metricEntry.name }}
+                                    </td>
+                                    
+                                    <template v-for="period in tablePeriods.filter(p => p.key !== 'TOTAL_PERIODS')" :key="period.key">
+                                        
+                                        <td 
+                                            class="text-right text-subtitle-2"
+                                            :class="{'text-success': (metricEntry.data[period.key]?.MoM || 0) > 0, 'text-error': (metricEntry.data[period.key]?.MoM || 0) < 0}"
+                                        >
+                                            {{ metricEntry.data[period.key]?.MoM != null 
+                                               ? metricEntry.data[period.key]!.MoM!.toFixed(2) + '%' 
+                                               : '-' 
+                                            }}
+                                        </td>
+
+                                        <td 
+                                            class="text-right text-subtitle-2"
+                                            :class="{'text-success': (metricEntry.data[period.key]?.YoY || 0) > 0, 'text-error': (metricEntry.data[period.key]?.YoY || 0) < 0}"
+                                        >
+                                            {{ metricEntry.data[period.key]?.YoY != null 
+                                               ? metricEntry.data[period.key]!.YoY!.toFixed(2) + '%' 
+                                               : '-' 
+                                            }}
+                                        </td>
+                                        
+                                        <td 
+                                            class="text-right text-subtitle-2"
+                                            :class="{'text-success': (metricEntry.data[period.key]?.QoQ || 0) > 0, 'text-error': (metricEntry.data[period.key]?.QoQ || 0) < 0}"
+                                        >
+                                            {{ metricEntry.data[period.key]?.QoQ != null 
+                                               ? metricEntry.data[period.key]!.QoQ!.toFixed(2) + '%' 
+                                               : '-' 
+                                            }}
+                                        </td>
+
+                                        <td 
+                                            class="text-right text-subtitle-2 border-e"
+                                            :class="{'text-success': (metricEntry.data[period.key]?.YTD || 0) > 0, 'text-error': (metricEntry.data[period.key]?.YTD || 0) < 0}"
+                                        >
+                                            {{ metricEntry.data[period.key]?.YTD != null 
+                                               ? metricEntry.data[period.key]!.YTD!.toFixed(2) + '%' 
+                                               : '-' 
+                                            }}
+                                        </td>
+
+                                    </template>
+                                </tr>
+                            </template>
+                        </template>
+                    </template>
+                    <tr v-else>
+                        <td :colspan="(tablePeriods.filter(p => p.key !== 'TOTAL_PERIODS').length * 4) + 2" class="text-center text-subtitle-1 py-4">ไม่พบข้อมูลตามเงื่อนไขที่เลือก หรือช่วงเวลาที่เลือกไม่ต่อเนื่อง</td>
+                    </tr>
+                </tbody>
+            </v-table>
+        </v-card-text>
+    </v-card>
+</v-col>
                 <v-col cols="12">
                     <v-card>
                         <v-card-text>
