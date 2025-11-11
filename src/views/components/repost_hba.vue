@@ -2,6 +2,13 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import { useDate } from 'vuetify/lib/framework.mjs';
 const date = useDate();
+
+const today = new Date();
+const currentGregorianYear = today.getFullYear(); // 1. ดึงปี ค.ศ. (เช่น 2025)
+const currentBuddhistYearNum = currentGregorianYear + 543; // 2. บวก 543 (เช่น 2568)
+const currentBuddhistYearStr = currentBuddhistYearNum.toString(); // 3. แปลงเป็น "2568"
+const previousBuddhistYearStr = (currentBuddhistYearNum - 1).toString(); // 4. "2567"
+
 const tab = ref('monthly');
 
 interface Metrics {
@@ -15,7 +22,7 @@ interface MemberSubmission {
     member_id: string;
     name: string;
     role: 'user' | 'admin' | 'master';
-    member_type: string; // <-- เพิ่มบรรทัดนี้
+    member_type: string;
     total_submitted_count: number;
     submissions_by_year: Record<string, number>;
     submissions_in_period: Record<string, number[]>;
@@ -29,18 +36,23 @@ interface SummaryData {
     membership_data?: MemberSubmission[];
 }
 
+
+// (ไฟล์ repost_hba.vue บรรทัดที่ 40)
 const availableMonths = computed(() => {
     const { currentBuddhistYear, currentMonthIndex } = getCurrentPeriod();
     const selectedYears = selectyear.value;
 
+    // ตรวจสอบว่า "ปีปัจจุบัน" อยู่ในเงื่อนไขหรือไม่ (ยังไม่เลือกปี หรือ เลือกปีปัจจุบัน)
     const isCurrentYearInContext =
         selectedYears.length === 0 ||
         selectedYears.includes(currentBuddhistYear);
 
     if (isCurrentYearInContext) {
+        // ⬇️ นี่คือส่วนที่ซ่อนเดือนที่ยังไม่มาถึง
+        // โดยการตัด (slice) อาร์เรย์ Months ให้เหลือแค่ถึงเดือนปัจจุบัน
         return Months.slice(0, currentMonthIndex);
     } else {
-        // ถ้าไม่ใช่ (คือเลือกเฉพาะปีในอดีต): ให้แสดง 12 เดือนเต็ม
+        // ถ้าเลือกเฉพาะปีในอดีต: ให้แสดง 12 เดือนเต็ม
         return Months;
     }
 });
@@ -48,7 +60,7 @@ const availableMonths = computed(() => {
 const selectyear = ref<string[]>([]);
 const selectMonths = ref<string[]>([]);
 const selectQuarters = ref<string[]>([]);
-const year = ['2568', '2567'];
+const year = [currentBuddhistYearStr, previousBuddhistYearStr];
 const Months = [
     'มกราคม',
     'กุมภาพันธ์',
@@ -145,11 +157,13 @@ const quartersToMonthsNames = computed<string[]>(() => {
 
 const getCurrentPeriod = () => {
     const today = new Date();
-    const currentBuddhistYear = (date as any).format(today, 'yyyy', { locale: 'th-TH' });
+    // ⬇️ แก้ไข 2 บรรทัดนี้ ⬇️
+    const currentGregorianYear = today.getFullYear();
+    const currentBuddhistYear = (currentGregorianYear + 543).toString();
+    // ⬆️ สิ้นสุดส่วนที่แก้ไข ⬆️
     const currentMonthIndex = today.getMonth() + 1;
     return { currentBuddhistYear, currentMonthIndex };
 };
-
 onMounted(() => {
     const { currentBuddhistYear } = getCurrentPeriod();
     if (!selectyear.value || selectyear.value.length === 0) {
@@ -157,7 +171,7 @@ onMounted(() => {
             selectyear.value = [currentBuddhistYear];
         }
     }
-    // ส่งค่า state ปัจจุบันเข้าไป
+
     fetchSummary(selectyear.value, selectMonths.value, selectQuarters.value);
 });
 
@@ -166,7 +180,7 @@ const fetchSummary = async (
     currentMonths: string[],
     currentQuarters: string[]
 ) => {
-    // 1. ใช้ค่าที่ส่งเข้ามา (arguments)
+
     if (!currentYears || currentYears.length === 0) {
         console.error('Please select at least one year.');
         summaryData.value = null;
@@ -175,12 +189,12 @@ const fetchSummary = async (
     }
     const data: any = {
         user_id: userId,
-        buddhist_year: currentYears, // <--- ใช้ค่าที่ส่งเข้ามา
+        buddhist_year: currentYears,
         role: userRole
     };
 
-    // 2. สร้างตรรกะ "รวมเดือน" *ข้างในนี้*
-    // เพื่อให้แน่ใจว่าใช้ค่าที่สดใหม่
+
+
     let indices: number[] = [];
     if (currentQuarters.length > 0) {
         currentQuarters.forEach(qName => {
@@ -195,9 +209,9 @@ const fetchSummary = async (
 
     const monthsToFetch = Array.from(new Set(indices)).sort((a, b) => a - b);
     const quartersToFetch = currentQuarters.map((quarterName: string) => quarterMap[quarterName] || null).filter(Boolean);
-    // --- สิ้นสุดตรรกะ "รวมเดือน" ---
 
-    // 3. ส่งข้อมูล (ที่ถูกต้อง) ไป PHP
+
+
     if (monthsToFetch.length > 0) {
         data.months = monthsToFetch;
     }
@@ -205,11 +219,10 @@ const fetchSummary = async (
         data.quarters = quartersToFetch;
     }
 
-    console.log('Sending data to backend:', data); // <-- บรรทัดนี้จะแสดงค่าที่ถูกต้อง
+    console.log('Sending data to backend:', data);
 
     try {
-        // ... (rest of fetch logic is unchanged) ...
-        // (โค้ด try...catch... ของคุณ)
+
         const res = await fetch('https://uat.hba-sales.org/backend/repost_admin.php', {
             method: 'POST',
             headers: {
@@ -235,24 +248,24 @@ const fetchSummary = async (
         summaryData.value = null;
         chartSeries.value = [];
     }
-}; //
+};
 
-// 🚀 START: 2. (ลบ) targetMonthIndices
-// (ลบ `const targetMonthIndices = ...` บล็อกเก่าทิ้งไปทั้งหมด)
-// 🚀 END: 2. (ลบ) targetMonthIndices
 
-// 🚀 START: 3. (เพิ่ม) "ศูนย์กลางความจริง"
-// สร้าง `computed` ตัวใหม่นี้ขึ้นมาแทนที่ตัวเก่า
-// (ลบบล็อก const targetMonthIndices... ของเก่าทิ้งไปก่อน)
 
-// ⬇️ วางโค้ด "ศูนย์กลาง" ใหม่นี้เข้าไปแทน (ประมาณบรรทัด 202) ⬇️
-// (ลบบล็อก const targetMonthIndices... ของเก่าทิ้งไปก่อน)
 
-// ⬇️ วางโค้ด "ศูนย์กลาง" ใหม่นี้เข้าไปแทน (ประมาณบรรทัด 202) ⬇️
+
+
+
+
+
+
+
+
+
 const combinedTargetMonthIndices = computed<number[]>(() => {
     let indices: number[] = [];
 
-    // 1. ดึงเดือนจาก "ไตรมาส" ที่เลือก
+
     const selectedQuarters = selectQuarters.value;
     if (selectedQuarters.length > 0) {
         selectedQuarters.forEach(qName => {
@@ -261,13 +274,13 @@ const combinedTargetMonthIndices = computed<number[]>(() => {
         });
     }
 
-    // 2. ดึงเดือนจาก "เดือน" ที่เลือก
+
     const manualMonthIndices = selectMonths.value.map(m => monthMap[m]).filter(Boolean) as number[];
     if (manualMonthIndices.length > 0) {
         indices.push(...manualMonthIndices);
     }
 
-    // 3. คืนค่าเป็นรายการเดือนที่ไม่ซ้ำกัน และเรียงลำดับแล้ว
+
     return Array.from(new Set(indices)).sort((a, b) => a - b);
 });
 
@@ -284,19 +297,19 @@ const updateChartData = (data: SummaryData) => {
     const selectedQuarters = selectQuarters.value;
     const getValue = (dataObj: Metrics | undefined) => (dataObj?.total_value || 0);
 
-    // 🚀 START: 4. (แก้ไข) updateChartData
-    // (ลบฟังก์ชัน `getSelectedMonthIndices` ที่ซ้ำซ้อนทิ้งไป)
+
+
     /*
     const getSelectedMonthIndices = () => {
         ... (ตรรกะ if/else ที่ผิด) ...
     };
     */
 
-    const targetMonths = combinedTargetMonthIndices.value; // <--- ใช้ "ศูนย์กลาง"
-    // 🚀 END: 4. (แก้ไข) updateChartData
+    const targetMonths = combinedTargetMonthIndices.value;
 
 
-    if (selectedYears.length === 1 && (selectedMonths.length > 1 || selectedQuarters.length > 0 || targetMonths.length > 1)) { // <-- ปรับเงื่อนไข
+
+    if (selectedYears.length === 1 && (selectedMonths.length > 1 || selectedQuarters.length > 0 || targetMonths.length > 1)) {
 
         finalCategories = categoryOrder;
         const selectedYear = selectedYears[0];
@@ -315,10 +328,10 @@ const updateChartData = (data: SummaryData) => {
                 data: monthlyData
             });
         });
-    } else if (selectedYears.length > 1 && (selectedMonths.length > 0 || selectedQuarters.length > 0 || targetMonths.length > 0)) { // <-- ปรับเงื่อนไข
+    } else if (selectedYears.length > 1 && (selectedMonths.length > 0 || selectedQuarters.length > 0 || targetMonths.length > 0)) {
 
         finalCategories = categoryOrder;
-        const monthsToDisplay = targetMonths; // <--- ใช้ targetMonths
+        const monthsToDisplay = targetMonths;
 
         monthsToDisplay.forEach((monthIndex) => {
             const monthName = Months[monthIndex - 1];
@@ -346,11 +359,11 @@ const updateChartData = (data: SummaryData) => {
             dataForAverageCalc.push(yearlyData);
             finalSeries.push({ name: `ปี ${year}`, type: 'column', data: yearlyData });
         });
-    } else if (selectedYears.length === 1 && selectedMonths.length === 1 && selectedQuarters.length === 0 && targetMonths.length === 1) { // <-- ปรับเงื่อนไข
+    } else if (selectedYears.length === 1 && selectedMonths.length === 1 && selectedQuarters.length === 0 && targetMonths.length === 1) {
 
         finalCategories = categoryOrder;
         const selectedYear = selectedYears[0];
-        const monthIndex = targetMonths[0]; // <--- ใช้ targetMonths
+        const monthIndex = targetMonths[0];
 
         const monthlyData = categoryOrder.map((category) => getValue(data.monthly_data[selectedYear]?.[monthIndex]?.[category]));
         dataForAverageCalc.push(monthlyData);
@@ -395,8 +408,8 @@ const chartSubtitle = computed(() => {
     const yearText = sortedYears.length === 1 ? `ปี ${firstYear}` :
         sortedYears.length > 1 ? `ปี ${firstYear} - ปี ${lastYear}` : '';
 
-    // 🚀 START: 5. (แก้ไข) chartSubtitle
-    // (ลบตรรกะ if/else ที่ผิดพลาดทิ้ง)
+
+
     /*
     let monthIndices: number[] = [];
     if (selectedQuarters.length > 0) {
@@ -405,8 +418,8 @@ const chartSubtitle = computed(() => {
         ...
     }
     */
-    let monthIndices: number[] = combinedTargetMonthIndices.value; // <--- ใช้ "ศูนย์กลาง"
-    // 🚀 END: 5. (แก้ไข) chartSubtitle
+    let monthIndices: number[] = combinedTargetMonthIndices.value;
+
 
     const sortedMonthIndices = Array.from(new Set(monthIndices)).sort((a, b) => a - b);
     const firstMonthIndex = sortedMonthIndices[0];
@@ -479,8 +492,8 @@ const chartSubtitle = computed(() => {
 });
 
 
-// 🚀 START: 6. (ลบ) Watcher ที่ไม่จำเป็น
-// (ลบ Watcher ที่บังคับ selectMonths ทิ้ง)
+
+
 /*
 watch(selectQuarters, (newQuarters) => {
     if (newQuarters.length > 0) {
@@ -488,16 +501,16 @@ watch(selectQuarters, (newQuarters) => {
     }
 }, { immediate: false });
 */
-// 🚀 END: 6. (ลบ) Watcher ที่ไม่จำเป็น
+
 
 watch(
     [selectyear, selectMonths, selectQuarters],
-    // 1. รับค่าใหม่ ([newYears, newMonths, newQuarters])
+
     ([newYears, newMonths, newQuarters]) => {
-        // 2. ส่งค่าที่สดใหม่เข้าไปใน fetchSummary
+
         fetchSummary(newYears, newMonths, newQuarters);
     },
-    { immediate: false, deep: true } // 3. เพิ่ม deep: true เพื่อความแน่นอน
+    { immediate: false, deep: true }
 );
 
 const chartOptions = ref({
@@ -606,18 +619,18 @@ interface TableCategory {
 
 
 const showQoQ = computed(() => {
-    //  START: *** V.2 ***
-    // ตรวจสอบว่ามีเดือนสุดท้ายของไตรมาสที่ถูกเลือกหรือไม่
+
+
     const targetMonths = combinedTargetMonthIndices.value;
     if (targetMonths.length === 0) return false;
 
-    // ตรวจสอบว่าในเดือนที่เลือก มีเดือนที่เป็นเดือนสุดท้ายของไตรมาส (3, 6, 9, 12) หรือไม่
+
     const hasQuarterEndMonth = targetMonths.some(monthIndex =>
         Quarters.some(q => q.months[q.months.length - 1] === monthIndex)
     );
 
     return hasQuarterEndMonth;
-    // END: *** V.2 ***
+
 });
 
 const getRegionalMetrics = (period: typeof tablePeriods.value[0], region: string, category: string): Metrics => {
@@ -697,8 +710,8 @@ const tablePeriods = computed(() => {
     const currentTargetMonthIndices = combinedTargetMonthIndices.value;
 
     if (currentTargetMonthIndices.length > 0) {
-        // --- CASE 1: ผู้ใช้เลือกเดือน (หรือไตรมาส) ---
-        // (ตรรกะนี้ถูกต้อง)
+
+
         const yearsToProcess = sortedYears.length > 0 ? sortedYears : [currentBuddhistYear];
 
         yearsToProcess.forEach(year => {
@@ -712,16 +725,16 @@ const tablePeriods = computed(() => {
             });
         });
     } else {
-        // --- CASE 2: ผู้ใช้ไม่ได้เลือกเดือน (เลือกเฉพาะปี หรือ ไม่เลือกอะไรเลย) ---
+
 
         if (sortedYears.length > 0) {
-            // --- Subcase 2A: ผู้ใช้ "เลือกปี" (เช่น "2567" หรือ "2567, 2566") ---
+
             sortedYears.forEach(year => {
 
-                // ⬇️⬇️⬇️ นี่คือตรรกะที่แก้ไข ⬇️⬇️⬇️
-                // ตรวจสอบว่าปีที่กำลังวนลูป คือปีปัจจุบันหรือไม่
+
+
                 const isCurrent = (year === currentBuddhistYear);
-                // ถ้าใช่ ให้วนลูปถึงเดือนปัจจุบัน, ถ้าไม่ใช่ (เป็นปีอดีต) ให้วน 12 เดือน
+
                 const loopEnd = isCurrent ? currentMonthIndex : 12;
 
                 for (let i = 1; i <= loopEnd; i++) {
@@ -732,11 +745,11 @@ const tablePeriods = computed(() => {
                         monthIndex: i
                     });
                 }
-                // ⬆️⬆️⬆️ สิ้นสุดตรรกะที่แก้ไข ⬆️⬆️⬆️
+
             });
         } else {
-            // --- Subcase 2B: ผู้ใช้ "ไม่เลือกอะไรเลย" (Default ตอนโหลดหน้า) ---
-            // (ตรรกะนี้ถูกต้องอยู่แล้ว คือแสดงถึงเดือนปัจจุบัน)
+
+
             if (year.includes(currentBuddhistYear)) {
                 for (let i = 1; i <= currentMonthIndex; i++) {
                     periods.push({
@@ -750,7 +763,7 @@ const tablePeriods = computed(() => {
         }
     }
 
-    // --- ส่วนการเรียงลำดับ และการเพิ่ม 'รวมทุกช่วง' (อันนี้ถูกต้องแล้ว) ---
+
     periods.sort((a, b) => {
         if (a.year !== b.year) {
             return a.year.localeCompare(b.year, 'th-TH');
@@ -785,7 +798,7 @@ const monthlyReportTableData = computed<TableCategory[]>(() => {
     const grandTotalPeriodKey = 'TOTAL_PERIODS';
     const allCategories = [...valueCategories, 'รวม'];
 
-    // ดึง "ช่วงเวลาสุดท้าย" ที่เลือก (จาก computed ที่มีอยู่)
+
     const lp = lastPeriod.value;
 
     const finalTable: TableCategory[] = [];
@@ -802,7 +815,7 @@ const monthlyReportTableData = computed<TableCategory[]>(() => {
                 metricName: metric.name,
                 format: metric.format,
                 data: {},
-                // ⬅️ เพิ่ม object เริ่มต้นสำหรับ growth
+
                 growth: { mom: null, ytd: null }
             };
 
@@ -810,13 +823,13 @@ const monthlyReportTableData = computed<TableCategory[]>(() => {
             let totalValueForAvg = 0;
             let totalAreaForAvg = 0;
 
-            // --- 1. คำนวณค่าดิบ (เหมือนเดิม) ---
+
             currentPeriods.forEach(p => {
                 if (p.key === grandTotalPeriodKey) return;
 
                 const periodKey = p.key;
 
-                // Helper (จากโค้ดเดิมของคุณ)
+
                 const getMetrics = (period: typeof currentPeriods[0], category: string): Metrics => {
                     let metrics: Metrics | undefined;
                     if (period.monthIndex && period.monthIndex !== 0) {
@@ -832,7 +845,7 @@ const monthlyReportTableData = computed<TableCategory[]>(() => {
                 const metricValue: number = metrics[metric.key as keyof Metrics] || 0;
                 row.data[periodKey] = metricValue;
 
-                // สะสมยอดสำหรับ 'รวมทุกช่วง'
+
                 if (metric.key !== 'average_price_per_sqm') {
                     totalMetricValue += metricValue;
                 }
@@ -840,7 +853,7 @@ const monthlyReportTableData = computed<TableCategory[]>(() => {
                 totalAreaForAvg += metrics.total_area;
             });
 
-            // ใส่ค่ายอดรวม 'รวมทุกช่วง'
+
             if (currentPeriods.some(p => p.key === grandTotalPeriodKey)) {
                 let grandTotalMetricValue: number;
                 if (metric.key === 'average_price_per_sqm') {
@@ -851,19 +864,19 @@ const monthlyReportTableData = computed<TableCategory[]>(() => {
                 row.data[grandTotalPeriodKey] = grandTotalMetricValue;
             }
 
-            // --- 2. ⬇️ ส่วนที่เพิ่มใหม่: คำนวณ MoM% และ YTD% ⬇️ ---
-            if (lp && lp.monthIndex) { // คำนวณเมื่อ "ช่วงเวลาสุดท้าย" เป็น "เดือน"
+
+            if (lp && lp.monthIndex) {
                 const currentYear = lp.year;
                 const currentMonth = lp.monthIndex;
                 const prevYear = (parseInt(currentYear) - 1).toString();
 
-                // Helper: ดึง Metrics ของเดือนใดๆ
+
                 const getMetricsForPeriod = (year: string, month: number, category: string): Metrics => {
                     const metrics = summaryData.value?.monthly_data[year]?.[month]?.[category];
                     return metrics || { total_value: 0, total_area: 0, total_units: 0, average_price_per_sqm: 0 };
                 };
 
-                // Helper: ดึงค่ายอดรวม YTD (ที่ปรับปรุงให้ใช้ได้กับทุก metric)
+
                 const getAggregatedValueForMetric = (year: string, startMonth: number, endMonth: number, category: string, metricKey: keyof Metrics): number => {
                     let sum = 0;
                     const monthlyData = summaryData.value?.monthly_data[year];
@@ -877,7 +890,7 @@ const monthlyReportTableData = computed<TableCategory[]>(() => {
                     return sum;
                 };
 
-                // --- คำนวณค่าสำหรับ MoM ---
+
                 const currentMetrics = getMetricsForPeriod(currentYear, currentMonth, categoryName);
                 const currentValue = currentMetrics[metric.key as keyof Metrics] || 0;
 
@@ -886,7 +899,7 @@ const monthlyReportTableData = computed<TableCategory[]>(() => {
                 const prevMonthMetrics = getMetricsForPeriod(prevMonthYear, prevMonth, categoryName);
                 const prevMonthValue = prevMonthMetrics[metric.key as keyof Metrics] || 0;
 
-                // --- คำนวณค่าสำหรับ YTD (แยกตรรกะสำหรับ avg) ---
+
                 let currentYTDValue: number;
                 let prevYTDValue: number;
 
@@ -903,20 +916,20 @@ const monthlyReportTableData = computed<TableCategory[]>(() => {
                     prevYTDValue = getAggregatedValueForMetric(prevYear, 1, currentMonth, categoryName, metric.key as keyof Metrics);
                 }
 
-                // --- บันทึกค่า Growth ---
+
                 if (prevMonthValue !== 0) {
                     row.growth.mom = ((currentValue / prevMonthValue) - 1) * 100;
                 } else if (currentValue > 0) {
-                    row.growth.mom = 100; // กรณียอดเก่าเป็น 0
+                    row.growth.mom = 100;
                 }
 
                 if (prevYTDValue !== 0) {
                     row.growth.ytd = ((currentYTDValue / prevYTDValue) - 1) * 100;
                 } else if (currentYTDValue > 0) {
-                    row.growth.ytd = 100; // กรณียอดเก่าเป็น 0
+                    row.growth.ytd = 100;
                 }
             }
-            // --- ⬆️ จบส่วนที่เพิ่มใหม่ ⬆️ ---
+
 
             categoryData.rows.push(row);
         });
@@ -949,7 +962,8 @@ const regionReportTableData = computed<TableCategory[]>(() => {
                 metricKey: metric.key as keyof Metrics | 'average_price_per_sqm',
                 metricName: metric.name,
                 format: metric.format,
-                data: {}
+                data: {},
+                growth: { mom: null, ytd: null }
             };
 
             let totalMetricValue = 0;
@@ -1036,7 +1050,8 @@ const regionAndCategoryReportTableData = computed<RegionCategoryGroup[]>(() => {
                     metricKey: metric.key as keyof Metrics | 'average_price_per_sqm',
                     metricName: metric.name,
                     format: metric.format,
-                    data: {}
+                    data: {},
+                    growth: { mom: null, ytd: null }
                 };
 
                 let totalMetricValue = 0;
@@ -1183,7 +1198,7 @@ const polarChartOptions = computed(() => ({
         offsetY: 0
     },
 
-    // ⬇️⬇️⬇️ 1. เพิ่มส่วนนี้เพื่อซ่อนตัวเลขแกน Y ⬇️⬇️⬇️
+
     yaxis: {
         labels: {
             show: false
@@ -1236,7 +1251,7 @@ const polarChartOptions = computed(() => ({
         }
     },
 
-    // ⬇️⬇️⬇️ 2. แก้ไขส่วนนี้เพื่อแสดงเส้นประสีเทา ⬇️⬇️⬇️
+
     plotOptions: {
         polarArea: {
             rings: {
@@ -1245,13 +1260,13 @@ const polarChartOptions = computed(() => ({
                 strokeDashArray: 4
             },
             spokes: {
-                strokeWidth: 1, // ⬅️ เปลี่ยนจาก 0
-                strokeColor: '#e0e0e0', // ⬅️ สีเทา
-                strokeDashArray: 4 // ⬅️ ทำให้เป็นเส้นประ
+                strokeWidth: 1,
+                strokeColor: '#e0e0e0',
+                strokeDashArray: 4
             },
         }
     }
-    // ⬆️⬆️⬆️ สิ้นสุดส่วนที่ 2 ⬆️⬆️⬆️
+
 }));
 
 const generateMockMemberData = (): MemberSubmission[] => {
@@ -1276,144 +1291,128 @@ const memberSubmissionSummary = computed(() => {
     const hasFilters = targetPeriods.length > 0 &&
         (selectyear.value.length > 0 || selectMonths.value.length > 0 || selectQuarters.value.length > 0);
 
-    // --- START: V.6 (เพิ่มการนับแยกย่อย) ---
 
-    // 1. ใช้ Set เพื่อนับ "ยอดรวม
-    //    (Unique)"
-    //    สำหรับ
-    //    Donut
-    //    Chart
-    //    และ
-    //    แถว
-    //    สรุป
+
+
+
+
+
+
+
+
+
     let submittedInPeriod_Set = new Set<string>();
 
-    // 2. [ใหม่]
-    //    ใช้
-    //    Array
-    //    เพื่อนับ
-    //    "ยอด
-    //    แยก
-    //    ย่อย"
-    //    สำหรับ
-    //    แถว
-    //    รายละเอียด
-    //    ใน
-    //    ตาราง
+
+
+
+
+
+
+
+
+
+
+
+
     const periodCounts: { key: string, label: string, count: number }[] = [];
 
-    // --- Loop 1: คำนวณ
-    //    ยอด
-    //    แยก
-    //    ย่อย
-    //    และ
-    //    รวบ
-    //    รวม
-    //    ยอด
-    //    Unique
-    //    ---
+
+
+
+
+
+
+
+
+
+
     if (targetPeriods.length > 0) {
         targetPeriods.forEach(period => {
-            let countForThisPeriod = 0; // นับ 0
-            // ใหม่
-            // ทุก
-            // period
+            let countForThisPeriod = 0;
+
+
+
 
             users.forEach(user => {
                 let hasSubmittedThisPeriod = false;
 
-                // ตรวจสอบ
-                //    ว่า
-                //    user
-                //    คน
-                //    นี้
-                //    ส่ง
-                //    ใน
-                //    period
-                //    นี้
-                //    หรือไม่
+
+
+
+
+
+
+
+
+
+
                 if (period.monthIndex) {
-                    // เคส
-                    //    ราย
-                    //    เดือน
+
+
+
                     if (user.submissions_in_period[period.year]?.includes(period.monthIndex)) {
                         hasSubmittedThisPeriod = true;
                     }
                 } else if (period.year) {
-                    // เคส
-                    //    ราย
-                    //    ปี
+
+
+
                     if ((user.submissions_by_year[period.year] || 0) > 0) {
                         hasSubmittedThisPeriod = true;
                     }
                 }
 
                 if (hasSubmittedThisPeriod) {
-                    submittedInPeriod_Set.add(user.member_id); // เพิ่ม
-                    // ใน
-                    // "ยอด
-                    // รวม
-                    // (Unique)"
-                    countForThisPeriod++; // เพิ่ม
-                    // ใน
-                    // "ยอด
-                    // แยก
-                    // ย่อย"
+                    submittedInPeriod_Set.add(user.member_id);
+
+
+
+
+                    countForThisPeriod++;
+
+
+
+
                 }
             });
 
-            // [ใหม่]
-            //    เก็บ
-            //    ผล
-            //    ลัพธ์
-            //    ของ
-            //    "ยอด
-            //    แยก
-            //    ย่อย"
-            //    ของ
-            //    period
-            //    นี้
+
+
+
+
+
+
+
+
+
+
+
             periodCounts.push({
                 key: period.key,
-                label: `สมาชิกที่กรอก ${period.label}`, // เช่น "สมาชิกที่กรอก มกราคม 2567"
+                label: `สมาชิกที่กรอก ${period.label}`,
                 count: countForThisPeriod
             });
         });
     } else {
-        // Default (ถ้า
-        //    ไม่
-        //    มี
-        //    ฟิลเตอร์):
-        //    ใช้
-        //    ยอด
-        //    รวม
-        //    all-time
-        //    สำหรับ
-        //    "ยอด
-        //    รวม
-        //    (Unique)"
+
+
+
+
+
+
+
+
+
+
+
+
         users.forEach(user => {
             if (user.total_submitted_count > 0) {
                 submittedInPeriod_Set.add(user.member_id);
             }
         });
-        // (ยอด
-        //    แยก
-        //    ย่อย
-        //    periodCounts
-        //    จะ
-        //    เป็น
-        //    array
-        //    ว่าง)
     }
-
-    // --- คำนวณ
-    //    แถว
-    //    สรุป
-    //    (ตรรกะ
-    //    V.5
-    //    เดิม)
-    //    ---
     const submittedInPeriod_Count = submittedInPeriod_Set.size;
     const notSubmittedInPeriod_Count = allUsersCount - submittedInPeriod_Count;
 
@@ -1423,36 +1422,15 @@ const memberSubmissionSummary = computed(() => {
     return {
         totalUsers: allUsersCount,
         totalUsersIncludingAdmin: allMembers.length,
-
-        // แถว
-        //    สรุป
-        //    (สำหรับ
-        //    Donut
-        //    และ
-        //    2
-        //    แถว
-        //    หลัก
-        //    ใน
-        //    ตาราง)
         submittedTotal: submittedInPeriod_Count,
         notSubmittedTotal: notSubmittedInPeriod_Count,
         submittedLabel: submittedLabel,
         notSubmittedLabel: notSubmittedLabel,
         donutData: [submittedInPeriod_Count, notSubmittedInPeriod_Count],
         donutLabels: [submittedLabel, notSubmittedLabel],
-
-        // [ใหม่]
-        //    แถว
-        //    แยก
-        //    ย่อย
-        //    (สำหรับ
-        //    v-for
-        //    ใหม่
-        //    ใน
-        //    ตาราง)
         periodCounts: periodCounts,
     };
-    // --- END: V.6 ---
+
 });
 
 
@@ -1460,22 +1438,7 @@ const memberListChartData = computed(() => {
 
     const allMembers = generateMockMemberData();
     const users = allMembers.filter(u => u.role === 'user');
-
-    // --- START: การเปลี่ยนแปลง
-    //    V.5
-    //    ---
-
-    // 1. ดึง "ช่วงเวลา" ที่ผู้ใช้เลือก
     const targetPeriods = tablePeriods.value.filter(p => p.key !== 'TOTAL_PERIODS');
-
-    // 2. สร้าง
-    //    Set
-    //    ของ
-    //    "ปี"
-    //    ที่
-    //    เกี่ยวข้อง
-    //    กับ
-    //    ฟิลเตอร์
     const yearsToAggregateSet = new Set<string>();
     if (targetPeriods.length > 0) {
         targetPeriods.forEach(p => yearsToAggregateSet.add(p.year));
@@ -1485,68 +1448,12 @@ const memberListChartData = computed(() => {
 
     const aggregatedUsers = users.map(user => {
         let totalSubmissionsInPeriod = 0;
-
-        // 3. กำหนด
-        //    "ปี"
-        //    ที่
-        //    จะ
-        //    ใช้
-        //    รวม
-        //    ยอด
         let yearsToSum: string[];
         if (yearsToAggregate.length > 0) {
-            // ถ้า
-            //    มี
-            //    ฟิลเตอร์
-            //    (เช่น
-            //    [ '2567',
-            //    '2566'
-            //    ])
-            //    ให้
-            //    ใช้
-            //    ปี
-            //    นั้น
             yearsToSum = yearsToAggregate;
         } else {
-            // ถ้า
-            //    ไม่
-            //    มี
-            //    ฟิลเตอร์
-            //    ให้
-            //    ใช้
-            //    ทุก
-            //    ปี
-            //    ที่
-            //    มี
-            //    ข้อมูล
             yearsToSum = Object.keys(user.submissions_by_year);
         }
-
-        // 4. [สำคัญ]
-        //    รวม
-        //    ยอด
-        //    "รายปี"
-        //    (submissions_by_year)
-        //    ตาม
-        //    "ปี"
-        //    ที่
-        //    เลือก
-        //    (ตรรกะ
-        //    นี้
-        //    ไม่
-        //    สามารถ
-        //    เจาะ
-        //    จง
-        //    ราย
-        //    เดือน
-        //    /ไตรมาส
-        //    ได้
-        //    เพราะ
-        //    ข้อ
-        //    จำกัด
-        //    ของ
-        //    data
-        //    structure)
         yearsToSum.forEach(year => {
             totalSubmissionsInPeriod += (user.submissions_by_year[year] || 0);
         });
@@ -1555,18 +1462,7 @@ const memberListChartData = computed(() => {
             name: user.name,
             submissions: totalSubmissionsInPeriod,
         };
-    }).filter(u => u.submissions > 0); // กรอง
-    //    คน
-    //    ที่
-    //    ไม่
-    //    มี
-    //    ยอด
-    //    ออก
-
-    // --- END: การเปลี่ยนแปลง
-    //    V.5
-    //    ---
-
+    }).filter(u => u.submissions > 0);
     aggregatedUsers.sort((a, b) => b.submissions - a.submissions);
 
     return {
@@ -1578,7 +1474,7 @@ const memberListChartData = computed(() => {
     };
 });
 
-// ก้อนที่ 1: computed สำหรับความสูง (แยกออกมา)
+
 const barChartHeight = computed(() => {
     const len = memberListChartData.value.categories.length;
     return len > 0
@@ -1586,8 +1482,7 @@ const barChartHeight = computed(() => {
         : 350;
 });
 
-// ก้อนที่ 2: computed สำหรับ Options (ที่ "ไม่มี" height อยู่ข้างใน)
-// ก้อนที่ 2: (แก้ไข) เปลี่ยนเป็น ref
+
 const barChartOptions = ref({
     chart: {
         type: 'bar',
@@ -1628,9 +1523,9 @@ const barChartOptions = ref({
     legend: { show: false }
 });
 
-// (เพิ่ม) Watcher สำหรับอัปเดต categories และบังคับ re-render
+
 watch(memberListChartData, (newData) => {
-    // 1. อัปเดต options (เหมือนเดิม)
+
     barChartOptions.value = {
         ...barChartOptions.value,
         xaxis: {
@@ -1639,8 +1534,8 @@ watch(memberListChartData, (newData) => {
         }
     };
 
-    // 2. สั่งเปลี่ยน key เพื่อบังคับให้ Vue สร้าง chart ใหม่
-    barChartKey.value += 1; // ⬅️ เพิ่มบรรทัดนี้
+
+    barChartKey.value += 1;
 });
 const barChartKey = ref(0);
 
@@ -1693,13 +1588,9 @@ interface MemberMonthlyData {
 }
 
 const memberMonthlySubmissionTableData = computed(() => {
-    // 1. ดึงข้อมูลสมาชิกและช่วงเวลาที่กำลังแสดงผล
     const members = summaryData.value?.membership_data || [];
-
-    // 2. กรองเอาเฉพาะช่วงเวลาที่จะแสดงในคอลัมน์ตาราง (ไม่เอา 'TOTAL_PERIODS' ถ้ามี)
     const periodsToDisplay = tablePeriods.value.filter(p => p.key !== 'TOTAL_PERIODS');
 
-    // 3. (ทางเลือก) ถ้าไม่มีข้อมูลสมาชิก ก็คืนค่าว่างไป
     if (members.length === 0) {
         return [];
     }
@@ -1707,53 +1598,35 @@ const memberMonthlySubmissionTableData = computed(() => {
         ['สามัญ', 'สมทบ', 'วิสามัญ ก'].includes(member.member_type)
     );
 
-
-
-    // 5. วนลูปสมาชิกแต่ละคนเพื่อสร้างข้อมูลสำหรับตาราง
     return filteredMembers.map(member => {
         const submissions: Record<string, 'X' | '-'> = {};
-
-        // นี่คือส่วนสำคัญ: เราจะนับผลรวมใหม่ โดยเริ่มจาก 0
         let calculatedTotalInPeriod = 0;
-
-        // 6. วนลูปตามคอลัมน์ช่วงเวลาที่แสดง (เช่น 'ม.ค. 67', 'ก.พ. 67')
         periodsToDisplay.forEach(period => {
-            // period.key จะมีค่าเช่น '2567-1' (จาก computed 'tablePeriods')
-            // period.year คือ '2567', period.monthIndex คือ 1
+
             const year = period.year;
             const month = period.monthIndex;
 
-            // ตรวจสอบว่าสมาชิกคนนี้ มีข้อมูลส่งของ ปี และ เดือน นี้หรือไม่
-            // จากข้อมูลดิบ: member.submissions_in_period['2567']?.includes(1)
             const hasSubmission = (month && member.submissions_in_period[year]?.includes(month)) || false;
 
             if (hasSubmission) {
                 submissions[period.key] = 'X';
 
-                // ถ้านับว่าเป็น 'X' ให้บวก 1 เข้าไปในผลรวมใหม่
+
                 calculatedTotalInPeriod++;
             } else {
                 submissions[period.key] = '-';
             }
         });
 
-        // 7. คืนค่า object ใหม่สำหรับแถวในตาราง
+
         return {
             name: member.name,
-            member_type: member.member_type, // <--- ใช้ข้อมูลจาก Interface ที่แก้ไข
-
-            // ใช้ "ผลรวม" ที่เราคำนวณใหม่
-            // แทนที่ total_submitted_count ที่เป็นผลรวมทั้งหมด
+            member_type: member.member_type,
             total_submitted_in_period: calculatedTotalInPeriod,
-
-            submissions: submissions // <--- object ที่มี 'X' และ '-'
+            submissions: submissions
         };
     });
 });
-
-
-
-
 
 interface GrowthRateMetrics {
     MoM: number | null;
@@ -1766,25 +1639,22 @@ interface GrowthRatePeriods {
     [key: string]: GrowthRateMetrics;
 }
 
-// START: *** การเปลี่ยนแปลงที่ 1 ***
-// เพิ่ม total_value_raw และ total_units_raw เพื่อเก็บข้อมูลดิบ
+
 interface GrowthRateCategory {
     categoryName: string;
     total_value: GrowthRatePeriods;
     total_units: GrowthRatePeriods;
-    total_value_raw: Record<string, number>; // <--- เพิ่ม
-    total_units_raw: Record<string, number>; // <--- เพิ่ม
+    total_value_raw: Record<string, number>;
+    total_units_raw: Record<string, number>;
 }
-// END: *** การเปลี่ยนแปลงที่ 1 ***
+
 
 
 type MetricGrowthKey = 'total_value' | 'total_units';
 
-
 const getAggregatedValue = (year: string, startMonth: number, endMonth: number, category: string, metricKey: keyof Metrics): number => {
     let sum = 0;
     const monthlyData = summaryData.value?.monthly_data[year];
-
 
     if (metricKey === 'average_price_per_sqm') return 0;
 
@@ -1826,26 +1696,26 @@ const growthRateReportTableData = computed<GrowthRateCategory[]>(() => {
     const metricsToTrack: MetricGrowthKey[] = ['total_value', 'total_units'];
 
     allCategories.forEach(categoryName => {
-        // START: *** การเปลี่ยนแปลงที่ 2 ***
-        // เพิ่ม total_value_raw และ total_units_raw ตอนสร้าง categoryData
+
+
         const categoryData: GrowthRateCategory = {
             categoryName: categoryName,
             total_value: {},
             total_units: {},
-            total_value_raw: {}, // <--- เพิ่ม
-            total_units_raw: {}  // <--- เพิ่ม
+            total_value_raw: {},
+            total_units_raw: {}
         };
-        // END: *** การเปลี่ยนแปลงที่ 2 ***
+
 
         metricsToTrack.forEach(metricKey => {
             periodsToCalculate.forEach((currentPeriod, index) => {
                 const currentValue = getMetricValue(currentPeriod, categoryName, metricKey as keyof Metrics);
                 const periodKey = currentPeriod.key;
 
-                // START: *** การเปลี่ยนแปลงที่ 3 ***
-                // เก็บค่า currentValue (ข้อมูลดิบ) ลงใน _raw
+
+
                 categoryData[`${metricKey}_raw`][periodKey] = currentValue;
-                // END: *** การเปลี่ยนแปลงที่ 3 ***
+
 
                 let MoM: number | null = null;
                 let YoY: number | null = null;
@@ -1861,7 +1731,7 @@ const growthRateReportTableData = computed<GrowthRateCategory[]>(() => {
                     if (prevValue !== 0) {
                         YoY = ((currentValue / prevValue) - 1) * 100;
                     } else if (currentValue > 0) {
-                        YoY = 100; // ⬅️ ถ้าของเก่าเป็น 0 แต่ของใหม่มีค่า ให้แสดง 100%
+                        YoY = 100;
                     }
                 }
 
@@ -1894,7 +1764,7 @@ const growthRateReportTableData = computed<GrowthRateCategory[]>(() => {
                     if (prevYearValue !== 0) {
                         YoY = ((currentValue / prevYearValue) - 1) * 100;
                     } else if (currentValue > 0) {
-                        YoY = 100; // ⬅️ ถ้าของเก่าเป็น 0 แต่ของใหม่มีค่า ให้แสดง 100%
+                        YoY = 100;
                     }
 
 
@@ -1904,7 +1774,7 @@ const growthRateReportTableData = computed<GrowthRateCategory[]>(() => {
                     if (prevYTDValue !== 0) {
                         YTD = ((currentYTDValue / prevYTDValue) - 1) * 100;
                     } else if (currentYTDValue > 0) {
-                        YTD = 100; // ⬅️ ถ้าของเก่าเป็น 0 แต่ของใหม่มีค่า ให้แสดง 100%
+                        YTD = 100;
                     }
 
 
@@ -1935,7 +1805,7 @@ const growthRateReportTableData = computed<GrowthRateCategory[]>(() => {
                             if (prevQValue !== 0) {
                                 QoQ = ((currentQValue / prevQValue) - 1) * 100;
                             } else if (currentQValue > 0) {
-                                QoQ = 100; // ⬅️ ถ้าของเก่าเป็น 0 แต่ของใหม่มีค่า ให้แสดง 100%
+                                QoQ = 100;
                             }
                         }
                     }
@@ -1961,29 +1831,29 @@ const lastPeriod = computed(() => {
     return periods.length > 0 ? periods[periods.length - 1] : null;
 });
 
-// ... ต่อจาก computed อื่นๆ
 
-// ⬇️⬇️⬇️ เพิ่ม computed นี้ ⬇️⬇️⬇️
+
+
 const monthlySubmissionBarChartData = computed(() => {
-    // 1. ดึงข้อมูลสมาชิกทั้งหมด (เช่น 50 คน)
+
     const totalUsers = memberSubmissionSummary.value.totalUsers;
 
-    // 2. ดึงข้อมูลการกรอกแบบรายเดือน (เช่น [{ label: '... ม.ค. 67', count: 10 }, ...])
+
     const periodCounts = memberSubmissionSummary.value.periodCounts;
 
     if (periodCounts.length === 0 || totalUsers === 0) {
-        // ถ้าไม่มีข้อมูล ให้คืนค่าว่าง
+
         return { series: [], categories: [] };
     }
 
-    // 3. สร้างแกน X (Categories)
-    //    (ตัดคำว่า "สมาชิกที่กรอก " ออก)
+
+
     const categories = periodCounts.map(p => p.label.replace('สมาชิกที่กรอก ', ''));
 
-    // 4. สร้าง Series "กรอก"
+
     const seriesDataSubmitted = periodCounts.map(p => p.count);
 
-    // 5. สร้าง Series "ไม่กรอก" (โดยเอา ทั้งหมด - กรอก)
+
     const seriesDataNotSubmitted = periodCounts.map(p => totalUsers - p.count);
 
     return {
@@ -1995,31 +1865,31 @@ const monthlySubmissionBarChartData = computed(() => {
     };
 });
 
-// ... ต่อจาก const donutChartOptions ...
 
-// ⬇️⬇️⬇️ เพิ่ม 3 ส่วนนี้ (key, options, watch) ⬇️⬇️⬇️
 
-// 1. Key สำหรับบังคับ re-render
+
+
+
 const monthlyBarChartKey = ref(0);
 
-// 2. Options สำหรับกราฟแท่ง (แบบ Stacked)
+
 const monthlyBarChartOptions = ref({
     chart: {
         type: 'bar',
         height: 350,
-        stacked: true, // ⬅️ ทำให้เป็นกราฟแท่งแบบซ้อนกัน
+        stacked: true,
         fontFamily: 'inherit',
         foreColor: '#adb0bb',
         toolbar: { show: true, tools: { download: true } },
     },
     plotOptions: {
         bar: {
-            horizontal: false, // ⬅️ เป็นแนวตั้ง
+            horizontal: false,
             columnWidth: '60%',
         },
     },
     dataLabels: {
-        enabled: true, // ⬅️ แสดงตัวเลขบนแท่ง
+        enabled: true,
         formatter: (val: number) => val.toLocaleString('th-TH', { maximumFractionDigits: 0 })
     },
     stroke: {
@@ -2028,7 +1898,7 @@ const monthlyBarChartOptions = ref({
         colors: ['transparent']
     },
     xaxis: {
-        categories: [] as string[], // ⬅️ แกน X (จะถูกเติมโดย watch)
+        categories: [] as string[],
         title: {
             text: 'ช่วงเวลาที่เลือก'
         }
@@ -2047,7 +1917,7 @@ const monthlyBarChartOptions = ref({
         }
     },
     legend: {
-        position: 'top', // ⬅️ คำอธิบาย (กรอก/ไม่กรอก) ไว้ด้านบน
+        position: 'top',
         horizontalAlign: 'center'
     },
     grid: {
@@ -2058,27 +1928,27 @@ const monthlyBarChartOptions = ref({
 });
 
 watch(monthlySubmissionBarChartData, (newData) => {
-    // (แก้ไข) อัปเดต options โดยการ mutate property โดยตรง
+
     monthlyBarChartOptions.value.xaxis.categories = newData.categories;
 
     monthlyBarChartKey.value += 1;
 });
 
 
-// ... ต่อจาก computed ของกราฟแท่งรายเดือน (monthlySubmissionBarChartData) ...
 
-// ⬇️⬇️⬇️ เริ่ม: กราฟแท่งใหม่ (แยกตามประเภทสมาชิก) ⬇️⬇️⬇️
+
+
 const memberTypeSubmissionChartData = computed(() => {
-    // 1. กำหนดประเภทสมาชิกเป้าหมาย
+
     const typesToTrack = ['สามัญ', 'สมทบ', 'วิสามัญ ก'];
 
-    // 2. ดึงข้อมูลสมาชิกทั้งหมด
+
     const allMembers = summaryData.value?.membership_data || [];
 
-    // 3. ดึง "คอลัมน์" ที่กำลังแสดงผล (เช่น 'ม.ค. 67', 'ก.พ. 67')
+
     const targetPeriods = tablePeriods.value.filter(p => p.key !== 'TOTAL_PERIODS');
 
-    // 4. ถ้าไม่มีการเลือกฟิลเตอร์ (ไม่มีคอลัมน์) ก็ไม่ต้องแสดงกราฟ
+
     if (targetPeriods.length === 0 || allMembers.length === 0) {
         return { series: [], categories: typesToTrack };
     }
@@ -2086,22 +1956,22 @@ const memberTypeSubmissionChartData = computed(() => {
     const submittedSeriesData: number[] = [];
     const notSubmittedSeriesData: number[] = [];
 
-    // 5. วนลูปตามประเภทสมาชิกเป้าหมาย
+
     typesToTrack.forEach(type => {
 
-        // 5a. หาสมาชิกทั้งหมดที่อยู่ในประเภทนี้
+
         const membersInType = allMembers.filter(m => m.member_type === type);
         const totalInType = membersInType.length;
 
-        // 5b. นับจำนวนคน (Unique) ที่ "กรอก" ในช่วงที่เลือก
+
         const submittedMembersInThisType = new Set<string>();
 
         membersInType.forEach(member => {
-            // ตรวจสอบว่าสมาชิกคนนี้ มี 'X' (กรอก) ในคอลัมน์ใดคอลัมน์หนึ่งที่แสดงหรือไม่
+
             const hasSubmissionInPeriod = targetPeriods.some(period => {
                 const year = period.year;
                 const month = period.monthIndex;
-                // ตรวจสอบข้อมูลดิบ (submissions_in_period)
+
                 return (month && member.submissions_in_period[year]?.includes(month)) || false;
             });
 
@@ -2112,42 +1982,42 @@ const memberTypeSubmissionChartData = computed(() => {
 
         const submittedCount = submittedMembersInThisType.size;
 
-        // 5c. คำนวณยอดและเก็บข้อมูล
+
         submittedSeriesData.push(submittedCount);
         notSubmittedSeriesData.push(totalInType - submittedCount);
     });
 
-    // 6. คืนค่าข้อมูลสำหรับ ApexCharts (แบบ stacked)
+
     return {
         series: [
             { name: 'สมาชิกที่กรอก (ในช่วงที่เลือก)', data: submittedSeriesData },
             { name: 'สมาชิกที่ยังไม่กรอก (ในช่วงที่เลือก)', data: notSubmittedSeriesData }
         ],
-        categories: typesToTrack // แกน X
+        categories: typesToTrack
     };
 });
 
 
-// ... ต่อจาก watch(monthlySubmissionBarChartData, ...)
 
-// ⬇️⬇️⬇️ เริ่ม: Options/Key/Watch สำหรับกราฟประเภทสมาชิก ⬇️⬇️⬇️
 
-// 1. Key
+
+
+
 const memberTypeBarChartKey = ref(0);
 
-// 2. Options (คัดลอกจาก monthlyBarChartOptions แต่ปรับแกน X)
+
 const memberTypeBarChartOptions = ref({
     chart: {
         type: 'bar',
         height: 350,
-        stacked: true, // ⬅️ กราฟแบบซ้อนกัน
+        stacked: true,
         fontFamily: 'inherit',
         foreColor: '#adb0bb',
         toolbar: { show: true, tools: { download: true } },
     },
     plotOptions: {
         bar: {
-            horizontal: false, // ⬅️ กราฟแนวตั้ง
+            horizontal: false,
             columnWidth: '60%',
         },
     },
@@ -2161,7 +2031,7 @@ const memberTypeBarChartOptions = ref({
         colors: ['transparent']
     },
     xaxis: {
-        // ⬅️ เปลี่ยน categories และ title
+
         categories: ['สามัญ', 'สมทบ', 'วิสามัญ ก'] as string[],
         title: {
             text: 'ประเภทสมาชิก'
@@ -2191,15 +2061,15 @@ const memberTypeBarChartOptions = ref({
     },
 });
 
-// 3. Watcher (เพื่อสั่ง re-render เมื่อข้อมูล series เปลี่ยน)
+
 watch(memberTypeSubmissionChartData, (newData) => {
-    // อัปเดต Categories (เผื่อไว้ แต่ปกติค่านี้จะคงที่)
+
     memberTypeBarChartOptions.value.xaxis.categories = newData.categories;
-    // สั่ง re-render
+
     memberTypeBarChartKey.value += 1;
 });
 
-// ⬆️⬆️⬆️ สิ้นสุด: Options/Key/Watch ⬆️⬆️⬆️
+
 
 </script>
 
@@ -2507,8 +2377,6 @@ watch(memberTypeSubmissionChartData, (newData) => {
                                                 <td class="text-right font-weight-bold text-error">{{
                                                     memberSubmissionSummary.notSubmittedTotal }} คน</td>
                                             </tr>
-
-
                                         </tbody>
                                     </v-table>
                                 </v-col>
@@ -2601,7 +2469,7 @@ watch(memberTypeSubmissionChartData, (newData) => {
                                     <template v-if="memberMonthlySubmissionTableData.length > 0">
                                         <tr v-for="member in memberMonthlySubmissionTableData" :key="member.name">
                                             <td class="text-left font-weight-bold text-caption border-e">{{ member.name
-                                            }}</td>
+                                                }}</td>
 
                                             <td class="text-left text-caption border-e">
                                                 {{ member.member_type }} </td>
