@@ -1303,7 +1303,7 @@ const polarChartPriceData = computed(() => {
             const totalValue = (periodKey ? totalValueRow?.data[periodKey] : 0) || 0;
 
 
-            seriesData.push(totalValue / 1000000);
+            seriesData.push(totalValue);
         } else {
             seriesData.push(0);
         }
@@ -1340,7 +1340,7 @@ const polarChartRegionData = computed(() => {
             const totalValue = (periodKey ? totalValueRow?.data[periodKey] : 0) || 0;
 
 
-            seriesData.push(totalValue / 1000000);
+            seriesData.push(totalValue); // ใช้ค่ามูลค่าดิบ
         } else {
             seriesData.push(0);
         }
@@ -1354,96 +1354,118 @@ const polarChartRegionData = computed(() => {
 });
 
 
-const polarChartOptions = computed(() => ({
-    chart: {
-        type: 'polarArea',
-        height: 400,
-        fontFamily: 'inherit',
-        foreColor: '#adb0bb',
-    },
+const polarChartOptions = computed(() => {
 
-    stroke: {
+    // **[เพิ่ม]: กำหนดชุดสีที่แตกต่างกัน**
+    const chartColors = [
+        '#3F51B5', // Indigo
+        '#03A9F4', // Light Blue
+        '#4CAF50', // Green
+        '#FFC107', // Amber
+        '#F44336', // Red
+        '#9C27B0', // Purple
+        '#00BCD4', // Cyan
+        '#FF9800', // Orange
+        '#795548', // Brown
+        '#607D8B'  // Blue Grey
+    ];
 
-    },
-    fill: {
-        opacity: 0.9
-    },
-    legend: {
-        position: 'bottom',
-        offsetY: 0
-    },
-
-
-    yaxis: {
-        labels: {
-            show: false
-        }
-    },
-
-
-    dataLabels: {
-        enabled: true,
-        formatter: function (val: number, opts: any) {
-
-            const totalSum = opts.w.globals.seriesTotals.reduce((a: number, b: number) => a + b, 0);
-
-
-            const percentage = totalSum > 0 ? ((val / totalSum) * 100).toFixed(1) : '0.0';
-
-
-            const actualValue = val * 1000000;
-
-            console.log('Chart Value (Millions Baht):', val);
-            console.log('Original Value (Baht):', val * 1000000);
-            const formattedValue = actualValue.toLocaleString('th-TH', { maximumFractionDigits: 0 });
-
-
-            return [
-                formattedValue + ' บาท',
-                percentage + '%'
-            ];
+    return {
+        chart: {
+            type: 'polarArea',
+            height: 400,
+            fontFamily: 'inherit',
+            foreColor: '#adb0bb',
         },
-        style: {
-            fontSize: '12px',
+
+        // **[เพิ่ม]: กำหนดสีให้กับกราฟ**
+        colors: chartColors,
+
+        stroke: {
 
         },
-        dropShadow: {
-            enabled: true,
-            top: 1,
-            left: 1,
-            blur: 1,
-            opacity: 0.5
-        }
-    },
-
-    tooltip: {
-        y: {
-            formatter: (val: number) => {
+        fill: {
+            opacity: 0.9
+        },
+        legend: {
+            position: 'bottom',
+            offsetY: 0
+        },
 
 
-                const actualValue = val * 1000000;
-                return actualValue.toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + ' บาท';
+        yaxis: {
+            labels: {
+                show: false
             }
-        }
-    },
+        },
 
 
-    plotOptions: {
-        polarArea: {
-            rings: {
-                strokeWidth: 1,
-                strokeColor: '#e0e0e0',
-                strokeDashArray: 4
+        dataLabels: {
+            enabled: true,
+
+            formatter: function (val: number, opts: any) {
+
+                // 1. ดึงค่ามูลค่าดิบ (Raw Value) ของชิ้นส่วนกราฟปัจจุบัน
+                const rawValue = opts.w.globals.series[opts.seriesIndex];
+
+
+                // 2. คำนวณ % (val คือค่าเปอร์เซ็นต์)
+                const percentage = (Number(val) || 0).toFixed(2);
+
+
+                // ⬇️ เปลี่ยนการจัดรูปแบบให้แสดงมูลค่าดิบ
+                const formattedValue = rawValue.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+
+                // แสดงผลลัพธ์: [มูลค่าจริง, (เปอร์เซ็นต์)]
+                return [
+                    formattedValue + ' บาท', // เพิ่ม " บาท" ตรงนี้เพื่อให้ชัดเจน
+                    `(${percentage}%)`
+                ];
             },
-            spokes: {
-                strokeWidth: 1,
-                strokeColor: '#e0e0e0',
-                strokeDashArray: 4
+            // ...
+            style: {
+                fontSize: '9px',
             },
+            dropShadow: {
+                enabled: true,
+                top: 1,
+                left: 1,
+                blur: 1,
+                opacity: 0.5
+            }
+        },
+
+        tooltip: {
+            y: {
+                formatter: (val: number) => {
+                    // ใช้ค่าดิบ (Raw Value) โดยตรง
+                    const actualValue = val;
+
+                    // ⬇️ เปลี่ยนการจัดรูปแบบให้แสดงทศนิยม 2 ตำแหน่ง
+                    return actualValue.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' บาท';
+                }
+            }
+        },
+
+
+        plotOptions: {
+            polarArea: {
+                rings: {
+                    strokeWidth: 1,
+                    strokeColor: '#e0e0e0',
+                    strokeDashArray: 4
+                },
+                spokes: {
+                    strokeWidth: 1,
+                    strokeColor: '#e0e0e0',
+                    strokeDashArray: 4
+                },
+            }
         }
     }
 
-}));
+});
 
 const generateMockMemberData = (): MemberSubmission[] => {
     const memberData = summaryData.value?.membership_data || [];
@@ -2646,7 +2668,7 @@ watch(memberTypeSubmissionChartData, (newData) => {
                                     <template v-if="memberMonthlySubmissionTableData.length > 0">
                                         <tr v-for="member in memberMonthlySubmissionTableData" :key="member.name">
                                             <td class="text-left font-weight-bold text-caption border-e">{{ member.name
-                                                }}</td>
+                                            }}</td>
 
                                             <td class="text-left text-caption border-e">
                                                 {{ member.member_type }} </td>
@@ -2676,95 +2698,22 @@ watch(memberTypeSubmissionChartData, (newData) => {
                 <v-col cols="12">
                     <v-card>
                         <v-card-text>
-                            <h3 class="card-title mb-1">ตารางสรุปยอดเซ็นสัญญา แยกตามภูมิภาค</h3>
+                            <h3 class="card-title mb-1">ตารางสรุปยอดเซ็นสัญญา แยกตามมูลค่าบ้าน</h3>
                             <h5 class="card-subtitle">{{ chartSubtitle }}</h5>
 
                             <v-table density="compact" class="mt-4 border">
                                 <thead>
                                     <tr>
                                         <th rowspan="2" class="text-center text-subtitle-1 border-e"
-                                            style="min-width: 150px;">ภูมิภาค
-                                        </th>
-                                        <th rowspan="2" class="text-center text-subtitle-1 border-e"
                                             style="min-width: 150px;">
-                                            รายละเอียด</th>
-                                        <th :colspan="tablePeriods.length"
-                                            class="text-center text-h6 border-b-sm border-e">
-                                            <span v-if="tablePeriods.length > 0">{{ chartSubtitle }}</span>
-                                            <span v-else>ไม่พบช่วงเวลาที่เลือก</span>
-                                        </th>
-                                        <th v-if="lastPeriod && lastPeriod.monthIndex" :colspan="2"
-                                            class="text-center text-h6 border-b-sm bg-blue-grey-lighten-5">
-                                            อัตราเติบโต (ณ {{ lastPeriod.label }})
-                                        </th>
-                                    </tr>
-                                    <tr>
-                                        <th v-for="(period, index) in tablePeriods" :key="period.key"
-                                            class="text-right text-subtitle-1" :class="{
-                                                // ⬇️ [แก้ไข] เพิ่ม border-e เมื่อเป็นคอลัมน์สุดท้ายของช่วงข้อมูล ⬇️
-                                                'border-e': index === tablePeriods.length - 1,
-                                                'text-primary': period.key === 'TOTAL_PERIODS'
-                                            }" style="min-width: 120px;">
-                                            {{ period.label }}
-                                        </th>
-                                        <th v-if="lastPeriod && lastPeriod.monthIndex"
-                                            class="text-center text-subtitle-1 border-e" style="min-width: 80px;">MoM%
-                                        </th>
-                                        <th v-if="lastPeriod && lastPeriod.monthIndex"
-                                            class="text-center text-subtitle-1" style="min-width: 80px;">YTD%
+                                            มูลค่าบ้าน
                                         </th>
                                     </tr>
                                 </thead>
-                                <tbody>
-                                    <template v-if="regionReportTableData.length > 0">
-                                        <template v-for="(region, regIndex) in regionReportTableData"
-                                            :key="region.categoryName">
-                                            <tr v-for="(row, rowIndex) in region.rows"
-                                                :key="`${region.categoryName}-${row.metricKey}`" :class="{
-                                                    'bg-blue-grey-lighten-5': region.categoryName === 'รวมทั่วประเทศ',
-                                                    'border-t': rowIndex === 0,
-                                                }">
-                                                <td v-if="rowIndex === 0" :rowspan="region.rows.length"
-                                                    class="text-left font-weight-bold text-subtitle-2 border-e"
-                                                    :class="{ 'text-primary': region.categoryName === 'รวมทั่วประเทศ' }">
-                                                    {{ region.categoryName }}
-                                                </td>
-
-                                                <td class="text-left text-caption border-e">{{ row.metricName }}</td>
-
-                                                <td v-for="(period, index) in tablePeriods" :key="period.key"
-                                                    class="text-right text-subtitle-2" :class="{
-                                                        'text-primary font-weight-bold': region.categoryName === 'รวมทั่วประเทศ' && row.metricKey === 'total_value',
-                                                        // ⬇️ [แก้ไข] เพิ่ม border-e เมื่อเป็นคอลัมน์สุดท้ายของช่วงข้อมูล ⬇️
-                                                        'border-e': index === tablePeriods.length - 1
-                                                    }">
-                                                    {{ row.format(row.data[period.key] || 0) }}
-                                                </td>
-
-                                                <td v-if="lastPeriod && lastPeriod.monthIndex"
-                                                    class="text-right text-subtitle-2 border-e"
-                                                    :class="{ 'text-success': (row.growth.mom || 0) > 0, 'text-error': (row.growth.mom || 0) < 0 }">
-                                                    {{ row.growth.mom != null ? row.growth.mom.toFixed(2) + '%' : '-' }}
-                                                </td>
-
-                                                <td v-if="lastPeriod && lastPeriod.monthIndex"
-                                                    class="text-right text-subtitle-2"
-                                                    :class="{ 'text-success': (row.growth.ytd || 0) > 0, 'text-error': (row.growth.ytd || 0) < 0 }">
-                                                    {{ row.growth.ytd != null ? row.growth.ytd.toFixed(2) + '%' : '-' }}
-                                                </td>
-                                            </tr>
-                                        </template>
-                                    </template>
-                                    <tr v-else>
-                                        <td :colspan="tablePeriods.length + 4" class="text-center text-subtitle-1 py-4">
-                                            ไม่พบข้อมูลตามเงื่อนไขที่เลือก</td>
-                                    </tr>
-                                </tbody>
                             </v-table>
                         </v-card-text>
                     </v-card>
                 </v-col>
-
                 <v-col cols="12">
                     <v-card>
                         <v-card-text>
