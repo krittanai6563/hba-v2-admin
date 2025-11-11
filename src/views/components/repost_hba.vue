@@ -3,7 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue';
 import { useDate } from 'vuetify/lib/framework.mjs';
 
 import ExcelJS from 'exceljs';
-import type {Cell} from 'exceljs';
+import type {Cell, Worksheet, Column, Style, Font, Alignment, Fill, BorderStyle} from 'exceljs';
 
 const date = useDate();
 
@@ -2274,316 +2274,287 @@ watch(memberTypeSubmissionChartData, (newData) => {
     memberTypeBarChartKey.value += 1;
 });
 
-////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////
 
+
+
+// ========================================================================
+// START: EXCEL EXPORT (ส่วนที่ปรับปรุงใหม่เพื่อความสวยงาม)
+// ========================================================================
+
+// 1. STYLE DEFINITIONS (ปรับปรุงใหม่ + แก้ไขบั๊กเส้นขอบ)
 const COMMON_FONT_NAME = 'Angsana New';
-const TITLE_ROWS = 3; // (Title + Subtitle + Blank)
+const TITLE_ROWS = 4; // (Title + Subtitle + Timestamp + Blank)
 
-// Assuming required ExcelJS types (Font, BorderStyle, Alignment, Fill, Style) are defined globally or imported
-type Font = any;
-type BorderStyle = 'thin' | 'medium' | 'thick';
-type Alignment = any;
-type Fill = any;
-type Style = any;
-type ExcelJS = any; // Assuming ExcelJS namespace/module is available
+// --- Typography ---
+const FONT_DEFAULT: Partial<Font> = { name: COMMON_FONT_NAME, size: 14, color: { argb: 'FF000000' }, bold: false };
+const FONT_HEADER: Partial<Font> = { name: COMMON_FONT_NAME, size: 16, bold: true, color: { argb: 'FF000000' } };
+const FONT_TOTAL: Partial<Font> = { name: COMMON_FONT_NAME, size: 15, bold: true, color: { argb: 'FF000000' } };
+const FONT_TOTAL_PRIMARY: Partial<Font> = { name: COMMON_FONT_NAME, size: 15, bold: true, color: { argb: 'FF3F51B5' } };
 
-const FONT_DEFAULT: Partial<Font> = { name: COMMON_FONT_NAME, size: 11, color: { argb: 'FF000000' }, bold: false };
-const FONT_TOTAL_PRIMARY: Partial<Font> = { name: COMMON_FONT_NAME, size: 12, bold: true, color: { argb: 'FF3F51B5' } };
-
+// --- Border (เหมือนเดิม) ---
 const STYLE_BORDER: Partial<ExcelJS.Borders> = {
-    top: { style: 'thin' as BorderStyle }, bottom: { style: 'thin' as BorderStyle },
-    left: { style: 'thin' as BorderStyle }, right: { style: 'thin' as BorderStyle }
+    top: { style: 'thin' as BorderStyle }, bottom: { style: 'thin' as BorderStyle },
+    left: { style: 'thin' as BorderStyle }, right: { style: 'thin' as BorderStyle }
 };
 
+// --- Alignment (เหมือนเดิม) ---
 const STYLE_ALIGNMENT_CENTER: Partial<Alignment> = { vertical: 'middle', horizontal: 'center' };
 const STYLE_ALIGNMENT_RIGHT: Partial<Alignment> = { vertical: 'middle', horizontal: 'right' };
 const STYLE_ALIGNMENT_LEFT: Partial<Alignment> = { vertical: 'middle', horizontal: 'left' };
 
+// --- (แก้ไข) Color Palette - ระบุ Border อย่างชัดเจน ---
 const STYLE_HEADER: Partial<Style> = {
-    font: { name: COMMON_FONT_NAME, size: 12, bold: true },
-    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFA3C9E2' } } as Fill,
-    border: STYLE_BORDER,
-    alignment: STYLE_ALIGNMENT_CENTER,
+    font: FONT_HEADER,
+    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } } as Fill,
+    border: STYLE_BORDER, // <--- ระบุชัดเจน
+    alignment: STYLE_ALIGNMENT_CENTER,
 };
 
 const STYLE_DEFAULT: Partial<Style> = {
-    font: FONT_DEFAULT,
-    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } } as Fill,
-    border: STYLE_BORDER,
-    alignment: STYLE_ALIGNMENT_RIGHT,
-    numFmt: 'General'
+    font: FONT_DEFAULT,
+    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } } as Fill,
+    border: STYLE_BORDER, // <--- ระบุชัดเจน
+    alignment: STYLE_ALIGNMENT_RIGHT,
+    numFmt: 'General'
 };
 
 const STYLE_GROUP_LEFT: Partial<Style> = {
-    ...STYLE_DEFAULT,
-    font: { ...FONT_DEFAULT, bold: true },
-    alignment: STYLE_ALIGNMENT_LEFT,
+    font: { ...FONT_DEFAULT, bold: true },
+    fill: STYLE_DEFAULT.fill,
+    border: STYLE_BORDER, // <--- (แก้ไข) ระบุชัดเจน
+    alignment: STYLE_ALIGNMENT_LEFT,
+    numFmt: 'General'
+};
+
+const STYLE_BANDED_ROW: Partial<Style> = {
+    font: FONT_DEFAULT,
+    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFAFAFA' } } as Fill,
+    border: STYLE_BORDER, // <--- (แก้ไข) ระบุชัดเจน
+    alignment: STYLE_ALIGNMENT_RIGHT,
+    numFmt: 'General'
 };
 
 const STYLE_TOTAL: Partial<Style> = {
-    ...STYLE_DEFAULT,
-    font: { ...FONT_DEFAULT, bold: true },
-    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } } as Fill,
+    font: FONT_TOTAL,
+    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } } as Fill,
+    border: STYLE_BORDER, // <--- (แก้ไข) ระบุชัดเจน
+    alignment: STYLE_ALIGNMENT_RIGHT,
+    numFmt: 'General'
 };
 
 const STYLE_PRIMARY_TOTAL: Partial<Style> = {
-    ...STYLE_TOTAL,
-    font: FONT_TOTAL_PRIMARY,
-    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFB4C6E7' } } as Fill,
+    font: FONT_TOTAL_PRIMARY,
+    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } } as Fill,
+    border: STYLE_BORDER, // <--- (แก้ไข) ระบุชัดเจน
+    alignment: STYLE_ALIGNMENT_RIGHT,
+    numFmt: 'General'
 };
 
+// --- (แก้ไข) Growth Styles - ระบุ Border และ Fill ---
 const STYLE_GROWTH_GREEN: Partial<Style> = {
-    ...STYLE_DEFAULT,
-    font: { ...FONT_DEFAULT, color: { argb: 'FF00B050' }, bold: true },
+    font: { ...FONT_DEFAULT, color: { argb: 'FF00B050' }, bold: true },
+    fill: STYLE_DEFAULT.fill, // (ต้องมี fill เสมอ)
+    border: STYLE_BORDER,
+    alignment: STYLE_ALIGNMENT_RIGHT,
+    numFmt: '0.00%'
 };
 
 const STYLE_GROWTH_RED: Partial<Style> = {
-    ...STYLE_DEFAULT,
-    font: { ...FONT_DEFAULT, color: { argb: 'FFFF0000' }, bold: true },
+    font: { ...FONT_DEFAULT, color: { argb: 'FFFF0000' }, bold: true },
+    fill: STYLE_DEFAULT.fill, // (ต้องมี fill เสมอ)
+    border: STYLE_BORDER,
+    alignment: STYLE_ALIGNMENT_RIGHT,
+    numFmt: '0.00%'
 };
 
-
-// --------------------------------------------------------------------
-// 2. HELPER FUNCTION DEFINITIONS
-// --------------------------------------------------------------------
-
-const populateVerticalTableExport = (
-    worksheet: ExcelJS.Worksheet,
-    tableData: any,
-    periods: any,
-    isRegionCategory: boolean = false,
-    isRegionAndCategory: boolean = false,
-    startRow: number
-): number => {
-    let currentRow = startRow;
-    const periodsToDisplay = periods.filter((p: any) => p.key !== 'TOTAL_PERIODS');
-    const lp = periodsToDisplay.length > 0 ? periodsToDisplay[periodsToDisplay.length - 1] : null;
-    const hasGrowth = lp && lp.monthIndex !== undefined;
-
-    // --- 1. Header Generation --- (เหมือนเดิม)
-    let finalHeaders: any[][] = [];
-    if (isRegionAndCategory) {
-        finalHeaders.push(['ภูมิภาค', 'ช่วงมูลค่าบ้าน', 'รายละเอียด', ...periods.map((p: any) => p.label)]);
-        finalHeaders.push(['', '', '', ...periods.map((p: any) => p.label)]);
-    } else if (!isRegionCategory) {
-        finalHeaders.push(['มูลค่าบ้าน', 'รายละเอียด', ...periods.map((p: any) => p.label)]);
-        finalHeaders.push(['', '', ...periods.map((p: any) => p.label)]);
-    } else {
-        finalHeaders.push(['ภูมิภาค', 'รายละเอียด', ...periods.map((p: any) => p.label)]);
-        finalHeaders.push(['', '', ...periods.map((p: any) => p.label)]);
-    }
-    if (hasGrowth) {
-        finalHeaders[0].push('MoM%', 'YTD%');
-        finalHeaders[1].push('อัตราเติบโต', 'อัตราเติบโต');
-    }
-    const headerRowsCount = finalHeaders.length;
-    const dataStartRow = startRow + headerRowsCount;
-
-    // Write Headers and Apply Style (เหมือนเดิม)
-    finalHeaders.forEach((headerRow, rIndex) => {
-        const row = worksheet.getRow(startRow + rIndex);
-        row.values = [''].concat(headerRow);
-        row.height = 20;
-        row.eachCell((cell, colIndex) => {
-            cell.style = STYLE_HEADER as ExcelJS.Style;
-        });
-    });
-
-    // --- Apply Merge for Headers --- (เหมือนเดิม)
-    let startColIndex = 1;
-    worksheet.mergeCells(startRow, 1, startRow + headerRowsCount - 1, 1);
-    startColIndex++;
-
-    if (isRegionAndCategory) {
-        worksheet.mergeCells(startRow, 2, startRow + headerRowsCount - 1, 2);
-        startColIndex++;
-    }
-    worksheet.mergeCells(startRow, startColIndex, startRow + headerRowsCount - 1, startColIndex);
-
-    if (hasGrowth) {
-        const momYtdStartCol = finalHeaders[0].length;
-        if (momYtdStartCol > 0 && momYtdStartCol + 1 > momYtdStartCol) { 
-            worksheet.mergeCells(startRow + 1, momYtdStartCol, startRow + 1, momYtdStartCol + 1);
-        }
-    }
-
-    currentRow = dataStartRow;
-
-    // --- 2. Data Row Generation and Merges ---
-    (tableData as any[]).forEach((group: any) => {
-        const primaryGroupKey = isRegionAndCategory ? group.regionName : group.categoryName;
-        const secondaryGroups = isRegionAndCategory ? group.categories : [group];
-
-        secondaryGroups.forEach((category: any, categoryIndex: number) => {
-            const secondaryGroupKey = category.categoryName;
-            const groupRowCount = category.rows.length;
-
-            category.rows.forEach((row: any, rowIndex: number) => {
-                const isPrimaryTotal = primaryGroupKey === 'รวมทั่วประเทศ' || primaryGroupKey === 'รวม';
-                const isSecondaryTotal = secondaryGroupKey === 'รวม';
-                const metricName = row.metricName;
-                const isTotalMetric = metricName === 'มูลค่ารวม (บาท)';
-
-                const baseRowStyle = isPrimaryTotal || isSecondaryTotal ? STYLE_TOTAL : STYLE_DEFAULT;
-                let rowData: any[] = [];
-
-                // Col 0: Primary Group (Row Data)
-                rowData.push(rowIndex === 0 && (!isRegionAndCategory || categoryIndex === 0) ? primaryGroupKey : '');
-
-                // Apply Merge for Primary Group (Vertical)
-                if (rowIndex === 0 && (!isRegionAndCategory || categoryIndex === 0)) {
-                    const mergeSpan = isRegionAndCategory ? (group.categories.length * groupRowCount) : groupRowCount;
-                    if (mergeSpan > 1) { // *** ปรับปรุง: ตรวจสอบ mergeSpan > 1 ***
-                        const endRow = currentRow + mergeSpan - 1;
-                        if (currentRow < endRow) { // *** ปรับปรุง: startRow ต้องน้อยกว่า endRow ***
-                            worksheet.mergeCells(currentRow, 1, endRow, 1);
-                        }
-                    }
-                }
-
-                // Col 1: Secondary Group (Row Data)
-                if (isRegionAndCategory) {
-                    rowData.push(rowIndex === 0 ? secondaryGroupKey : '');
-                    // Apply Merge for Secondary Group (Vertical)
-                    if (rowIndex === 0) {
-                        const mergeSpan = groupRowCount;
-                        if (mergeSpan > 1) { // *** ปรับปรุง: ตรวจสอบ mergeSpan > 1 ***
-                             const endRow = currentRow + mergeSpan - 1;
-                            if (currentRow < endRow) { // *** ปรับปรุง: startRow ต้องน้อยกว่า endRow ***
-                                worksheet.mergeCells(currentRow, 2, endRow, 2);
-                            }
-                        }
-                    }
-                }
-
-                // Metric Name Column (Col 1 or 2) (เหมือนเดิม)
-                rowData.push(metricName);
-
-                // Period Data Columns and Growth Columns (เหมือนเดิม)
-                periods.forEach((p: any) => {
-                    const value = row.data[p.key] || 0;
-                    rowData.push(p.key === 'TOTAL_PERIODS' ? row.format(value).replace(/,/g, '') : value);
-                });
-
-                if (hasGrowth) {
-                    const momRate = row.growth.mom;
-                    const ytdRate = row.growth.ytd;
-                    rowData.push(momRate !== null ? momRate / 100 : '-');
-                    rowData.push(ytdRate !== null ? ytdRate / 100 : '-');
-                }
-
-                // Write Data Row (เหมือนเดิม)
-                const newRow = worksheet.getRow(currentRow);
-                newRow.values = [''].concat(rowData);
-                newRow.height = 18;
-
-                // Apply Styles (เหมือนเดิม)
-                let colIdxOffset = 1;
-                // ... (โค้ดส่วน Style) ...
-
-                currentRow++;
-            });
-        });
-    });
-
-    return currentRow - 1;
+// --- (แก้ไข) Status Styles - ระบุ Border ---
+const STYLE_STATUS_SUCCESS_FILL: Partial<Style> = {
+    font: { ...FONT_DEFAULT, color: { argb: 'FF006400' }, bold: true },
+    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEBFBEF' } } as Fill,
+    border: STYLE_BORDER, // <--- (แก้ไข) ระบุชัดเจน
+    alignment: STYLE_ALIGNMENT_CENTER,
+};
+const STYLE_STATUS_ERROR_FILL: Partial<Style> = {
+    font: { ...FONT_DEFAULT, color: { argb: 'FFB71C1C' }, bold: false },
+    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFEBEE' } } as Fill,
+    border: STYLE_BORDER, // <--- (แก้ไข) ระบุชัดเจน
+    alignment: STYLE_ALIGNMENT_CENTER,
 };
 
+// --------------------------------------------------------------------
+// 2. HELPER FUNCTION DEFINITIONS (ปรับปรุงความสูงแถวและ Number Format)
+// --------------------------------------------------------------------
 
 /**
- * Sheet 1: อัตราเติบโต (สรุป)
+ * (ใหม่)
+ * Helper เพื่อดึง Number Format ที่ถูกต้อง
+ */
+const getNumFmt = (metricKey: string): string => {
+    switch (metricKey) {
+        case 'total_units':
+            return '#,##0';
+        case 'total_value':
+        case 'total_area':
+        case 'average_price_per_sqm':
+            return '#,##0.00';
+        default:
+            return 'General';
+    }
+};
+
+/**
+ * (ปรับปรุง)
+ * Sheet 1: ตารางอัตราการเติบโต
  */
 const populateGrowthRateReportExport = (
-    worksheet: ExcelJS.Worksheet,
-    data: any,
-    periods: any,
+    worksheet: Worksheet,
+    data: any[],
+    periods: PeriodItem[],
     showQoQValue: boolean,
     startRow: number
 ): number => {
     let currentRow = startRow;
     const periodsToDisplay = periods.filter((p: any) => p.key !== 'TOTAL_PERIODS');
-
+    const lp = lastPeriod.value;
+    const hasGrowth = lp && lp.monthIndex;
+    const growthColCount = showQoQValue ? 4 : 3;
+    
     if (!data || periodsToDisplay.length === 0) return currentRow;
 
-    const metricsToInclude: any[] = [
+    const metricsToInclude = [
         { key: 'total_units', name: 'จำนวนหลัง' },
         { key: 'total_value', name: 'มูลค่ารวม (บาท)' },
     ];
+    const metricGroups = [...valueCategories, 'รวม'];
 
-    // Assuming valueCategories is defined in the surrounding scope
-    const metricGroups: any[] = [...(window as any).valueCategories, 'รวม'];
-    const headersCount = 1;
+    // --- 1. Headers ---
+    const rowHeader1 = worksheet.getRow(currentRow); 
+    const rowHeader2 = worksheet.getRow(currentRow + 1);
+    const rowHeader3 = worksheet.getRow(currentRow + 2);
+    rowHeader1.height = 28; // เพิ่มความสูง
+    rowHeader2.height = 28;
+    rowHeader3.height = 28;
 
-    // --- Data Generation ---
-    const header = ['ช่วงมูลค่าบ้าน', 'ตัวชี้วัด', ...periodsToDisplay.map((p: any) => p.label)];
-    const finalData: any[][] = [];
-    // *** Merges array ถูกเปลี่ยนชื่อจาก merges เป็น safeMerges เพื่อให้สอดคล้องกับการตรวจสอบ
-    const safeMerges: { s: { r: number, c: number }, e: { r: number, c: number } }[] = []; 
-    let currentDataRow = 0;
+    rowHeader1.getCell(2).value = 'ช่วงมูลค่าบ้าน';
+    rowHeader1.getCell(3).value = 'รายละเอียด';
+    rowHeader1.getCell(4).value = `ข้อมูล ${chartSubtitle.value}`;
+    if (hasGrowth) {
+        rowHeader1.getCell(4 + periodsToDisplay.length).value = 'อัตราการเติบโต (สรุป)';
+    }
 
+    worksheet.mergeCells(currentRow, 2, currentRow + 2, 2); 
+    worksheet.mergeCells(currentRow, 3, currentRow + 2, 3);
+    worksheet.mergeCells(currentRow, 4, currentRow, 3 + periodsToDisplay.length);
+    if (hasGrowth) {
+        worksheet.mergeCells(currentRow, 4 + periodsToDisplay.length, currentRow, 3 + periodsToDisplay.length + growthColCount);
+    }
+
+    periodsToDisplay.forEach((p, i) => {
+        rowHeader2.getCell(4 + i).value = p.label;
+    });
+    if (hasGrowth) {
+        rowHeader2.getCell(4 + periodsToDisplay.length).value = `สรุป ณ ${lp.label}`;
+        worksheet.mergeCells(currentRow + 1, 4 + periodsToDisplay.length, currentRow + 1, 3 + periodsToDisplay.length + growthColCount);
+    }
+    
+    if (hasGrowth) {
+        let growthColIdx = 4 + periodsToDisplay.length;
+        rowHeader3.getCell(growthColIdx).value = 'MoM%';
+        rowHeader3.getCell(growthColIdx + 1).value = 'YoY%';
+        if (showQoQValue) {
+            rowHeader3.getCell(growthColIdx + 2).value = 'QoQ%';
+        }
+        rowHeader3.getCell(growthColIdx + (showQoQValue ? 3 : 2)).value = 'YTD%';
+    }
+    
+    [rowHeader1, rowHeader2, rowHeader3].forEach(r => {
+        r.eachCell((cell, colIndex) => {
+            if (colIndex > 1) cell.style = STYLE_HEADER as Style;
+        });
+    });
+
+    currentRow += 3;
+
+    // --- 2. Data Rows ---
+    let dataRowIndex = 0;
     metricGroups.forEach((categoryName: any) => {
         const categoryData = data.find((c: any) => c.categoryName === categoryName);
         if (!categoryData) return;
 
-        let rowCount = 0;
-        const totalRowsPerGroup = metricsToInclude.length * (showQoQValue ? 5 : 4);
+        const isTotalGroup = categoryName === 'รวม';
+        const startGroupRow = currentRow;
 
-        metricsToInclude.forEach((metric) => {
-            // ... (โค้ด Growth Keys เหมือนเดิม) ...
+        metricsToInclude.forEach((metric, metricIndex) => {
+            const row = worksheet.getRow(currentRow);
+            row.height = 24; // เพิ่มความสูง
 
-            growthKeys.forEach((g) => {
-                const row: any[] = [];
+            const metricData = categoryData[metric.key];
+            const rawData = categoryData[`${metric.key}_raw`];
 
-                // *** ปรับปรุง: การคำนวณและเก็บ Merges (Sheet 1) ***
-                if (totalRowsPerGroup > 1) { // Merge ต้องครอบคลุมอย่างน้อย 2 แถว
-                    if (rowCount % totalRowsPerGroup === 0) {
-                        const startRowMerge = currentDataRow + currentRow;
-                        const endRowMerge = startRowMerge + totalRowsPerGroup - 1;
-                        
-                        if (startRowMerge < endRowMerge) { // Start Row ต้องน้อยกว่า End Row
-                            safeMerges.push({ s: { r: startRowMerge, c: 1 }, e: { r: endRowMerge, c: 1 } });
-                        }
-                        row.push(categoryName);
-                    } else {
-                        row.push('');
-                    }
-                } else {
-                     row.push(categoryName); 
-                }
-
-                row.push(g.label);
-
-                // ... (โค้ด Period Data Columns เหมือนเดิม) ...
-
-                finalData.push(row);
-                currentDataRow++;
-                rowCount++;
+            row.getCell(3).value = metric.name;
+            
+            periodsToDisplay.forEach((p, i) => {
+                row.getCell(4 + i).value = rawData[p.key] || 0;
             });
+            
+            if (hasGrowth) {
+                const growthData = metricData[lp.key];
+                let growthColIdx = 4 + periodsToDisplay.length;
+                
+                row.getCell(growthColIdx).value = growthData?.MoM != null ? growthData.MoM / 100 : '-';
+                row.getCell(growthColIdx + 1).value = growthData?.YoY != null ? growthData.YoY / 100 : '-';
+                if (showQoQValue) {
+                    row.getCell(growthColIdx + 2).value = growthData?.QoQ != null ? growthData.QoQ / 100 : '-';
+                }
+                row.getCell(growthColIdx + (showQoQValue ? 3 : 2)).value = growthData?.YTD != null ? growthData.YTD / 100 : '-';
+            }
+
+            // --- Apply Styles ---
+            const baseFill = (dataRowIndex % 2 === 1 && !isTotalGroup) ? STYLE_BANDED_ROW.fill : STYLE_DEFAULT.fill;
+            const baseStyle: Partial<Style> = isTotalGroup ? STYLE_PRIMARY_TOTAL : { ...STYLE_DEFAULT, fill: baseFill };
+            
+            row.eachCell((cell, colIndex) => {
+                if (colIndex < 2) return;
+                
+                if (colIndex === 3) {
+                    cell.style = { ...baseStyle, ...STYLE_GROUP_LEFT, font: {...baseStyle.font, ...STYLE_GROUP_LEFT.font} } as Style;
+                } else if (colIndex >= 4 && colIndex < (4 + periodsToDisplay.length)) {
+                    cell.style = { ...baseStyle, numFmt: getNumFmt(metric.key) } as Style; // ใช้ Format ที่ถูกต้อง
+                } else if (colIndex >= (4 + periodsToDisplay.length)) {
+                    const value = cell.value as number;
+                    cell.style = { ...baseStyle, numFmt: '0.00%' } as Style;
+                    if (value > 0) cell.style = { ...cell.style, ...STYLE_GROWTH_GREEN };
+                    else if (value < 0) cell.style = { ...cell.style, ...STYLE_GROWTH_RED };
+                }
+            });
+
+            currentRow++;
+            dataRowIndex++;
         });
-    });
 
-    // --- ExcelJS Application --- (เหมือนเดิม)
-    // ...
-
-    // Apply Merges (ขั้นตอนสุดท้าย)
-    safeMerges.forEach(m => {
-        // *** ปรับปรุง: ตรวจสอบขอบเขต Merge อีกครั้งก่อนเรียกใช้ ***
-        if (m.s.r < m.e.r && m.s.c <= m.e.c) { // Start Row น้อยกว่า End Row (Merge แนวตั้ง)
-            worksheet.mergeCells(m.s.r, m.s.c, m.e.r, m.e.c);
-        } 
+        // Merge Col A
+        const groupRowCount = metricsToInclude.length;
+        if (groupRowCount > 1) {
+            worksheet.mergeCells(startGroupRow, 2, startGroupRow + groupRowCount - 1, 2);
+        }
+        const cellA = worksheet.getCell(startGroupRow, 2);
+        cellA.value = categoryName;
+        cellA.style = (isTotalGroup ? { ...STYLE_PRIMARY_TOTAL, ...STYLE_GROUP_LEFT } : STYLE_GROUP_LEFT) as Style;
+        // ต้องกำหนด Fill ให้กับเซลล์ที่ถูก Merge ด้วย
+        if (dataRowIndex % 2 === 1 && !isTotalGroup) {
+             cellA.style.fill = STYLE_BANDED_ROW.fill;
+        }
     });
 
     return currentRow - 1;
 };
 
 /**
+ * (ปรับปรุง)
  * Sheet 2: สรุปสถานะสมาชิก
- *
- * *** ปรับปรุง: แก้ไขปัญหา Invalid Address: A โดยการใช้ cell.value แทน row.values ***
  */
 const populateMemberSummaryReportExport = (
-    worksheet: ExcelJS.Worksheet,
+    worksheet: Worksheet,
     summary: any,
     startRow: number
 ): number => {
@@ -2593,271 +2564,483 @@ const populateMemberSummaryReportExport = (
     const header = ['รายละเอียด', 'จำนวนสมาชิก (คน)'];
     
     const data: any[][] = [
-        ['สมาชิกทั้งหมด (ประเภท User)', summary.totalUsers.toLocaleString('th-TH')],
+        ['สมาชิกทั้งหมด (ประเภท User)', summary.totalUsers],
         ['', ''], // แถวว่าง
-        ['จำนวนสมาชิกที่กรอกในแต่ละช่วงเวลา:', ''], // แถว Group Header
-        ...periods.map((p: any) => [`> ${p.label}`, p.count.toLocaleString('th-TH')]),
+        ['จำนวนสมาชิกที่กรอกในแต่ละช่วงเวลา:', ''],
+        ...periods.map((p: any) => [`> ${p.label}`, p.count]),
         ['', ''], // แถวว่าง
-        [summary.submittedLabel, summary.submittedTotal.toLocaleString('th-TH')],
-        [summary.notSubmittedLabel, summary.notSubmittedTotal.toLocaleString('th-TH')]
+        [summary.submittedLabel, summary.submittedTotal],
+        [summary.notSubmittedLabel, summary.notSubmittedTotal]
     ];
 
-    const redStyle: Partial<Style> = { ...STYLE_DEFAULT, font: { ...STYLE_DEFAULT.font, size: 12, color: { argb: 'FFFF0000' }, bold: true }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8D7DA' } } as Fill };
-    const boldStyle: Partial<Style> = { ...STYLE_DEFAULT, font: { ...STYLE_DEFAULT.font, bold: true, color: { argb: 'FF000000' } }, alignment: STYLE_ALIGNMENT_LEFT };
-    const totalRowStyle: Partial<Style> = { ...STYLE_DEFAULT, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } } as Fill };
-
+    const redStyle: Partial<Style> = { ...STYLE_DEFAULT, font: { ...FONT_DEFAULT, color: { argb: 'FFFF0000' }, bold: true }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8D7DA' } } as Fill };
+    const boldStyle: Partial<Style> = { ...STYLE_DEFAULT, font: { ...FONT_TOTAL, bold: true }, alignment: STYLE_ALIGNMENT_LEFT };
+    const totalRowStyle: Partial<Style> = { ...STYLE_TOTAL, font: FONT_TOTAL };
 
     // Write Header
     const headerRowSheet = worksheet.getRow(currentRow);
-    headerRowSheet.height = 20;
-
-    // *** แก้ไข: กำหนด Header แต่ละเซลล์โดยตรง (ป้องกัน Invalid Address: A) ***
-    // Col 1 (A): Spacer
-    headerRowSheet.getCell(1).value = '';
-
-    // Col 2 (B) และ Col 3 (C): Header
-    header.forEach((value: string, dataIndex: number) => {
-        const colIdx = dataIndex + 2;
-        headerRowSheet.getCell(colIdx).value = value;
-    });
-    // -------------------------------------------------------------------
-
-    // ปรับการกำหนดสไตล์ส่วนหัว
-    headerRowSheet.eachCell((cell, colIndex) => {
-        // คอลัมน์ที่ 2 (รายละเอียด) และ 3 (จำนวนสมาชิก)
-        if (colIndex >= 2) {
-            cell.style = STYLE_HEADER as ExcelJS.Style;
-        } else if (colIndex === 1) {
-            // จัดการ Column A (Spacer) ไม่ให้มีขอบ
-            cell.style = { ...STYLE_DEFAULT, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } } as Fill, border: {} } as ExcelJS.Style;
-        }
-    });
+    headerRowSheet.height = 28; // เพิ่มความสูง
+    headerRowSheet.getCell(2).value = header[0];
+    headerRowSheet.getCell(3).value = header[1];
+    headerRowSheet.getCell(2).style = STYLE_HEADER as Style;
+    headerRowSheet.getCell(3).style = STYLE_HEADER as Style;
     currentRow++;
 
-    // Write Data and Apply Styles
+    // Write Data
+    let dataRowIndex = 0; // สำหรับ Banding
     data.forEach((row: any, rowIndex: number) => {
-        const excelRow = currentRow + rowIndex;
+        const excelRow = currentRow; // currentRow ถูกเพิ่มค่าไปแล้ว
         const newRow = worksheet.getRow(excelRow);
-        newRow.height = 18;
+        newRow.height = 24; // เพิ่มความสูง
 
-        // *** แก้ไข: กำหนดค่าแต่ละเซลล์โดยตรง (ป้องกัน Invalid Address: A) ***
-        // Col 1 (A): Spacer. กำหนดค่าเป็นสตริงว่าง
-        newRow.getCell(1).value = ''; 
+        const cellB = newRow.getCell(2);
+        const cellC = newRow.getCell(3);
+        cellB.value = row[0];
+        cellC.value = row[1];
         
-        // Col 2 (B) และ Col 3 (C): ข้อมูลจริง
-        row.forEach((value: any, dataIndex: number) => {
-            const colIdx = dataIndex + 2; 
-            const cell = newRow.getCell(colIdx);
-            
-            // กรองค่า null/undefined/false ให้เป็นสตริงว่างก่อนกำหนดค่า
-            if (value === null || value === undefined || value === false) {
-                cell.value = '';
-            } else {
-                cell.value = value;
-            }
-        });
-        // -------------------------------------------------------------------
-
         const isLastRow = rowIndex === data.length - 1;
         const isTotalRow = rowIndex === data.length - 2;
         const isGroupHeader = rowIndex === 0 || rowIndex === 2;
+        const isSpacer = rowIndex === 1 || rowIndex === 4;
+        const isSubItem = row[0] && (row[0] as string).startsWith('>');
+        
+        let styleB: Partial<Style> = { ...STYLE_DEFAULT, alignment: STYLE_ALIGNMENT_LEFT };
+        let styleC: Partial<Style> = { ...STYLE_DEFAULT, alignment: STYLE_ALIGNMENT_RIGHT, numFmt: '#,##0' };
 
-        // Loop ผ่าน 3 คอลัมน์ (A, B, C)
-        for (let c = 1; c <= header.length + 1; c++) {
-            const cell = newRow.getCell(c);
-            let currentStyle: Partial<Style> = STYLE_DEFAULT;
-            const rowValueIndex = c - 2; // c=1 (Spacer), c=2 (index 0), c=3 (index 1)
-
-            // 1. ตรรกะการกำหนดสไตล์หลัก (Red/Total/Bold)
-            if (isLastRow) {
-                currentStyle = redStyle;
-            } else if (isTotalRow) {
-                // ถ้าเป็น Column C (c=3) ให้จัดขวา
-                if (c === 3) currentStyle = { ...totalRowStyle, alignment: STYLE_ALIGNMENT_RIGHT } as Partial<Style>;
-                else currentStyle = totalRowStyle;
-
-            } else if (isGroupHeader) {
-                // ถ้าเป็น Column C (c=3) ให้จัดขวา
-                if (c === 3) currentStyle = { ...boldStyle, font: { ...boldStyle.font, size: 12 }, alignment: STYLE_ALIGNMENT_RIGHT };
-                else currentStyle = { ...boldStyle, font: { ...boldStyle.font, size: 12 }, alignment: STYLE_ALIGNMENT_LEFT };
-
-            } else if (rowIndex === 1 || rowIndex === 4) { // แถวว่าง
-                 currentStyle = { ...STYLE_DEFAULT, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } } as Fill, border: {} };
-            }
-
-            // 2. ตรรกะการจัดวางในแถวข้อมูลปกติ (Non-Red/Total/Bold)
-            if (!(isLastRow || isTotalRow || isGroupHeader || rowIndex === 1 || rowIndex === 4)) {
-                if (c === 2) { // Col B: 'รายละเอียด'
-                    currentStyle.alignment = STYLE_ALIGNMENT_LEFT;
-                } else if (c === 3) { // Col C: 'จำนวนสมาชิก'
-                    currentStyle.alignment = STYLE_ALIGNMENT_RIGHT;
-                }
-            }
-
-            // 3. จัดการ Col A (c=1) (Spacer/Vertical Merge)
-            if (c === 1) {
-                 // ใช้สไตล์แถวว่าง/Default สำหรับ Column A
-                 if (rowIndex === 1 || rowIndex === 4) {
-                    currentStyle = { ...STYLE_DEFAULT, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } } as Fill, border: {} };
-                 } else {
-                    currentStyle = STYLE_DEFAULT;
-                 }
-            }
-
-
-            if (!currentStyle.fill) {
-                currentStyle = { ...currentStyle, fill: STYLE_DEFAULT.fill };
-            }
-
-            // 4. กำหนด format ตัวเลขสำหรับ Column C
-            const cellValueForFmt = row[1]; // ค่าใน Column C คือ row[1]
-            if (c === 3 && cellValueForFmt !== '' && typeof cellValueForFmt === 'string' && !cellValueForFmt.includes(':') && !cellValueForFmt.includes('>')) {
-                 currentStyle.numFmt = '#,##0';
-            }
-
-
-            cell.style = currentStyle as ExcelJS.Style;
+        if (isLastRow) {
+            styleB = { ...redStyle, alignment: STYLE_ALIGNMENT_LEFT };
+            styleC = { ...redStyle, alignment: STYLE_ALIGNMENT_RIGHT, numFmt: '#,##0' };
+        } else if (isTotalRow) {
+            styleB = { ...totalRowStyle, alignment: STYLE_ALIGNMENT_LEFT };
+            styleC = { ...totalRowStyle, alignment: STYLE_ALIGNMENT_RIGHT, numFmt: '#,##0' };
+        } else if (isGroupHeader) {
+            styleB = { ...boldStyle, font: { ...boldStyle.font, size: 16 } };
+            styleC.font = FONT_DEFAULT;
+        } else if (isSpacer) {
+            styleB = { ...STYLE_DEFAULT, border: {} };
+            styleC = { ...STYLE_DEFAULT, border: {} };
+        } else if (isSubItem) {
+             // (ใหม่) ใช้ Banding กับ Sub-items
+             const baseFill = (dataRowIndex % 2 === 1) ? STYLE_BANDED_ROW.fill : STYLE_DEFAULT.fill;
+             styleB.fill = baseFill;
+             styleC.fill = baseFill;
+             dataRowIndex++;
         }
 
+        cellB.style = styleB as Style;
+        cellC.style = styleC as Style;
+        
         currentRow++;
     });
 
     return currentRow - 1;
 };
+
+/**
+ * (ปรับปรุง)
+ * Sheet 3: สถานะการกรอกรายเดือน
+ */
 const populateMemberMonthlySubmissionExport = (
-    worksheet: ExcelJS.Worksheet,
-    data: any,
-    periods: any,
+    worksheet: Worksheet,
+    data: any[],
+    periods: PeriodItem[],
     startRow: number
 ): number => {
     let currentRow = startRow;
     const periodsToDisplay = periods.filter((p: any) => p.key !== 'TOTAL_PERIODS');
-
     const periodHeaders = periodsToDisplay.map((p: any) => p.label);
+    const headersCount = 2;
+    const dataStartCol = 5; // Col E
 
-    const headerRow1 = ['รายชื่อสมาชิก', 'ประเภท', 'ยอดรวม', ...periodsToDisplay.map(() => 'สถานะการกรอก')];
-    const headerRow2 = ['รายชื่อสมาชิก', 'ประเภท', 'ยอดรวม', ...periodHeaders];
+    // --- Write Headers (Row 1 and 2) ---
+    const row1 = worksheet.getRow(currentRow);
+    const row2 = worksheet.getRow(currentRow + 1);
+    row1.height = 28; // เพิ่มความสูง
+    row2.height = 28;
 
-    const dataRows = data.map((m: any) => {
-        return [
-            m.name,
-            m.member_type,
-            m.total_submitted_in_period.toLocaleString('th-TH'),
-            ...periodsToDisplay.map((p: any) => m.submissions[p.key] || '-')
-        ];
+    row1.getCell(2).value = 'รายชื่อสมาชิก';
+    row1.getCell(3).value = 'ประเภท';
+    row1.getCell(4).value = 'ยอดรวม';
+    row1.getCell(dataStartCol).value = 'สถานะการกรอก';
+
+    periodHeaders.forEach((label, i) => {
+        row2.getCell(dataStartCol + i).value = label;
     });
 
-    const headersCount = 2;
+    // --- Apply Merges (เหมือนเดิม) ---
+    worksheet.mergeCells(currentRow, 2, currentRow + 1, 2);
+    worksheet.mergeCells(currentRow, 3, currentRow + 1, 3);
+    worksheet.mergeCells(currentRow, 4, currentRow + 1, 4);
+    if (periodHeaders.length > 1) {
+        worksheet.mergeCells(currentRow, dataStartCol, currentRow, dataStartCol + periodHeaders.length - 1);
+    }
+    
+    [row1, row2].forEach(r => {
+        r.eachCell((cell, colIndex) => {
+            if (colIndex > 1) cell.style = STYLE_HEADER as Style;
+        });
+    });
 
-    // Write Headers
-    const row1 = worksheet.getRow(currentRow);
-    row1.values = [''].concat(headerRow1);
-    row1.height = 20;
-    row1.eachCell((cell) => { cell.style = STYLE_HEADER as ExcelJS.Style; });
-
-    const row2 = worksheet.getRow(currentRow + 1);
-    row2.values = [''].concat(headerRow2.map((h, i) => i < 3 ? '' : h));
-    row2.height = 20;
-    row2.eachCell((cell) => { cell.style = STYLE_HEADER as ExcelJS.Style; });
     currentRow += headersCount;
 
-    // Apply Merges
-    const startMergeRow = startRow;
-    if (periodsToDisplay.length > 1) {
-        // *** ปรับปรุง: ตรวจสอบขอบเขต Merge ***
-        if (3 + periodsToDisplay.length > 4) { // Merge ต้องครอบคลุมอย่างน้อย 2 คอลัมน์
-            worksheet.mergeCells(startMergeRow, 4, startMergeRow, 3 + periodsToDisplay.length);
-        }
-    }
-    worksheet.mergeCells(startMergeRow, 1, startMergeRow + 1, 1);
-    worksheet.mergeCells(startMergeRow, 2, startMergeRow + 1, 2);
-    worksheet.mergeCells(startMergeRow, 3, startMergeRow + 1, 3);
+    // --- (ปรับปรุง) Style Definitions for Data Rows ---
+    const boldStyle: Partial<Style> = { ...STYLE_DEFAULT, font: { ...FONT_DEFAULT, bold: true }, alignment: STYLE_ALIGNMENT_LEFT };
+    const totalStyle: Partial<Style> = { ...boldStyle, alignment: STYLE_ALIGNMENT_RIGHT, numFmt: '#,##0' };
+    const leftStyle: Partial<Style> = { ...STYLE_DEFAULT, alignment: STYLE_ALIGNMENT_LEFT };
 
-    // --- Style Definitions for Data Rows ---
-    const successStyle: Partial<Style> = { ...STYLE_DEFAULT, alignment: STYLE_ALIGNMENT_CENTER, font: { ...STYLE_DEFAULT.font, color: { argb: 'FF00B050' }, bold: true } };
-    const errorStyle: Partial<Style> = { ...STYLE_DEFAULT, alignment: STYLE_ALIGNMENT_CENTER, font: { ...STYLE_DEFAULT.font, color: { argb: 'FFFF0000' } } };
-    const boldStyle: Partial<Style> = { ...STYLE_DEFAULT, font: { ...STYLE_DEFAULT.font, bold: true }, alignment: STYLE_ALIGNMENT_LEFT };
+    // --- (ใหม่) Banding Styles ---
+    const boldStyle_Banded: Partial<Style> = { ...boldStyle, fill: STYLE_BANDED_ROW.fill };
+    const totalStyle_Banded: Partial<Style> = { ...totalStyle, fill: STYLE_BANDED_ROW.fill };
+    const leftStyle_Banded: Partial<Style> = { ...leftStyle, fill: STYLE_BANDED_ROW.fill };
+    const success_Banded: Partial<Style> = { ...STYLE_STATUS_SUCCESS_FILL, fill: STYLE_BANDED_ROW.fill };
+const error_Banded: Partial<Style> = { ...STYLE_STATUS_ERROR_FILL, fill: STYLE_BANDED_ROW.fill };
 
 
-    // Write Data and Apply Styles
-    dataRows.forEach((row: any, rowIndex: number) => {
-        const excelRow = currentRow + rowIndex;
-        const newRow = worksheet.getRow(excelRow);
-        newRow.values = [''].concat(row);
-        newRow.height = 18;
+    // Write Data
+    data.forEach((m: any, rowIndex: number) => {
+        const newRow = worksheet.getRow(currentRow);
+        newRow.height = 24; // เพิ่มความสูง
+        
+        const isBanded = rowIndex % 2 === 1; // (ใหม่) ตรวจสอบแถบสี
 
-        // Name/Type/Total columns (1, 2, 3)
-        for (let c = 1; c <= 3; c++) {
-            const cell = newRow.getCell(c);
-            let currentStyle: Partial<Style> = STYLE_DEFAULT;
-            if (c === 1) {
-                currentStyle = boldStyle;
-            } else if (c === 2) {
-                currentStyle = { ...STYLE_DEFAULT, alignment: STYLE_ALIGNMENT_LEFT };
-            } else if (c === 3) {
-                currentStyle = { ...boldStyle, alignment: STYLE_ALIGNMENT_RIGHT };
-            }
-            cell.style = currentStyle as ExcelJS.Style;
-        }
+        // Col B (Name)
+        newRow.getCell(2).value = m.name;
+        newRow.getCell(2).style = (isBanded ? boldStyle_Banded : boldStyle) as Style;
+        
+        // Col C (Type)
+        newRow.getCell(3).value = m.member_type;
+        newRow.getCell(3).style = (isBanded ? leftStyle_Banded : leftStyle) as Style;
+        
+        // Col D (Total)
+        newRow.getCell(4).value = m.total_submitted_in_period;
+        newRow.getCell(4).style = (isBanded ? totalStyle_Banded : totalStyle) as Style;
 
-        // Status columns (4+)
-        for (let c = 4; c <= newRow.values.length; c++) {
-            const cell = newRow.getCell(c);
-            const value = row[c - 1];
-
+        // Col E+ (Status)
+        periodsToDisplay.forEach((p: any, i: number) => {
+            const cell = newRow.getCell(dataStartCol + i);
+            const value = m.submissions[p.key] || '-';
+            cell.value = value;
             if (value === 'X') {
-                cell.style = successStyle as ExcelJS.Style;
-            } else if (value === '-') {
-                cell.style = errorStyle as ExcelJS.Style;
+                cell.style = (isBanded ? success_Banded : STYLE_STATUS_SUCCESS_FILL) as Style; // (ปรับปรุง)
             } else {
-                cell.style = STYLE_DEFAULT as ExcelJS.Style;
+                cell.style = (isBanded ? error_Banded : STYLE_STATUS_ERROR_FILL) as Style; // (ปรับปรุง)
             }
-        }
+        });
+        
+        currentRow++;
     });
 
-    return currentRow + dataRows.length - 1;
+    return currentRow - 1;
+};
+
+/**
+ * (ปรับปรุง)
+ * Sheet 4 & 5: สรุปตามมูลค่าบ้าน / สรุปตามภูมิภาค
+ */
+const populateSimpleVerticalTable = (
+    worksheet: Worksheet,
+    tableData: TableCategory[],
+    periods: PeriodItem[],
+    startRow: number,
+    groupHeaderName: string
+): number => {
+    let currentRow = startRow;
+    const lp = lastPeriod.value;
+    const hasGrowth = lp && lp.monthIndex !== undefined;
+
+    // --- 1. Headers ---
+    const row1 = worksheet.getRow(currentRow);
+    const row2 = worksheet.getRow(currentRow + 1);
+    row1.height = 28; // เพิ่มความสูง
+    row2.height = 28;
+
+    const dataStartCol = 4; // Col D
+
+    // Header Row 1
+    row1.getCell(2).value = groupHeaderName;
+    row1.getCell(3).value = 'รายละเอียด';
+    row1.getCell(dataStartCol).value = `ข้อมูล ${chartSubtitle.value}`;
+    if (hasGrowth) {
+        row1.getCell(dataStartCol + periods.length).value = `อัตราเติบโต (ณ ${lp.label})`;
+    }
+
+    // Header Row 2
+    periods.forEach((p, i) => {
+        row2.getCell(dataStartCol + i).value = p.label;
+    });
+    if (hasGrowth) {
+        row2.getCell(dataStartCol + periods.length).value = 'MoM%';
+        row2.getCell(dataStartCol + periods.length + 1).value = 'YTD%';
+    }
+
+    // Merges
+    worksheet.mergeCells(currentRow, 2, currentRow + 1, 2);
+    worksheet.mergeCells(currentRow, 3, currentRow + 1, 3);
+    worksheet.mergeCells(currentRow, dataStartCol, currentRow, dataStartCol + periods.length - 1);
+    if (hasGrowth) {
+        worksheet.mergeCells(currentRow, dataStartCol + periods.length, currentRow, dataStartCol + periods.length + 1);
+    }
+    
+    // Style
+    [row1, row2].forEach(r => {
+        r.eachCell((cell, colIndex) => {
+            if (colIndex > 1) cell.style = STYLE_HEADER as Style;
+        });
+        periods.forEach((p, i) => {
+            row2.getCell(dataStartCol + i).style = { ...STYLE_HEADER, alignment: STYLE_ALIGNMENT_RIGHT } as Style;
+        });
+    });
+
+    currentRow += 2;
+
+    // --- 2. Data Rows ---
+    let dataRowIndex = 0; // (ใหม่) สำหรับ Banding
+    tableData.forEach((category: TableCategory) => {
+        const startGroupRow = currentRow;
+        const groupRowCount = category.rows.length;
+        const isTotalGroup = category.categoryName === 'รวม' || category.categoryName === 'รวมทั่วประเทศ';
+
+        category.rows.forEach((row: TableRow, rowIndex: number) => {
+            const dataRow = worksheet.getRow(currentRow);
+            dataRow.height = 24; // เพิ่มความสูง
+            
+            const isTotalMetric = row.metricKey === 'total_value';
+            
+            // (ใหม่) กำหนด Style พื้นฐาน (สำหรับ Banding)
+            const baseFill = (dataRowIndex % 2 === 1 && !isTotalGroup) ? STYLE_BANDED_ROW.fill : STYLE_DEFAULT.fill;
+            let baseStyle: Partial<Style> = isTotalGroup 
+                ? (isTotalMetric ? STYLE_PRIMARY_TOTAL : STYLE_TOTAL) 
+                : { ...STYLE_DEFAULT, fill: baseFill };
+
+            // Col C (รายละเอียด)
+            dataRow.getCell(3).value = row.metricName;
+            dataRow.getCell(3).style = { ...baseStyle, alignment: STYLE_ALIGNMENT_LEFT } as Style;
+            
+            // Col D+ (Periods Data)
+            periods.forEach((p: PeriodItem, i: number) => {
+                const cell = dataRow.getCell(dataStartCol + i);
+                const value = row.data[p.key] || 0;
+                cell.value = value;
+                cell.style = { ...baseStyle, numFmt: getNumFmt(row.metricKey) } as Style; // (ปรับปรุง)
+                if (p.key === 'TOTAL_PERIODS') cell.style.font = { ...cell.style.font, bold: true };
+            });
+            
+            // Col... (Growth Data)
+            if (hasGrowth) {
+                const cellMoM = dataRow.getCell(dataStartCol + periods.length);
+                const cellYTD = dataRow.getCell(dataStartCol + periods.length + 1);
+                
+                cellMoM.value = row.growth.mom != null ? row.growth.mom / 100 : '-';
+                cellYTD.value = row.growth.ytd != null ? row.growth.ytd / 100 : '-';
+
+                [cellMoM, cellYTD].forEach(cell => {
+                    cell.style = { ...baseStyle, numFmt: '0.00%' } as Style;
+                    const value = cell.value as number;
+                    if (value > 0) cell.style = { ...cell.style, ...STYLE_GROWTH_GREEN };
+                    else if (value < 0) cell.style = { ...cell.style, ...STYLE_GROWTH_RED };
+                });
+            }
+            
+            currentRow++;
+            if (!isTotalGroup) dataRowIndex++; // (ใหม่) นับ Index
+        });
+
+        // Merge Col B (Group)
+        if (groupRowCount > 1) {
+            worksheet.mergeCells(startGroupRow, 2, startGroupRow + groupRowCount - 1, 2);
+        }
+        const cellB = worksheet.getCell(startGroupRow, 2);
+        cellB.value = category.categoryName;
+      cellB.style = (isTotalGroup ? { ...STYLE_PRIMARY_TOTAL, ...STYLE_GROUP_LEFT } : STYLE_GROUP_LEFT) as Style;
+    });
+
+    return currentRow - 1;
+};
+
+
+/**
+ * (ปรับปรุง)
+ * Sheet 6: สรุปตามภูมิภาค และมูลค่าบ้าน
+ */
+const populateComplexVerticalTable = (
+    worksheet: Worksheet,
+    tableData: RegionCategoryGroup[],
+    periods: PeriodItem[],
+    startRow: number
+): number => {
+    let currentRow = startRow;
+    const lp = lastPeriod.value;
+    const hasGrowth = lp && lp.monthIndex !== undefined;
+
+    // --- 1. Headers ---
+    const row1 = worksheet.getRow(currentRow);
+    const row2 = worksheet.getRow(currentRow + 1);
+    row1.height = 28; // เพิ่มความสูง
+    row2.height = 28;
+
+    const dataStartCol = 5; // Col E
+
+    // Header Row 1
+    row1.getCell(2).value = 'ภูมิภาค';
+    row1.getCell(3).value = 'ช่วงมูลค่าบ้าน';
+    row1.getCell(4).value = 'รายละเอียด';
+    row1.getCell(dataStartCol).value = `ข้อมูล ${chartSubtitle.value}`;
+    if (hasGrowth) {
+        row1.getCell(dataStartCol + periods.length).value = `อัตราเติบโต (ณ ${lp.label})`;
+    }
+
+    // Header Row 2
+    periods.forEach((p, i) => {
+        row2.getCell(dataStartCol + i).value = p.label;
+    });
+    if (hasGrowth) {
+        row2.getCell(dataStartCol + periods.length).value = 'MoM%';
+        row2.getCell(dataStartCol + periods.length + 1).value = 'YTD%';
+    }
+
+    // Merges
+    worksheet.mergeCells(currentRow, 2, currentRow + 1, 2);
+    worksheet.mergeCells(currentRow, 3, currentRow + 1, 3);
+    worksheet.mergeCells(currentRow, 4, currentRow + 1, 4);
+    worksheet.mergeCells(currentRow, dataStartCol, currentRow, dataStartCol + periods.length - 1);
+    if (hasGrowth) {
+        worksheet.mergeCells(currentRow, dataStartCol + periods.length, currentRow, dataStartCol + periods.length + 1);
+    }
+    
+    // Style
+    [row1, row2].forEach(r => {
+        r.eachCell((cell, colIndex) => {
+            if (colIndex > 1) cell.style = STYLE_HEADER as Style;
+        });
+        periods.forEach((p, i) => {
+            row2.getCell(dataStartCol + i).style = { ...STYLE_HEADER, alignment: STYLE_ALIGNMENT_RIGHT } as Style;
+        });
+    });
+
+    currentRow += 2;
+
+    // --- 2. Data Rows ---
+    let dataRowIndex = 0; // (ใหม่) สำหรับ Banding
+    tableData.forEach((regionGroup: RegionCategoryGroup) => {
+        const startRegionRow = currentRow;
+        const isTotalRegion = regionGroup.regionName === 'รวมทั่วประเทศ';
+        
+        let totalRowsInRegion = 0;
+        regionGroup.categories.forEach(cat => totalRowsInRegion += cat.rows.length);
+
+        regionGroup.categories.forEach((category: TableCategory, categoryIndex: number) => {
+            const startCategoryRow = currentRow;
+            const groupRowCount = category.rows.length;
+            const isTotalCategory = category.categoryName === 'รวม';
+
+            category.rows.forEach((row: TableRow, rowIndex: number) => {
+                const dataRow = worksheet.getRow(currentRow);
+                dataRow.height = 24; // เพิ่มความสูง
+
+                const isTotalMetric = row.metricKey === 'total_value';
+                
+                // (ใหม่) กำหนด Style พื้นฐาน (สำหรับ Banding)
+                const baseFill = (dataRowIndex % 2 === 1 && !isTotalRegion && !isTotalCategory) ? STYLE_BANDED_ROW.fill : STYLE_DEFAULT.fill;
+                const baseStyle: Partial<Style> = (isTotalRegion || isTotalCategory) 
+                    ? (isTotalMetric ? STYLE_PRIMARY_TOTAL : STYLE_TOTAL) 
+                    : { ...STYLE_DEFAULT, fill: baseFill };
+
+                // Col D (รายละเอียด)
+                dataRow.getCell(4).value = row.metricName;
+                dataRow.getCell(4).style = { ...baseStyle, alignment: STYLE_ALIGNMENT_LEFT } as Style;
+
+                // Col E+ (Periods Data)
+                periods.forEach((p: PeriodItem, i: number) => {
+                    const cell = dataRow.getCell(dataStartCol + i);
+                    const value = row.data[p.key] || 0;
+                    cell.value = value;
+                    cell.style = { ...baseStyle, numFmt: getNumFmt(row.metricKey) } as Style; // (ปรับปรุง)
+                    if (p.key === 'TOTAL_PERIODS') cell.style.font = { ...cell.style.font, bold: true };
+                });
+                
+                // Col... (Growth Data)
+                if (hasGrowth) {
+                    const cellMoM = dataRow.getCell(dataStartCol + periods.length);
+                    const cellYTD = dataRow.getCell(dataStartCol + periods.length + 1);
+                    
+                    cellMoM.value = row.growth.mom != null ? row.growth.mom / 100 : '-';
+                    cellYTD.value = row.growth.ytd != null ? row.growth.ytd / 100 : '-';
+
+                    [cellMoM, cellYTD].forEach(cell => {
+                        cell.style = { ...baseStyle, numFmt: '0.00%' } as Style;
+                        const value = cell.value as number;
+                        if (value > 0) cell.style = { ...cell.style, ...STYLE_GROWTH_GREEN };
+                        else if (value < 0) cell.style = { ...cell.style, ...STYLE_GROWTH_RED };
+                    });
+                }
+                
+                currentRow++;
+                if (!isTotalCategory && !isTotalRegion) dataRowIndex++; // (ใหม่) นับ Index
+            });
+
+            // Merge Col C (Category)
+            if (groupRowCount > 1) {
+                worksheet.mergeCells(startCategoryRow, 3, startCategoryRow + groupRowCount - 1, 3);
+            }
+            const cellC = worksheet.getCell(startCategoryRow, 3);
+            cellC.value = category.categoryName;
+            cellC.style = (isTotalCategory || isTotalRegion ? { ...STYLE_PRIMARY_TOTAL, ...STYLE_GROUP_LEFT } : STYLE_GROUP_LEFT) as Style;
+        });
+
+        // Merge Col B (Region)
+        if (totalRowsInRegion > 1) {
+            worksheet.mergeCells(startRegionRow, 2, startRegionRow + totalRowsInRegion - 1, 2);
+        }
+        const cellB = worksheet.getCell(startRegionRow, 2);
+        cellB.value = regionGroup.regionName;
+        cellB.style = (isTotalRegion ? { ...STYLE_PRIMARY_TOTAL, ...STYLE_GROUP_LEFT } : STYLE_GROUP_LEFT) as Style;
+    });
+
+    return currentRow - 1;
 };
 
 
 // --------------------------------------------------------------------
-// 3. MAIN EXPORT FUNCTION
+// 3. MAIN EXPORT FUNCTION (ปรับปรุง Title และ Timestamp)
 // --------------------------------------------------------------------
-// Type definitions for Type Assertion
-type VerticalPopulateFn = (w: ExcelJS.Worksheet, td: any, p: any, irc: boolean, irac: boolean, sr: number) => number;
-type GrowthRatePopulateFn = (w: ExcelJS.Worksheet, d: any, p: any, sqq: boolean, sr: number) => number;
-type SummaryPopulateFn = (w: ExcelJS.Worksheet, s: any, sr: number) => number;
-type MonthlyPopulateFn = (w: ExcelJS.Worksheet, d: any, p: any, sr: number) => number;
-
-
 const exportToExcel = async () => {
     const workbook = new ExcelJS.Workbook();
     
-    // *** การปรับปรุง: ใช้ Optional Chaining (?.) ในการดึงค่าทั้งหมดเพื่อป้องกัน TypeError ***
-    const chartSubtitleText = ((window as any).chartSubtitle?.value) || 'รายงานรวมตามปีปัจจุบัน';
+    const chartSubtitleText = chartSubtitle.value || 'รายงานรวมตามปีปัจจุบัน';
     
-    const memberSubmissionSummary = (window as any).memberSubmissionSummary?.value;
-    const tablePeriods = (window as any).tablePeriods?.value || [];
-    const monthlyReportTableData = (window as any).monthlyReportTableData?.value;
-    const regionReportTableData = (window as any).regionReportTableData?.value;
-    const regionAndCategoryReportTableData = (window as any).regionAndCategoryReportTableData?.value;
-    const growthRateReportTableData = (window as any).growthRateReportTableData?.value;
-    const showQoQ = (window as any).showQoQ; // ตัวแปรนี้เป็น Ref object
-    const memberMonthlySubmissionTableData = (window as any).memberMonthlySubmissionTableData?.value;
-    // --------------------------------------------------------------------------------------
-
+    const allTablePeriods = tablePeriods.value || [];
+    const allGrowthRateData = growthRateReportTableData.value;
+    const allMemberSummary = memberSubmissionSummary.value;
+    const allMemberMonthlyData = memberMonthlySubmissionTableData.value;
+    const allMonthlyReportData = monthlyReportTableData.value;
+    const allRegionReportData = regionReportTableData.value;
+    const allRegionAndCategoryData = regionAndCategoryReportTableData.value;
+    const showQoQValue = showQoQ.value;
 
     const sheetConfigurations = [
-        // อ้างอิงถึงฟังก์ชันที่ถูกประกาศไว้ข้างบนแล้ว
-        { name: '1. อัตราเติบโต (มูลค่าบ้าน)', data: growthRateReportTableData, periods: tablePeriods, isSummary: true, populateFn: populateGrowthRateReportExport, isRegionCategory: false, isRegionAndCategory: false },
-        { name: '2. สรุปสถานะสมาชิก', data: memberSubmissionSummary, periods: [], isSummary: true, populateFn: populateMemberSummaryReportExport, isRegionCategory: false, isRegionAndCategory: false },
-        { name: '3. สถานะการกรอกรายเดือน', data: memberMonthlySubmissionTableData, periods: tablePeriods, isSummary: false, populateFn: populateMemberMonthlySubmissionExport, isRegionCategory: false, isRegionAndCategory: false },
-        { name: '4. สรุปตามมูลค่าบ้าน', data: monthlyReportTableData, periods: tablePeriods, isSummary: false, isRegionCategory: false, isRegionAndCategory: false, populateFn: populateVerticalTableExport },
-        { name: '5. สรุปตามภูมิภาค', data: regionReportTableData, periods: tablePeriods, isSummary: false, isRegionCategory: true, isRegionAndCategory: false, populateFn: populateVerticalTableExport },
-        { name: '6. สรุปตามภูมิภาคและมูลค่า', data: regionAndCategoryReportTableData, periods: tablePeriods, isSummary: false, isRegionCategory: true, isRegionAndCategory: true, populateFn: populateVerticalTableExport },
+        { name: '1. อัตราเติบโต (มูลค่าบ้าน)', data: allGrowthRateData, periods: allTablePeriods, populateFn: populateGrowthRateReportExport },
+        { name: '2. สรุปสถานะสมาชิก', data: allMemberSummary, periods: [], populateFn: populateMemberSummaryReportExport },
+        { name: '3. สถานะการกรอกรายเดือน', data: allMemberMonthlyData, periods: allTablePeriods, populateFn: populateMemberMonthlySubmissionExport },
+        { name: '4. สรุปตามมูลค่าบ้าน', data: allMonthlyReportData, periods: allTablePeriods, populateFn: populateSimpleVerticalTable, groupHeaderName: 'มูลค่าบ้าน' },
+        { name: '5. สรุปตามภูมิภาค', data: allRegionReportData, periods: allTablePeriods, populateFn: populateSimpleVerticalTable, groupHeaderName: 'ภูมิภาค' },
+        { name: '6. สรุปตามภูมิภาคและมูลค่า', data: allRegionAndCategoryData, periods: allTablePeriods, populateFn: populateComplexVerticalTable },
     ];
 
-    const defaultTitleStyle: Partial<Style> = { font: { name: COMMON_FONT_NAME, size: 18, bold: true, color: { argb: "FF3F51B5" } }, alignment: STYLE_ALIGNMENT_CENTER };
-    const defaultSubtitleStyle: Partial<Style> = { font: { name: COMMON_FONT_NAME, size: 14, bold: true, color: { argb: "FF000000" } }, alignment: STYLE_ALIGNMENT_CENTER };
+    // --- (ปรับปรุง) Title Styles ---
+    const defaultTitleStyle: Partial<Style> = { 
+        font: { name: COMMON_FONT_NAME, size: 22, bold: true, color: { argb: "FF3F51B5" } }, 
+        alignment: STYLE_ALIGNMENT_CENTER 
+    };
+    const defaultSubtitleStyle: Partial<Style> = { 
+        font: { name: COMMON_FONT_NAME, size: 18, bold: true, color: { argb: "FF000000" } }, 
+        alignment: STYLE_ALIGNMENT_CENTER 
+    };
+    // --- (ใหม่) Timestamp Style ---
+    const timestampStyle: Partial<Style> = { 
+        font: { name: COMMON_FONT_NAME, size: 12, italic: true, color: { argb: "FF6C757D" } }, 
+        alignment: STYLE_ALIGNMENT_CENTER 
+    };
+
 
     for (const config of sheetConfigurations) {
         if (!config.data) continue;
@@ -2865,107 +3048,91 @@ const exportToExcel = async () => {
         const worksheet = workbook.addWorksheet(config.name.substring(0, 31));
         const reportTitle = `รายงานยอดเซ็นสัญญา: ${config.name.replace(/^[0-9]\. /g, '').replace(/\(.+\)/g, '').trim()}`;
         const subTitle = chartSubtitleText.startsWith('กรุณา') ? 'รายงานรวมตามปีปัจจุบัน' : chartSubtitleText;
+        
+        // (ใหม่) สร้าง Timestamp
+        const now = new Date();
+        const generatedOn = `จัดทำเมื่อ: ${now.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })} เวลา ${now.toLocaleTimeString('th-TH')}`;
 
-        // --- Determine Max Columns for Title Merging ---
+        // (ปรับปรุง) การคำนวณ Max Columns (ถูกต้องแล้วจากรอบที่แล้ว)
         const periodsData = config.periods || [];
+        const periodsToDisplay = periodsData.filter((p: any) => p.key !== 'TOTAL_PERIODS');
+        const lp = periodsToDisplay.length > 0 ? periodsToDisplay[periodsToDisplay.length - 1] : (allTablePeriods[0] || null);
+        const hasGrowth = lp && lp.monthIndex !== undefined;
         let maxCols: number;
-
-        if (config.name.includes('สถานะสมาชิก')) {
-            maxCols = 2;
+        if (config.name.includes('อัตราเติบโต')) {
+            maxCols = 3 + periodsToDisplay.length + (hasGrowth ? (showQoQValue ? 4 : 3) : 0);
+        } else if (config.name.includes('สถานะสมาชิก')) {
+            maxCols = 3;
         } else if (config.name.includes('สถานะการกรอก')) {
-            maxCols = 3 + periodsData.length;
+            maxCols = 4 + periodsToDisplay.length;
+        } else if (config.name.includes('สรุปตามภูมิภาคและมูลค่า')) {
+            maxCols = 4 + periodsData.length + (hasGrowth ? 2 : 0);
+        } else if (config.name.includes('สรุปตามมูลค่าบ้าน') || config.name.includes('สรุปตามภูมิภาค')) {
+            maxCols = 3 + periodsData.length + (hasGrowth ? 2 : 0);
         } else {
-            const numPeriods = periodsData.length;
-            const hasGrowth = numPeriods > 0 && periodsData.some((p: any) => p.monthIndex !== undefined);
-            const baseCols = config.name.includes('อัตราเติบโต') ? 2 : (config.isRegionAndCategory ? 3 : 2);
-            maxCols = baseCols + numPeriods + (hasGrowth ? 2 : 0);
+            maxCols = 10; // Fallback
         }
 
-        // 1. Write and Merge Title/Subtitle
-        const titleRow = worksheet.insertRow(1, [reportTitle]);
-        const subtitleRow = worksheet.insertRow(2, [subTitle]);
-        worksheet.insertRow(3, []);
+        // 1. Write and Merge Title/Subtitle/Timestamp
+        worksheet.insertRow(1, [reportTitle]);
+        worksheet.insertRow(2, [subTitle]);
+        worksheet.insertRow(3, [generatedOn]); // (ใหม่)
+        worksheet.insertRow(4, []); // Blank Row
 
-        // *** ปรับปรุง: ตรวจสอบ MaxCols ก่อน Merge ***
         const safeMaxCols = Math.max(1, maxCols); 
-
         worksheet.mergeCells(1, 1, 1, safeMaxCols);
         worksheet.mergeCells(2, 1, 2, safeMaxCols);
-        // -----------------------------------------
+        worksheet.mergeCells(3, 1, 3, safeMaxCols); // (ใหม่)
 
-        // Apply Title/Subtitle Style
-        worksheet.getCell(1, 1).style = defaultTitleStyle as ExcelJS.Style;
-        worksheet.getCell(2, 1).style = defaultSubtitleStyle as ExcelJS.Style;
-        titleRow.height = 24;
-        subtitleRow.height = 20;
+        // Apply Title/Subtitle/Timestamp Style
+        worksheet.getCell(1, 1).style = defaultTitleStyle as Style;
+        worksheet.getCell(2, 1).style = defaultSubtitleStyle as Style;
+        worksheet.getCell(3, 1).style = timestampStyle as Style; // (ใหม่)
+        worksheet.getRow(1).height = 28;
+        worksheet.getRow(2).height = 24;
+        worksheet.getRow(3).height = 18;
+
 
         // 2. Populate Data and Apply Column Widths
-
-        // --- Setup Column Widths ---
-        let columns: Partial<ExcelJS.Column>[] = [{ width: 5 }]; // Col 0 (Unused/Spacer)
-
-        const numPeriods = periodsData.length;
-        const hasGrowth = numPeriods > 0 && periodsData.some((p: any) => p.monthIndex !== undefined);
-
+        let columns: Partial<Column>[] = [{ width: 5 }]; // Col A (Spacer)
+        // ... (ส่วน Column Widths เหมือนเดิม ไม่ต้องแก้ไข) ...
         if (config.name.includes('อัตราเติบโต')) {
-            columns.push({ width: 30 }, { width: 40 });
-            periodsData.forEach(() => columns.push({ width: 18 }));
+            columns.push({ width: 30 }, { width: 40 }); // B, C
+            periodsToDisplay.forEach(() => columns.push({ width: 18 }));
+            if(hasGrowth) {
+                columns.push({ width: 12 }, { width: 12 });
+                if(showQoQValue) columns.push({ width: 12 });
+                columns.push({ width: 12 });
+            }
         } else if (config.name.includes('สถานะสมาชิก')) {
-            columns.push({ width: 45 }, { width: 20 });
+            columns.push({ width: 45 }, { width: 20 }); // B, C
         } else if (config.name.includes('สถานะการกรอก')) {
-            columns.push({ width: 30 }, { width: 20 }, { width: 15 });
-            periodsData.forEach(() => columns.push({ width: 10 }));
-        } else {
-            // Vertical Tables (Sheets 4, 5, 6)
-            columns.push({ width: 30 });
-            if (config.isRegionAndCategory) { columns.push({ width: 25 }); }
-            columns.push({ width: 25 });
+            columns.push({ width: 30 }, { width: 20 }, { width: 15 }); // B, C, D
+            periodsToDisplay.forEach(() => columns.push({ width: 10 }));
+        } else if (config.name.includes('สรุปตามภูมิภาคและมูลค่า')) {
+            columns.push({ width: 30 }, { width: 25 }, { width: 25 }); // B, C, D
+            periodsData.forEach(() => columns.push({ width: 15 }));
+            if (hasGrowth) { columns.push({ width: 12 }, { width: 12 }); }
+        } else { // Sheet 4, 5
+            columns.push({ width: 30 }, { width: 25 }); // B, C
             periodsData.forEach(() => columns.push({ width: 15 }));
             if (hasGrowth) { columns.push({ width: 12 }, { width: 12 }); }
         }
-        worksheet.columns = columns as ExcelJS.Column[];
+        worksheet.columns = columns as Column[];
 
 
         // --- Populate Data ---
-        // *** แก้ไข Type Error โดยการใช้ Type Assertion ในการเรียกใช้ฟังก์ชันแต่ละตัว ***
-        let lastRow: number;
-        if (config.populateFn === populateVerticalTableExport) {
-            // Sheet 4, 5, 6 (6 arguments)
-            lastRow = (config.populateFn as VerticalPopulateFn)(
-                worksheet, config.data, config.periods, 
-                config.isRegionCategory, 
-                config.isRegionAndCategory, 
-                TITLE_ROWS + 1
-            );
-        } else if (config.populateFn === populateGrowthRateReportExport) {
-            // Sheet 1 (5 arguments)
-            // ดึงค่า showQoQ.value อย่างปลอดภัย
-            const showQoQValue = showQoQ?.value || false;
-            lastRow = (config.populateFn as GrowthRatePopulateFn)(
-                worksheet, 
-                config.data, 
-                config.periods, 
-                showQoQValue, 
-                TITLE_ROWS + 1
-            );
+        // (ใช้ Type Assertion เพื่อเรียกฟังก์ชันที่ถูกต้อง)
+        if (config.populateFn === populateGrowthRateReportExport) {
+            (config.populateFn as Function)(worksheet, config.data, config.periods, showQoQValue, TITLE_ROWS + 1);
+        } else if (config.populateFn === populateSimpleVerticalTable) {
+            (config.populateFn as Function)(worksheet, config.data, config.periods, TITLE_ROWS + 1, config.groupHeaderName);
+        } else if (config.populateFn === populateComplexVerticalTable) {
+            (config.populateFn as Function)(worksheet, config.data, config.periods, TITLE_ROWS + 1);
         } else if (config.populateFn === populateMemberSummaryReportExport) {
-            // Sheet 2 (3 arguments)
-            lastRow = (config.populateFn as SummaryPopulateFn)(
-                worksheet, 
-                config.data, 
-                TITLE_ROWS + 1
-            );
+            (config.populateFn as Function)(worksheet, config.data, TITLE_ROWS + 1);
         } else if (config.populateFn === populateMemberMonthlySubmissionExport) {
-            // Sheet 3 (4 arguments)
-            lastRow = (config.populateFn as MonthlyPopulateFn)(
-                worksheet, 
-                config.data, 
-                config.periods, 
-                TITLE_ROWS + 1
-            );
-        } else {
-            console.error(`Unknown populateFn for sheet: ${config.name}`);
-            lastRow = TITLE_ROWS;
+            (config.populateFn as Function)(worksheet, config.data, config.periods, TITLE_ROWS + 1);
         }
     }
 
@@ -2973,7 +3140,6 @@ const exportToExcel = async () => {
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const filename = `HBA_Report_${dateStr}.xlsx`;
 
-    // Save the file
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     const url = window.URL.createObjectURL(blob);
@@ -2984,6 +3150,8 @@ const exportToExcel = async () => {
     window.URL.revokeObjectURL(url);
 };
 </script>
+
+
 
 
 <template>
