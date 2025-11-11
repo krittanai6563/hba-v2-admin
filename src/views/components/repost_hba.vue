@@ -58,9 +58,11 @@ const availableMonths = computed(() => {
 });
 
 
+// src/views/components/repost_hba.vue (ประมาณบรรทัดที่ 67)
+
 const availableQuarters = computed(() => {
     // ใช้ฟังก์ชันที่แก้ไขแล้วเพื่อดึงปีและเดือนปัจจุบัน
-    const { currentBuddhistYear, currentMonthIndex } = getCurrentPeriod();
+    const { currentBuddhistYear, currentMonthIndex } = getCurrentPeriod(); // currentMonthIndex = 11 (พ.ย.)
     const selectedYears = selectyear.value;
 
     // ตรวจสอบว่ากำลังดูบริบทของ "ปีปัจจุบัน" อยู่หรือไม่
@@ -71,10 +73,11 @@ const availableQuarters = computed(() => {
     if (isCurrentYearInContext) {
         // ถ้าเป็นปีปัจจุบัน หรือยังไม่ได้เลือกปี: กรองไตรมาสที่ผ่านมา/ถึงปัจจุบัน
         return Quarters.filter(q => {
-            // ตรวจสอบเดือนสุดท้ายของไตรมาสนั้น (เช่น ไตรมาส 1 คือเดือน 3)
-            const lastMonthOfQuarter = q.months[q.months.length - 1];
-            // อนุญาตให้เลือกไตรมาสที่เดือนสุดท้าย <= เดือนปัจจุบัน
-            return lastMonthOfQuarter <= currentMonthIndex;
+            // ⬇️ เปลี่ยนการตรวจสอบจากเดือนสุดท้าย เป็น เดือนแรกของไตรมาส
+            // ตรวจสอบเดือนแรกของไตรมาสนั้น (เช่น ไตรมาส 1 คือเดือน 1)
+            const firstMonthOfQuarter = q.months[0];
+            // อนุญาตให้เลือกไตรมาสที่เดือนแรก <= เดือนปัจจุบัน
+            return firstMonthOfQuarter <= currentMonthIndex; // 10 <= 11 เป็น จริง (Q4 แสดงผล)
         });
     } else {
         // ถ้าเลือกปีในอดีต: ให้แสดง 4 ไตรมาสเต็ม
@@ -922,6 +925,8 @@ const monthlyReportTableData = computed<TableCategory[]>(() => {
                 };
 
 
+
+
                 const currentMetrics = getMetricsForPeriod(currentYear, currentMonth, categoryName);
                 const currentValue = currentMetrics[metric.key as keyof Metrics] || 0;
 
@@ -970,6 +975,27 @@ const monthlyReportTableData = computed<TableCategory[]>(() => {
     return finalTable;
 });
 
+
+const getRegionalAggregatedValue = (year: string, startMonth: number, endMonth: number, region: string, category: string, metricKey: keyof Metrics): number => {
+    let sum = 0;
+    const regionDataForYear = summaryData.value?.region_data?.[year];
+
+    if (metricKey === 'average_price_per_sqm') return 0; // ต้องคำนวณจาก Value/Area รวม
+
+    if (!regionDataForYear) return 0;
+
+    for (let month = startMonth; month <= endMonth; month++) {
+        if (month < 1 || month > 12) continue;
+
+        const monthlyMetrics = regionDataForYear[month]?.[region]?.[category];
+        if (monthlyMetrics) {
+            sum += monthlyMetrics[metricKey] || 0;
+        }
+    }
+    return sum;
+};
+
+// src/views/components/repost_hba.vue (ประมาณบรรทัดที่ 687)
 
 const regionReportTableData = computed<TableCategory[]>(() => {
     if (!summaryData.value) {
@@ -1034,6 +1060,65 @@ const regionReportTableData = computed<TableCategory[]>(() => {
                 row.data[grandTotalPeriodKey] = grandTotalMetricValue;
             }
 
+            // ⬇️ [ส่วนที่เพิ่ม: การคำนวณอัตราเติบโต MoM และ YTD] ⬇️
+            const lp = lastPeriod.value;
+            if (lp && lp.monthIndex) {
+                const currentYear = lp.year;
+                const currentMonth = lp.monthIndex;
+                const prevYear = (parseInt(currentYear) - 1).toString();
+                const categoryName = 'รวม';
+
+                // --- 1. MoM Calculation ---
+                const currentMetrics = getRegionalMetrics(lp, regionName, categoryName);
+                const currentValue = currentMetrics[metric.key as keyof Metrics] || 0;
+
+                const prevMonth = (currentMonth === 1) ? 12 : currentMonth - 1;
+                const prevMonthYear = (currentMonth === 1) ? prevYear : currentYear;
+
+                const prevPeriod: typeof currentPeriods[0] = {
+                    key: `M${prevMonth}Y${prevMonthYear}`,
+                    label: `MoM`,
+                    year: prevMonthYear,
+                    monthIndex: prevMonth
+                };
+                const prevMonthMetrics = getRegionalMetrics(prevPeriod, regionName, categoryName);
+                const prevMonthValue = prevMonthMetrics[metric.key as keyof Metrics] || 0;
+
+                if (prevMonthValue !== 0) {
+                    row.growth.mom = ((currentValue / prevMonthValue) - 1) * 100;
+                } else if (currentValue > 0) {
+                    row.growth.mom = 100;
+                } else {
+                    row.growth.mom = 0;
+                }
+
+                // --- 2. YTD Calculation ---
+                let currentYTDValue: number;
+                let prevYTDValue: number;
+
+                if (metric.key === 'average_price_per_sqm') {
+                    const currentYTD_Value = getRegionalAggregatedValue(currentYear, 1, currentMonth, regionName, categoryName, 'total_value');
+                    const currentYTD_Area = getRegionalAggregatedValue(currentYear, 1, currentMonth, regionName, categoryName, 'total_area');
+                    currentYTDValue = (currentYTD_Area > 0) ? (currentYTD_Value / currentYTD_Area) : 0;
+
+                    const prevYTD_Value = getRegionalAggregatedValue(prevYear, 1, currentMonth, regionName, categoryName, 'total_value');
+                    const prevYTD_Area = getRegionalAggregatedValue(prevYear, 1, currentMonth, regionName, categoryName, 'total_area');
+                    prevYTDValue = (prevYTD_Area > 0) ? (prevYTD_Value / prevYTD_Area) : 0;
+                } else {
+                    currentYTDValue = getRegionalAggregatedValue(currentYear, 1, currentMonth, regionName, categoryName, metric.key as keyof Metrics);
+                    prevYTDValue = getRegionalAggregatedValue(prevYear, 1, currentMonth, regionName, categoryName, metric.key as keyof Metrics);
+                }
+
+                if (prevYTDValue !== 0) {
+                    row.growth.ytd = ((currentYTDValue / prevYTDValue) - 1) * 100;
+                } else if (currentYTDValue > 0) {
+                    row.growth.ytd = 100;
+                } else {
+                    row.growth.ytd = 0;
+                }
+            }
+            // ⬆️ [สิ้นสุดส่วนที่เพิ่ม] ⬆️
+
             categoryData.rows.push(row);
         });
         finalTable.push(categoryData);
@@ -1042,12 +1127,13 @@ const regionReportTableData = computed<TableCategory[]>(() => {
     return finalTable;
 });
 
-
 interface RegionCategoryGroup {
     regionName: string;
     categories: TableCategory[];
 }
 
+
+// src/views/components/repost_hba.vue (ประมาณบรรทัดที่ 802)
 
 const regionAndCategoryReportTableData = computed<RegionCategoryGroup[]>(() => {
     if (!summaryData.value) {
@@ -1122,6 +1208,65 @@ const regionAndCategoryReportTableData = computed<RegionCategoryGroup[]>(() => {
                     row.data[grandTotalPeriodKey] = grandTotalMetricValue;
                 }
 
+                // ⬇️ [ส่วนที่เพิ่ม: การคำนวณอัตราเติบโต MoM และ YTD] ⬇️
+                const lp = lastPeriod.value;
+                if (lp && lp.monthIndex) {
+                    const currentYear = lp.year;
+                    const currentMonth = lp.monthIndex;
+                    const prevYear = (parseInt(currentYear) - 1).toString();
+                    // categoryName ถูกกำหนดในลูปภายนอกแล้ว
+
+                    // --- 1. MoM Calculation ---
+                    const currentMetrics = getRegionalMetrics(lp, regionName, categoryName);
+                    const currentValue = currentMetrics[metric.key as keyof Metrics] || 0;
+
+                    const prevMonth = (currentMonth === 1) ? 12 : currentMonth - 1;
+                    const prevMonthYear = (currentMonth === 1) ? prevYear : currentYear;
+
+                    const prevPeriod: typeof currentPeriods[0] = {
+                        key: `M${prevMonth}Y${prevMonthYear}`,
+                        label: `MoM`,
+                        year: prevMonthYear,
+                        monthIndex: prevMonth
+                    };
+                    const prevMonthMetrics = getRegionalMetrics(prevPeriod, regionName, categoryName);
+                    const prevMonthValue = prevMonthMetrics[metric.key as keyof Metrics] || 0;
+
+                    if (prevMonthValue !== 0) {
+                        row.growth.mom = ((currentValue / prevMonthValue) - 1) * 100;
+                    } else if (currentValue > 0) {
+                        row.growth.mom = 100;
+                    } else {
+                        row.growth.mom = 0;
+                    }
+
+                    // --- 2. YTD Calculation ---
+                    let currentYTDValue: number;
+                    let prevYTDValue: number;
+
+                    if (metric.key === 'average_price_per_sqm') {
+                        const currentYTD_Value = getRegionalAggregatedValue(currentYear, 1, currentMonth, regionName, categoryName, 'total_value');
+                        const currentYTD_Area = getRegionalAggregatedValue(currentYear, 1, currentMonth, regionName, categoryName, 'total_area');
+                        currentYTDValue = (currentYTD_Area > 0) ? (currentYTD_Value / currentYTD_Area) : 0;
+
+                        const prevYTD_Value = getRegionalAggregatedValue(prevYear, 1, currentMonth, regionName, categoryName, 'total_value');
+                        const prevYTD_Area = getRegionalAggregatedValue(prevYear, 1, currentMonth, regionName, categoryName, 'total_area');
+                        prevYTDValue = (prevYTD_Area > 0) ? (prevYTD_Value / prevYTD_Area) : 0;
+                    } else {
+                        currentYTDValue = getRegionalAggregatedValue(currentYear, 1, currentMonth, regionName, categoryName, metric.key as keyof Metrics);
+                        prevYTDValue = getRegionalAggregatedValue(prevYear, 1, currentMonth, regionName, categoryName, metric.key as keyof Metrics);
+                    }
+
+                    if (prevYTDValue !== 0) {
+                        row.growth.ytd = ((currentYTDValue / prevYTDValue) - 1) * 100;
+                    } else if (currentYTDValue > 0) {
+                        row.growth.ytd = 100;
+                    } else {
+                        row.growth.ytd = 0;
+                    }
+                }
+                // ⬆️ [สิ้นสุดส่วนที่เพิ่ม] ⬆️
+
                 categoryData.rows.push(row);
             });
             regionGroup.categories.push(categoryData);
@@ -1131,7 +1276,6 @@ const regionAndCategoryReportTableData = computed<RegionCategoryGroup[]>(() => {
 
     return finalTable;
 });
-
 
 
 const polarChartPriceData = computed(() => {
@@ -1249,7 +1393,8 @@ const polarChartOptions = computed(() => ({
 
             const actualValue = val * 1000000;
 
-
+            console.log('Chart Value (Millions Baht):', val);
+            console.log('Original Value (Baht):', val * 1000000);
             const formattedValue = actualValue.toLocaleString('th-TH', { maximumFractionDigits: 0 });
 
 
@@ -2501,7 +2646,7 @@ watch(memberTypeSubmissionChartData, (newData) => {
                                     <template v-if="memberMonthlySubmissionTableData.length > 0">
                                         <tr v-for="member in memberMonthlySubmissionTableData" :key="member.name">
                                             <td class="text-left font-weight-bold text-caption border-e">{{ member.name
-                                            }}</td>
+                                                }}</td>
 
                                             <td class="text-left text-caption border-e">
                                                 {{ member.member_type }} </td>
@@ -2521,16 +2666,9 @@ watch(memberTypeSubmissionChartData, (newData) => {
                                             ไม่พบข้อมูลสมาชิกที่แสดงผลตามเงื่อนไข
                                         </td>
                                     </tr>
-
-
-
                                 </tbody>
-
-
                             </v-table>
                         </v-card-text>
-
-
                     </v-card>
                 </v-col>
 
@@ -2538,68 +2676,68 @@ watch(memberTypeSubmissionChartData, (newData) => {
                 <v-col cols="12">
                     <v-card>
                         <v-card-text>
-                            <h3 class="card-title mb-1">ตารางสรุปยอดเซ็นสัญญา แยกตามมูลค่าบ้าน</h3>
+                            <h3 class="card-title mb-1">ตารางสรุปยอดเซ็นสัญญา แยกตามภูมิภาค</h3>
                             <h5 class="card-subtitle">{{ chartSubtitle }}</h5>
 
                             <v-table density="compact" class="mt-4 border">
                                 <thead>
                                     <tr>
                                         <th rowspan="2" class="text-center text-subtitle-1 border-e"
-                                            style="min-width: 150px;">
-                                            ช่วงมูลค่าบ้าน</th>
+                                            style="min-width: 150px;">ภูมิภาค
+                                        </th>
                                         <th rowspan="2" class="text-center text-subtitle-1 border-e"
                                             style="min-width: 150px;">
                                             รายละเอียด</th>
-                                        <th :colspan="tablePeriods.filter(p => p.key !== 'TOTAL_PERIODS').length"
-                                            class="text-center text-h6 border-b-sm">
+                                        <th :colspan="tablePeriods.length"
+                                            class="text-center text-h6 border-b-sm border-e">
                                             <span v-if="tablePeriods.length > 0">{{ chartSubtitle }}</span>
                                             <span v-else>ไม่พบช่วงเวลาที่เลือก</span>
                                         </th>
-
                                         <th v-if="lastPeriod && lastPeriod.monthIndex" :colspan="2"
                                             class="text-center text-h6 border-b-sm bg-blue-grey-lighten-5">
                                             อัตราเติบโต (ณ {{ lastPeriod.label }})
                                         </th>
-
-                                        <th v-if="tablePeriods.some(p => p.key === 'TOTAL_PERIODS')" rowspan="2"
-                                            class="text-right text-subtitle-1 border-e text-primary"
-                                            style="min-width: 120px;">
-                                            รวมทุกช่วง
-                                        </th>
                                     </tr>
                                     <tr>
-                                        <th v-for="period in tablePeriods.filter(p => p.key !== 'TOTAL_PERIODS')"
-                                            :key="period.key" class="text-right text-subtitle-1 border-e"
-                                            style="min-width: 120px;">
+                                        <th v-for="(period, index) in tablePeriods" :key="period.key"
+                                            class="text-right text-subtitle-1" :class="{
+                                                // ⬇️ [แก้ไข] เพิ่ม border-e เมื่อเป็นคอลัมน์สุดท้ายของช่วงข้อมูล ⬇️
+                                                'border-e': index === tablePeriods.length - 1,
+                                                'text-primary': period.key === 'TOTAL_PERIODS'
+                                            }" style="min-width: 120px;">
                                             {{ period.label }}
                                         </th>
-
                                         <th v-if="lastPeriod && lastPeriod.monthIndex"
                                             class="text-center text-subtitle-1 border-e" style="min-width: 80px;">MoM%
                                         </th>
                                         <th v-if="lastPeriod && lastPeriod.monthIndex"
-                                            class="text-center text-subtitle-1 border-e" style="min-width: 80px;">YTD%
+                                            class="text-center text-subtitle-1" style="min-width: 80px;">YTD%
                                         </th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <template v-if="monthlyReportTableData.length > 0">
-                                        <template v-for="(category, catIndex) in monthlyReportTableData"
-                                            :key="category.categoryName">
-                                            <tr v-for="(row, rowIndex) in category.rows"
-                                                :key="`${category.categoryName}-${row.metricKey}`" :class="{
-                                                    'bg-blue-grey-lighten-5': category.categoryName === 'รวม',
+                                    <template v-if="regionReportTableData.length > 0">
+                                        <template v-for="(region, regIndex) in regionReportTableData"
+                                            :key="region.categoryName">
+                                            <tr v-for="(row, rowIndex) in region.rows"
+                                                :key="`${region.categoryName}-${row.metricKey}`" :class="{
+                                                    'bg-blue-grey-lighten-5': region.categoryName === 'รวมทั่วประเทศ',
                                                     'border-t': rowIndex === 0,
                                                 }">
-                                                <td v-if="rowIndex === 0" :rowspan="category.rows.length"
+                                                <td v-if="rowIndex === 0" :rowspan="region.rows.length"
                                                     class="text-left font-weight-bold text-subtitle-2 border-e"
-                                                    :class="{ 'text-primary': category.categoryName === 'รวม' }">
-                                                    {{ category.categoryName }}
+                                                    :class="{ 'text-primary': region.categoryName === 'รวมทั่วประเทศ' }">
+                                                    {{ region.categoryName }}
                                                 </td>
+
                                                 <td class="text-left text-caption border-e">{{ row.metricName }}</td>
 
-                                                <td v-for="period in tablePeriods.filter(p => p.key !== 'TOTAL_PERIODS')"
-                                                    :key="period.key" class="text-right text-subtitle-2 border-e">
+                                                <td v-for="(period, index) in tablePeriods" :key="period.key"
+                                                    class="text-right text-subtitle-2" :class="{
+                                                        'text-primary font-weight-bold': region.categoryName === 'รวมทั่วประเทศ' && row.metricKey === 'total_value',
+                                                        // ⬇️ [แก้ไข] เพิ่ม border-e เมื่อเป็นคอลัมน์สุดท้ายของช่วงข้อมูล ⬇️
+                                                        'border-e': index === tablePeriods.length - 1
+                                                    }">
                                                     {{ row.format(row.data[period.key] || 0) }}
                                                 </td>
 
@@ -2608,25 +2746,18 @@ watch(memberTypeSubmissionChartData, (newData) => {
                                                     :class="{ 'text-success': (row.growth.mom || 0) > 0, 'text-error': (row.growth.mom || 0) < 0 }">
                                                     {{ row.growth.mom != null ? row.growth.mom.toFixed(2) + '%' : '-' }}
                                                 </td>
+
                                                 <td v-if="lastPeriod && lastPeriod.monthIndex"
-                                                    class="text-right text-subtitle-2 border-e"
+                                                    class="text-right text-subtitle-2"
                                                     :class="{ 'text-success': (row.growth.ytd || 0) > 0, 'text-error': (row.growth.ytd || 0) < 0 }">
                                                     {{ row.growth.ytd != null ? row.growth.ytd.toFixed(2) + '%' : '-' }}
-                                                </td>
-
-                                                <td v-if="tablePeriods.some(p => p.key === 'TOTAL_PERIODS')"
-                                                    class="text-right text-subtitle-2 border-e"
-                                                    :class="{ 'text-primary font-weight-bold': category.categoryName === 'รวม' && row.metricKey === 'total_value' }">
-                                                    {{ row.format(row.data['TOTAL_PERIODS'] || 0) }}
                                                 </td>
                                             </tr>
                                         </template>
                                     </template>
                                     <tr v-else>
-                                        <td :colspan="tablePeriods.length + 2 + (lastPeriod && lastPeriod.monthIndex ? 2 : 0)"
-                                            class="text-center text-subtitle-1 py-4">
-                                            ไม่พบข้อมูลตามเงื่อนไขที่เลือก
-                                        </td>
+                                        <td :colspan="tablePeriods.length + 4" class="text-center text-subtitle-1 py-4">
+                                            ไม่พบข้อมูลตามเงื่อนไขที่เลือก</td>
                                     </tr>
                                 </tbody>
                             </v-table>
@@ -2649,17 +2780,29 @@ watch(memberTypeSubmissionChartData, (newData) => {
                                         <th rowspan="2" class="text-center text-subtitle-1 border-e"
                                             style="min-width: 150px;">
                                             รายละเอียด</th>
-                                        <th :colspan="tablePeriods.length" class="text-center text-h6 border-b-sm">
+                                        <th :colspan="tablePeriods.length"
+                                            class="text-center text-h6 border-b-sm border-e">
                                             <span v-if="tablePeriods.length > 0">{{ chartSubtitle }}</span>
                                             <span v-else>ไม่พบช่วงเวลาที่เลือก</span>
                                         </th>
+                                        <th v-if="lastPeriod && lastPeriod.monthIndex" :colspan="2"
+                                            class="text-center text-h6 border-b-sm bg-blue-grey-lighten-5">
+                                            อัตราเติบโต (ณ {{ lastPeriod.label }})
+                                        </th>
                                     </tr>
                                     <tr>
-                                        <th v-for="period in tablePeriods" :key="period.key"
-                                            class="text-right text-subtitle-1"
-                                            :class="{ 'border-e': period.key !== tablePeriods[tablePeriods.length - 1].key, 'text-primary': period.key === 'TOTAL_PERIODS' }"
-                                            style="min-width: 120px;">
+                                        <th v-for="(period, index) in tablePeriods" :key="period.key"
+                                            class="text-right text-subtitle-1" :class="{
+                                                'border-e': index === tablePeriods.length - 1, // เพิ่ม border-e ให้คอลัมน์สุดท้ายของช่วงข้อมูล
+                                                'text-primary': period.key === 'TOTAL_PERIODS'
+                                            }" style="min-width: 120px;">
                                             {{ period.label }}
+                                        </th>
+                                        <th v-if="lastPeriod && lastPeriod.monthIndex"
+                                            class="text-center text-subtitle-1 border-e" style="min-width: 80px;">MoM%
+                                        </th>
+                                        <th v-if="lastPeriod && lastPeriod.monthIndex"
+                                            class="text-center text-subtitle-1" style="min-width: 80px;">YTD%
                                         </th>
                                     </tr>
                                 </thead>
@@ -2680,16 +2823,29 @@ watch(memberTypeSubmissionChartData, (newData) => {
 
                                                 <td class="text-left text-caption border-e">{{ row.metricName }}</td>
 
-                                                <td v-for="period in tablePeriods" :key="period.key"
-                                                    class="text-right text-subtitle-2"
-                                                    :class="{ 'text-primary font-weight-bold': region.categoryName === 'รวมทั่วประเทศ' && row.metricKey === 'total_value', 'border-e': period.key !== tablePeriods[tablePeriods.length - 1].key }">
+                                                <td v-for="(period, index) in tablePeriods" :key="period.key"
+                                                    class="text-right text-subtitle-2" :class="{
+                                                        'text-primary font-weight-bold': region.categoryName === 'รวมทั่วประเทศ' && row.metricKey === 'total_value',
+                                                        'border-e': index === tablePeriods.length - 1 // เพิ่ม border-e ให้เซลล์สุดท้ายของช่วงข้อมูล
+                                                    }">
                                                     {{ row.format(row.data[period.key] || 0) }}
+                                                </td>
+
+                                                <td v-if="lastPeriod && lastPeriod.monthIndex"
+                                                    class="text-right text-subtitle-2 border-e"
+                                                    :class="{ 'text-success': (row.growth.mom || 0) > 0, 'text-error': (row.growth.mom || 0) < 0 }">
+                                                    {{ row.growth.mom != null ? row.growth.mom.toFixed(2) + '%' : '-' }}
+                                                </td>
+                                                <td v-if="lastPeriod && lastPeriod.monthIndex"
+                                                    class="text-right text-subtitle-2"
+                                                    :class="{ 'text-success': (row.growth.ytd || 0) > 0, 'text-error': (row.growth.ytd || 0) < 0 }">
+                                                    {{ row.growth.ytd != null ? row.growth.ytd.toFixed(2) + '%' : '-' }}
                                                 </td>
                                             </tr>
                                         </template>
                                     </template>
                                     <tr v-else>
-                                        <td :colspan="tablePeriods.length + 2" class="text-center text-subtitle-1 py-4">
+                                        <td :colspan="tablePeriods.length + 4" class="text-center text-subtitle-1 py-4">
                                             ไม่พบข้อมูลตามเงื่อนไขที่เลือก</td>
                                     </tr>
                                 </tbody>
@@ -2716,17 +2872,29 @@ watch(memberTypeSubmissionChartData, (newData) => {
                                         <th rowspan="2" class="text-center text-subtitle-1 border-e"
                                             style="min-width: 150px;">
                                             รายละเอียด</th>
-                                        <th :colspan="tablePeriods.length" class="text-center text-h6 border-b-sm">
+                                        <th :colspan="tablePeriods.length"
+                                            class="text-center text-h6 border-b-sm border-e">
                                             <span v-if="tablePeriods.length > 0">{{ chartSubtitle }}</span>
                                             <span v-else>ไม่พบช่วงเวลาที่เลือก</span>
                                         </th>
+                                        <th v-if="lastPeriod && lastPeriod.monthIndex" :colspan="2"
+                                            class="text-center text-h6 border-b-sm bg-blue-grey-lighten-5">
+                                            อัตราเติบโต (ณ {{ lastPeriod.label }})
+                                        </th>
                                     </tr>
                                     <tr>
-                                        <th v-for="period in tablePeriods" :key="period.key"
-                                            class="text-right text-subtitle-1"
-                                            :class="{ 'border-e': period.key !== tablePeriods[tablePeriods.length - 1].key, 'text-primary': period.key === 'TOTAL_PERIODS' }"
-                                            style="min-width: 120px;">
+                                        <th v-for="(period, index) in tablePeriods" :key="period.key"
+                                            class="text-right text-subtitle-1" :class="{
+                                                'border-e': index === tablePeriods.length - 1, // เพิ่ม border-e ให้คอลัมน์สุดท้ายของช่วงข้อมูล
+                                                'text-primary': period.key === 'TOTAL_PERIODS'
+                                            }" style="min-width: 120px;">
                                             {{ period.label }}
+                                        </th>
+                                        <th v-if="lastPeriod && lastPeriod.monthIndex"
+                                            class="text-center text-subtitle-1 border-e" style="min-width: 80px;">MoM%
+                                        </th>
+                                        <th v-if="lastPeriod && lastPeriod.monthIndex"
+                                            class="text-center text-subtitle-1" style="min-width: 80px;">YTD%
                                         </th>
                                     </tr>
                                 </thead>
@@ -2739,7 +2907,6 @@ watch(memberTypeSubmissionChartData, (newData) => {
                                                 <tr v-for="(row, rowIndex) in category.rows"
                                                     :key="`${regionGroup.regionName}-${category.categoryName}-${row.metricKey}`"
                                                     :class="{
-
                                                         'bg-blue-grey-lighten-5': regionGroup.regionName === 'รวมทั่วประเทศ' || category.categoryName === 'รวม',
                                                         'border-t': rowIndex === 0 && catIndex === 0,
                                                         'border-t-sm': rowIndex === 0 && category.categoryName === 'รวม',
@@ -2761,18 +2928,32 @@ watch(memberTypeSubmissionChartData, (newData) => {
                                                     </td>
 
 
-
-                                                    <td v-for="period in tablePeriods" :key="period.key"
-                                                        class="text-right text-subtitle-2"
-                                                        :class="{ 'text-primary font-weight-bold': (regionGroup.regionName === 'รวมทั่วประเทศ' || category.categoryName === 'รวม') && row.metricKey === 'total_value', 'border-e': period.key !== tablePeriods[tablePeriods.length - 1].key }">
+                                                    <td v-for="(period, index) in tablePeriods" :key="period.key"
+                                                        class="text-right text-subtitle-2" :class="{
+                                                            'text-primary font-weight-bold': (regionGroup.regionName === 'รวมทั่วประเทศ' || category.categoryName === 'รวม') && row.metricKey === 'total_value',
+                                                            'border-e': index === tablePeriods.length - 1 // เพิ่ม border-e ให้เซลล์สุดท้ายของช่วงข้อมูล
+                                                        }">
                                                         {{ row.format(row.data[period.key] || 0) }}
+                                                    </td>
+
+                                                    <td v-if="lastPeriod && lastPeriod.monthIndex"
+                                                        class="text-right text-subtitle-2 border-e"
+                                                        :class="{ 'text-success': (row.growth.mom || 0) > 0, 'text-error': (row.growth.mom || 0) < 0 }">
+                                                        {{ row.growth.mom != null ? row.growth.mom.toFixed(2) + '%' :
+                                                            '-' }}
+                                                    </td>
+                                                    <td v-if="lastPeriod && lastPeriod.monthIndex"
+                                                        class="text-right text-subtitle-2"
+                                                        :class="{ 'text-success': (row.growth.ytd || 0) > 0, 'text-error': (row.growth.ytd || 0) < 0 }">
+                                                        {{ row.growth.ytd != null ? row.growth.ytd.toFixed(2) + '%' :
+                                                            '-' }}
                                                     </td>
                                                 </tr>
                                             </template>
                                         </template>
                                     </template>
                                     <tr v-else>
-                                        <td :colspan="tablePeriods.length + 3" class="text-center text-subtitle-1 py-4">
+                                        <td :colspan="tablePeriods.length + 5" class="text-center text-subtitle-1 py-4">
                                             ไม่พบข้อมูลตามเงื่อนไขที่เลือก</td>
                                     </tr>
                                 </tbody>
