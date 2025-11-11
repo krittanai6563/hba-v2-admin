@@ -3,6 +3,11 @@ import { ref, computed, onMounted, watch } from 'vue';
 import { useDate } from 'vuetify/lib/framework.mjs';
 const date = useDate();
 
+// *** [เพิ่ม]: นำเข้าไลบรารี Excel ***
+// คุณต้องติดตั้งไลบรารีนี้ก่อน (e.g., npm install xlsx)
+import * as XLSX from 'xlsx';
+// *** [สิ้นสุดส่วนเพิ่ม] ***
+
 const today = new Date();
 const currentGregorianYear = today.getFullYear(); // 1. ดึงปี ค.ศ. (เช่น 2025)
 const currentBuddhistYearNum = currentGregorianYear + 543; // 2. บวก 543 (เช่น 2568)
@@ -650,6 +655,36 @@ interface TableCategory {
     categoryName: string;
     rows: TableRow[];
 }
+interface RegionCategoryGroup {
+    regionName: string;
+    categories: TableCategory[];
+}
+interface GrowthRateMetrics {
+    MoM: number | null;
+    YoY: number | null;
+    QoQ: number | null;
+    YTD: number | null;
+}
+interface GrowthRatePeriods {
+    [key: string]: GrowthRateMetrics;
+}
+interface GrowthRateCategory {
+    categoryName: string;
+    total_value: GrowthRatePeriods;
+    total_units: GrowthRatePeriods;
+    total_value_raw: Record<string, number>;
+    total_units_raw: Record<string, number>;
+}
+type MetricGrowthKey = 'total_value' | 'total_units';
+
+// *** [เพิ่ม]: Type Definition สำหรับข้อมูล Period (แก้ไขปัญหา Type) ***
+type PeriodItem = {
+    key: string;
+    label: string;
+    year: string;
+    monthIndex?: number | undefined;
+};
+// ************************************************
 
 
 const showQoQ = computed(() => {
@@ -667,7 +702,7 @@ const showQoQ = computed(() => {
 
 });
 
-const getRegionalMetrics = (period: typeof tablePeriods.value[0], region: string, category: string): Metrics => {
+const getRegionalMetrics = (period: PeriodItem, region: string, category: string): Metrics => {
     let metrics: Metrics | undefined;
 
 
@@ -735,10 +770,10 @@ const getRegionalMetrics = (period: typeof tablePeriods.value[0], region: string
 };
 
 
-const tablePeriods = computed(() => {
+const tablePeriods = computed<PeriodItem[]>(() => {
     const selectedYears = selectyear.value;
     const { currentBuddhistYear, currentMonthIndex } = getCurrentPeriod();
-    let periods: { key: string, label: string, year: string, monthIndex?: number }[] = [];
+    let periods: PeriodItem[] = [];
     const sortedYears = [...selectedYears].sort((a, b) => a.localeCompare(b, 'th-TH'));
 
     const currentTargetMonthIndices = combinedTargetMonthIndices.value;
@@ -803,7 +838,7 @@ const tablePeriods = computed(() => {
             return a.year.localeCompare(b.year, 'th-TH');
         }
         const monthA = a.monthIndex || 0;
-        const monthB = a.monthIndex || 0;
+        const monthB = b.monthIndex || 0;
         return monthA - monthB;
     });
 
@@ -861,10 +896,8 @@ const monthlyReportTableData = computed<TableCategory[]>(() => {
             currentPeriods.forEach(p => {
                 if (p.key === grandTotalPeriodKey) return;
 
-                const periodKey = p.key;
 
-
-                const getMetrics = (period: typeof currentPeriods[0], category: string): Metrics => {
+                const getMetrics = (period: PeriodItem, category: string): Metrics => {
                     let metrics: Metrics | undefined;
                     if (period.monthIndex && period.monthIndex !== 0) {
                         metrics = summaryData.value?.monthly_data[period.year]?.[period.monthIndex]?.[category];
@@ -877,7 +910,7 @@ const monthlyReportTableData = computed<TableCategory[]>(() => {
 
                 const metrics = getMetrics(p, categoryName);
                 const metricValue: number = metrics[metric.key as keyof Metrics] || 0;
-                row.data[periodKey] = metricValue;
+                row.data[p.key] = metricValue;
 
 
                 if (metric.key !== 'average_price_per_sqm') {
@@ -1075,7 +1108,7 @@ const regionReportTableData = computed<TableCategory[]>(() => {
                 const prevMonth = (currentMonth === 1) ? 12 : currentMonth - 1;
                 const prevMonthYear = (currentMonth === 1) ? prevYear : currentYear;
 
-                const prevPeriod: typeof currentPeriods[0] = {
+                const prevPeriod: PeriodItem = {
                     key: `M${prevMonth}Y${prevMonthYear}`,
                     label: `MoM`,
                     year: prevMonthYear,
@@ -1127,10 +1160,6 @@ const regionReportTableData = computed<TableCategory[]>(() => {
     return finalTable;
 });
 
-interface RegionCategoryGroup {
-    regionName: string;
-    categories: TableCategory[];
-}
 
 
 // src/views/components/repost_hba.vue (ประมาณบรรทัดที่ 802)
@@ -1223,7 +1252,7 @@ const regionAndCategoryReportTableData = computed<RegionCategoryGroup[]>(() => {
                     const prevMonth = (currentMonth === 1) ? 12 : currentMonth - 1;
                     const prevMonthYear = (currentMonth === 1) ? prevYear : currentYear;
 
-                    const prevPeriod: typeof currentPeriods[0] = {
+                    const prevPeriod: PeriodItem = {
                         key: `M${prevMonth}Y${prevMonthYear}`,
                         label: `MoM`,
                         year: prevMonthYear,
@@ -1826,29 +1855,6 @@ const memberMonthlySubmissionTableData = computed(() => {
     });
 });
 
-interface GrowthRateMetrics {
-    MoM: number | null;
-    YoY: number | null;
-    QoQ: number | null;
-    YTD: number | null;
-}
-
-interface GrowthRatePeriods {
-    [key: string]: GrowthRateMetrics;
-}
-
-
-interface GrowthRateCategory {
-    categoryName: string;
-    total_value: GrowthRatePeriods;
-    total_units: GrowthRatePeriods;
-    total_value_raw: Record<string, number>;
-    total_units_raw: Record<string, number>;
-}
-
-
-
-type MetricGrowthKey = 'total_value' | 'total_units';
 
 const getAggregatedValue = (year: string, startMonth: number, endMonth: number, category: string, metricKey: keyof Metrics): number => {
     let sum = 0;
@@ -1869,7 +1875,7 @@ const getAggregatedValue = (year: string, startMonth: number, endMonth: number, 
     return sum;
 };
 
-const getMetricValue = (period: typeof tablePeriods.value[0], category: string, metricKey: keyof Metrics): number => {
+const getMetricValue = (period: PeriodItem, category: string, metricKey: keyof Metrics): number => {
     let metrics: Metrics | undefined;
 
     if (period.monthIndex && period.monthIndex !== 0) {
@@ -1923,7 +1929,7 @@ const growthRateReportTableData = computed<GrowthRateCategory[]>(() => {
 
                 if (!currentPeriod.monthIndex && currentPeriod.year !== 'TOTAL') {
                     const prevYear = (parseInt(currentPeriod.year) - 1).toString();
-                    const prevPeriod: typeof periodsToCalculate[0] = { key: `Y${prevYear}`, label: `สรุปปี ${prevYear}`, year: prevYear };
+                    const prevPeriod: PeriodItem = { key: `Y${prevYear}`, label: `สรุปปี ${prevYear}`, year: prevYear };
                     const prevValue = getMetricValue(prevPeriod, categoryName, metricKey as keyof Metrics);
 
                     if (prevValue !== 0) {
@@ -1953,7 +1959,7 @@ const growthRateReportTableData = computed<GrowthRateCategory[]>(() => {
 
 
                     const prevYear = (parseInt(currentYear) - 1).toString();
-                    const prevYearPeriod: typeof periodsToCalculate[0] = {
+                    const prevYearPeriod: PeriodItem = {
                         key: `M${currentMonth}Y${prevYear}`, label: `${Months[currentMonth - 1]} ${prevYear}`,
                         year: prevYear, monthIndex: currentMonth
                     };
@@ -2268,7 +2274,680 @@ watch(memberTypeSubmissionChartData, (newData) => {
 });
 
 
+// ====================================================================
+// *** [ส่วนที่เพิ่ม]: ฟังก์ชันและเมธอดสำหรับการ Export Excel (Vertical Structure + Styling) ***
+// ====================================================================
 
+interface ExportResult {
+    data: any[][];
+    merges: any[];
+    cols?: { wch: number }[];
+    customStyle?: (ws: XLSX.WorkSheet, headerRows: number) => void;
+    headerRows: number;
+}
+
+// เปลี่ยนชื่อฟอนต์หลักเป็น Angsana New
+const COMMON_FONT_NAME = 'Angsana New';
+
+// --------------------------------------------------------------------
+// 1. Helper Function: สำหรับการแปลงตารางสรุป (Vertical) และคำนวณ Merge
+// --------------------------------------------------------------------
+// ... (ส่วน interface และฟังก์ชันหลัก createVerticalTableExport ไม่เปลี่ยนแปลง) ...
+
+const createVerticalTableExport = (
+    tableData: TableCategory[] | RegionCategoryGroup[],
+    periods: PeriodItem[],
+    isRegionCategory: boolean = false,
+    isRegionAndCategory: boolean = false
+): ExportResult => {
+    const finalData: any[][] = [];
+    const merges: any[] = [];
+    const periodsToDisplay = periods.filter(p => p.key !== 'TOTAL_PERIODS');
+    const lp = periodsToDisplay.pop() || null;
+
+    // --- 1. Header Generation ---
+    let headerRow: any[] = ['กลุ่มหลัก', 'รายละเอียด', ...periods.map(p => p.label)];
+    let finalHeaders: any[][] = [];
+
+    // Adjust header for different table types
+    if (isRegionAndCategory) {
+        finalHeaders.push(['ภูมิภาค', 'ช่วงมูลค่าบ้าน', 'รายละเอียด', ...periods.map(p => p.label)]); // Row 0
+        finalHeaders.push(['', '', '', ...periods.map(p => p.label)]); // Row 1 (for MoM/YTD label)
+    } else if (!isRegionCategory) { // Monthly Report Table (Sheet 4)
+        finalHeaders.push(['มูลค่าบ้าน', 'รายละเอียด', ...periods.map(p => p.label)]); // Row 0
+        finalHeaders.push(['', '', ...periods.map(p => p.label)]); // Row 1 (for MoM/YTD label)
+    } else { // Region Report Table (Sheet 5)
+        finalHeaders.push(['ภูมิภาค', 'รายละเอียด', ...periods.map(p => p.label)]); // Row 0
+        finalHeaders.push(['', '', ...periods.map(p => p.label)]); // Row 1 (for MoM/YTD label)
+    }
+
+    const hasGrowth = lp && lp.monthIndex;
+    if (hasGrowth) {
+        finalHeaders[0].push('MoM%', 'YTD%');
+        finalHeaders[1].push('อัตราเติบโต', 'อัตราเติบโต');
+    }
+
+    // --- 2. Data Row Generation and Merges ---
+    let currentRow = 0; // Relative to data rows (excluding finalHeaders)
+    let headerRowsCount = finalHeaders.length;
+
+    (tableData as any[]).forEach((group: TableCategory | RegionCategoryGroup, groupIndex: number) => {
+        const primaryGroupKey = isRegionAndCategory ? (group as RegionCategoryGroup).regionName : (group as TableCategory).categoryName;
+
+        const secondaryGroups = isRegionAndCategory ? (group as RegionCategoryGroup).categories : [group as TableCategory];
+
+        secondaryGroups.forEach((category, categoryIndex) => {
+            const secondaryGroupKey = category.categoryName;
+            const groupRowCount = category.rows.length;
+
+            category.rows.forEach((row, rowIndex) => {
+                const isTotalRow = primaryGroupKey === 'รวมทั่วประเทศ' || secondaryGroupKey === 'รวม' || primaryGroupKey === 'รวม';
+
+                let rowData: any[] = [];
+
+                let colIndex = 0;
+
+                // Col 0: Primary Group (Region or Price Range)
+                if (rowIndex === 0 && (!isRegionAndCategory || categoryIndex === 0)) {
+                    const mergeSpan = isRegionAndCategory ? (group as RegionCategoryGroup).categories.length * groupRowCount : groupRowCount;
+                    merges.push({ s: { r: currentRow + headerRowsCount, c: 0 }, e: { r: currentRow + headerRowsCount + mergeSpan - 1, c: 0 } });
+                    rowData.push(primaryGroupKey);
+                } else {
+                    rowData.push('');
+                }
+                colIndex++;
+
+                // Col 1: Secondary Group (Price Range or Metric Name)
+                if (isRegionAndCategory) {
+                    if (rowIndex === 0) {
+                        const mergeSpan = groupRowCount;
+                        merges.push({ s: { r: currentRow + headerRowsCount, c: 1 }, e: { r: currentRow + headerRowsCount + mergeSpan - 1, c: 1 } });
+                        rowData.push(secondaryGroupKey);
+                    } else {
+                        rowData.push('');
+                    }
+                    colIndex++;
+                }
+
+                // Metric Name Column (Col 1 or 2)
+                rowData.push(row.metricName);
+                colIndex++;
+
+                // Period Data Columns
+                periods.forEach(p => {
+                    const value = row.data[p.key] || 0;
+                    rowData.push(row.format(value).replace(/,/g, ''));
+                });
+
+                // Growth Columns (MoM, YTD)
+                if (hasGrowth) {
+                    const momRate = row.growth.mom;
+                    const ytdRate = row.growth.ytd;
+
+                    // MoM Cell
+                    rowData.push(momRate !== null ? `${momRate.toFixed(2)}%` : '-');
+
+                    // YTD Cell
+                    rowData.push(ytdRate !== null ? `${ytdRate.toFixed(2)}%` : '-');
+                }
+
+                finalData.push(rowData);
+                currentRow++;
+            });
+        });
+    });
+
+    // --- 3. Final Assembly and Styling ---
+
+    // Calculate final merge for MoM/YTD header if needed
+    if (hasGrowth) {
+        const momYtdStartCol = finalHeaders[0].length - 2;
+        merges.push({ s: { r: 1 + headerRowsCount, c: momYtdStartCol }, e: { r: 1 + headerRowsCount, c: momYtdStartCol + 1 } });
+    }
+
+    // Styles for Angsana New and Bold 
+    const customStyle = (ws: XLSX.WorkSheet, startRow: number) => {
+        const fontName = COMMON_FONT_NAME; // ใช้ Angsana New
+        const defaultStyle = { font: { name: fontName, sz: 11, color: { rgb: "000000" } }, border: { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } }, alignment: { vertical: "center", horizontal: "right" } };
+        const headerStyle = { ...defaultStyle, font: { name: fontName, sz: 12, bold: true }, fill: { fgColor: { rgb: "A3C9E2" } }, alignment: { vertical: "center", horizontal: "center" } }; // สีฟ้าอ่อนสำหรับ Header
+        const groupStyle = { ...defaultStyle, font: { name: fontName, sz: 11, bold: true }, fill: { fgColor: { rgb: "FFFFFF" } }, alignment: { vertical: "center", horizontal: "left" } };
+        const totalStyle = { ...defaultStyle, font: { name: fontName, sz: 11, bold: true }, fill: { fgColor: { rgb: "D9E1F2" } } }; // สีเทาอ่อน-ฟ้าอ่อนสำหรับแถวรวม
+        const primaryTotalStyle = { ...totalStyle, font: { name: fontName, sz: 12, bold: true, color: { rgb: "3F51B5" } }, fill: { fgColor: { rgb: "B4C6E7" } } }; // เน้นสีน้ำเงินและพื้นหลังเข้มกว่าสำหรับ "รวมทั่วประเทศ"
+        const successStyle = { ...defaultStyle, font: { name: fontName, sz: 11, color: { rgb: "00B050" }, bold: true } }; // สีเขียวเข้มสำหรับเติบโต
+        const errorStyle = { ...defaultStyle, font: { name: fontName, sz: 11, color: { rgb: "FF0000" }, bold: true } }; // สีแดงเข้มสำหรับติดลบ
+
+        // Apply header styles and borders
+        for (let r = 0; r < headerRowsCount; r++) {
+            for (let c = 0; c < finalHeaders[r].length; c++) {
+                const cellRef = XLSX.utils.encode_cell({ r: r + startRow, c: c });
+                if (ws[cellRef]) { ws[cellRef].s = headerStyle; }
+            }
+        }
+
+        // Apply data row styles and growth rate colors
+        finalData.forEach((row, rowIndex) => {
+            const excelRow = rowIndex + headerRowsCount + startRow;
+            const primaryGroup = row[0];
+            const secondaryGroup = isRegionAndCategory ? row[1] : '';
+            const metricName = isRegionAndCategory ? row[2] : row[1];
+
+            const isPrimaryTotal = primaryGroup === 'รวมทั่วประเทศ' || primaryGroup === 'รวม';
+            const isSecondaryTotal = secondaryGroup === 'รวม';
+            const isTotalMetric = metricName === 'มูลค่ารวม (บาท)';
+
+            const baseRowStyle = isPrimaryTotal || isSecondaryTotal ? totalStyle : defaultStyle;
+            let currentGroupIndex = 0;
+
+            // Col 0: Primary Group
+            const cellRef0 = XLSX.utils.encode_cell({ r: excelRow, c: 0 });
+            if (ws[cellRef0]) {
+                if (row[0] !== '') {
+                    ws[cellRef0].s = isPrimaryTotal ? primaryTotalStyle : groupStyle;
+                } else {
+                    ws[cellRef0].s = isPrimaryTotal ? primaryTotalStyle : defaultStyle; // Apply borders even if empty
+                }
+            }
+            currentGroupIndex++;
+
+            // Col 1: Secondary Group (if applicable)
+            if (isRegionAndCategory) {
+                const cellRef1 = XLSX.utils.encode_cell({ r: excelRow, c: 1 });
+                if (ws[cellRef1]) {
+                    if (row[1] !== '') {
+                        ws[cellRef1].s = isSecondaryTotal ? primaryTotalStyle : groupStyle;
+                    } else {
+                        ws[cellRef1].s = isSecondaryTotal ? primaryTotalStyle : defaultStyle; // Apply borders
+                    }
+                }
+                currentGroupIndex++;
+            }
+
+            // Col (1 or 2): Metric Name
+            const cellRefMetric = XLSX.utils.encode_cell({ r: excelRow, c: currentGroupIndex });
+            if (ws[cellRefMetric]) {
+                ws[cellRefMetric].s = { ...baseRowStyle, horizontal: "left", font: { ...baseRowStyle.font, bold: isTotalMetric } }; // เน้น Metric Name ที่เป็น "มูลค่ารวม (บาท)"
+            }
+            currentGroupIndex++;
+
+            // Period Data Columns (Numbers)
+            for (let c = currentGroupIndex; c < row.length - (hasGrowth ? 2 : 0); c++) {
+                const cellRef = XLSX.utils.encode_cell({ r: excelRow, c: c });
+                if (ws[cellRef]) {
+                    let style = { ...baseRowStyle, numFmt: (metricName.includes('(บาท)')) ? '#,##0.00' : '#,##0', horizontal: "right" };
+                    if (isPrimaryTotal || isSecondaryTotal) {
+                        style = { ...style, font: { ...style.font, bold: true } };
+                    }
+                    if (isPrimaryTotal && isTotalMetric) {
+                        style = { ...style, font: { ...style.font, color: primaryTotalStyle.font.color, bold: true } };
+                    }
+                    ws[cellRef].s = style;
+                }
+            }
+
+            // MoM/YTD Columns (Growth)
+            if (hasGrowth) {
+                const momCol = row.length - 2;
+                const ytdCol = row.length - 1;
+
+                const momValue = row[momCol];
+                const ytdValue = row[ytdCol];
+
+                // MoM Styling
+                const momRef = XLSX.utils.encode_cell({ r: excelRow, c: momCol });
+                if (ws[momRef]) {
+                    if (momValue !== '-') {
+                        ws[momRef].s = momValue.toString().includes('-') ? errorStyle : successStyle;
+                    } else { ws[momRef].s = baseRowStyle; }
+                }
+
+                // YTD Styling
+                const ytdRef = XLSX.utils.encode_cell({ r: excelRow, c: ytdCol });
+                if (ws[ytdRef]) {
+                    if (ytdValue !== '-') {
+                        ws[ytdRef].s = ytdValue.toString().includes('-') ? errorStyle : successStyle;
+                    } else { ws[ytdRef].s = baseRowStyle; }
+                }
+            }
+        });
+    };
+
+    // Calculate column widths
+    const cols = [{ wch: 25 }]; // Primary Group (Default)
+    if (isRegionAndCategory) {
+        cols.push({ wch: 18 }); // Secondary Group
+        cols.push({ wch: 20 }); // Metric Name
+    } else {
+        cols.push({ wch: 20 }); // Metric Name
+    }
+    periods.forEach(() => cols.push({ wch: 12 })); // Period columns
+    if (hasGrowth) {
+        cols.push({ wch: 10 }, { wch: 10 }); // MoM, YTD
+    }
+
+    return { data: finalHeaders.concat(finalData), merges: merges, cols: cols, customStyle: customStyle, headerRows: headerRowsCount };
+};
+
+// --------------------------------------------------------------------
+// 2. Vertical Table Wrappers (Sheet 4, 5, 6)
+// --------------------------------------------------------------------
+
+const getMonthlyReportDataForExport = (): { [key: string]: ExportResult } => {
+    // ... (ไม่เปลี่ยนแปลง)
+    const table = createVerticalTableExport(monthlyReportTableData.value, tablePeriods.value, false, false);
+    return { 'สรุปตามมูลค่าบ้าน': table };
+};
+
+const getRegionReportDataForExport = (): { [key: string]: ExportResult } => {
+    // ... (ไม่เปลี่ยนแปลง)
+    const table = createVerticalTableExport(regionReportTableData.value, tablePeriods.value, true, false);
+    return { 'สรุปตามภูมิภาค': table };
+};
+
+const getRegionCategoryReportDataForExport = (): { [key: string]: ExportResult } => {
+    // ... (ไม่เปลี่ยนแปลง)
+    const table = createVerticalTableExport(regionAndCategoryReportTableData.value, tablePeriods.value, true, true);
+    return { 'สรุปตามภูมิภาคและมูลค่า': table };
+};
+
+// --------------------------------------------------------------------
+// 3. ตารางอัตราการเติบโต (Sheet 1) - Vertical Metrics (ปรับจาก Transposed)
+// --------------------------------------------------------------------
+const getGrowthRateReportDataForExport = (): { [key: string]: ExportResult } => {
+    const data = growthRateReportTableData.value;
+    const periods = tablePeriods.value.filter(p => p.key !== 'TOTAL_PERIODS');
+    const showQoQValue = showQoQ.value;
+
+    if (!data || periods.length === 0) return {};
+
+    const metricsToInclude: { key: MetricGrowthKey, name: string }[] = [
+        { key: 'total_units', name: 'จำนวนหลัง' },
+        { key: 'total_value', name: 'มูลค่ารวม (บาท)' },
+    ];
+
+    const metricGroups = [...valueCategories, 'รวม'];
+
+    const header = ['ช่วงมูลค่าบ้าน', 'ตัวชี้วัด', ...periods.map(p => p.label)];
+    const headersCount = 1;
+    const finalData: any[][] = [header];
+    let currentRow = 1;
+    const merges: any[] = [];
+
+    metricGroups.forEach(categoryName => {
+        const categoryData = growthRateReportTableData.value.find(c => c.categoryName === categoryName);
+        if (!categoryData) return;
+
+        const startRow = currentRow;
+        let rowCount = 0;
+
+        metricsToInclude.forEach((metric) => {
+            const metricKey = metric.key;
+            const formatFn = metricRows.find(r => r.key === metricKey)!.format;
+            const growthKeys: { key: keyof GrowthRateMetrics, label: string }[] = [
+                { key: 'Raw', label: metric.name + ' (ค่าดิบ)' },
+                { key: 'MoM', label: 'MoM%' },
+                { key: 'YoY', label: 'YoY%' },
+                ...(showQoQValue ? [{ key: 'QoQ' as keyof GrowthRateMetrics, label: 'QoQ%' }] : []),
+                { key: 'YTD', label: 'YTD%' },
+            ];
+
+            growthKeys.forEach((g) => {
+                const row: any[] = [];
+                const totalRowsPerGroup = metricsToInclude.length * growthKeys.length;
+
+                // Col 0: Category Name (Merged)
+                if (rowCount % totalRowsPerGroup === 0) { // ต้องเปลี่ยนเงื่อนไข merge เพราะ metricsToInclude.length ซ้ำซ้อน
+                    merges.push({ s: { r: startRow, c: 0 }, e: { r: startRow + totalRowsPerGroup - 1, c: 0 } });
+                    row.push(categoryName);
+                } else {
+                    row.push('');
+                }
+
+                // Col 1: Indicator Name
+                row.push(g.label);
+
+                // Cols 2+: Period Values
+                periods.forEach(p => {
+                    if (g.key === 'Raw') {
+                        const value = categoryData[`${metricKey}_raw` as 'total_value_raw' | 'total_units_raw'][p.key] || 0;
+                        row.push(formatFn(value).replace(/,/g, ''));
+                    } else {
+                        const rate = categoryData[metricKey][p.key][g.key as keyof GrowthRateMetrics];
+                        row.push(rate !== null ? `${rate.toFixed(2)}%` : '-');
+                    }
+                });
+
+                finalData.push(row);
+                currentRow++;
+                rowCount++;
+            });
+        });
+    });
+
+    const customStyleGrowth = (ws: XLSX.WorkSheet, startRow: number) => {
+        const fontName = COMMON_FONT_NAME; // ใช้ Angsana New
+        const defaultStyle = { font: { name: fontName, sz: 11 }, alignment: { horizontal: 'right', vertical: "center" }, border: { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } } };
+        const headerStyle = { ...defaultStyle, font: { name: fontName, sz: 12, bold: true }, fill: { fgColor: { rgb: "A3C9E2" } }, alignment: { vertical: "center", horizontal: "center" } }; // สีฟ้าอ่อนสำหรับ Header
+        const groupStyle = { ...defaultStyle, font: { name: fontName, sz: 11, bold: true }, fill: { fgColor: { rgb: "EBF1DE" } }, alignment: { vertical: "center", horizontal: "left" } }; // พื้นหลังสีเขียวอ่อนสำหรับ Group (ช่วงมูลค่าบ้าน)
+        const greenStyle = { ...defaultStyle, font: { name: fontName, sz: 11, color: { rgb: "00B050" }, bold: true } };
+        const redStyle = { ...defaultStyle, font: { name: fontName, sz: 11, color: { rgb: "FF0000" }, bold: true } };
+        const totalStyle = { ...defaultStyle, fill: { fgColor: { rgb: "D9E1F2" } }, font: { name: fontName, sz: 12, bold: true } }; // สีเทาอ่อน-ฟ้าอ่อนสำหรับแถวรวม
+
+        // Apply header styles 
+        for (let c = 0; c < finalData[0].length; c++) {
+            const cellRef = XLSX.utils.encode_cell({ r: startRow, c: c });
+            if (ws[cellRef]) { ws[cellRef].s = headerStyle; }
+        }
+
+        // Apply data row styles and colors
+        finalData.slice(1).forEach((row, rowIndex) => {
+            const excelRow = rowIndex + headersCount + startRow;
+            const categoryName = row[0];
+            const indicatorName = row[1];
+
+            const isTotalCategory = categoryName === 'รวม';
+
+            // Col 0: Category Group
+            const cellRef0 = XLSX.utils.encode_cell({ r: excelRow, c: 0 });
+            if (ws[cellRef0]) {
+                if (row[0] !== '') {
+                    ws[cellRef0].s = isTotalCategory ? totalStyle : groupStyle;
+                } else { ws[cellRef0].s = isTotalCategory ? totalStyle : defaultStyle; } // Apply default/total style and border
+            }
+
+            // Col 1: Indicator Name
+            const cellRef1 = XLSX.utils.encode_cell({ r: excelRow, c: 1 });
+            if (ws[cellRef1]) {
+                ws[cellRef1].s = { ...(isTotalCategory ? totalStyle : defaultStyle), horizontal: "left", font: { ...defaultStyle.font, bold: isTotalCategory } }; // จัดชิดซ้าย
+            }
+
+            // Cols 2+: Period Values (Growth Rates)
+            for (let c = 2; c < row.length; c++) {
+                const cellRef = XLSX.utils.encode_cell({ r: excelRow, c: c });
+                if (ws[cellRef]) {
+                    const value = row[c];
+                    let style = isTotalCategory ? totalStyle : defaultStyle;
+
+                    if (indicatorName.includes('ค่าดิบ')) {
+                        style = { ...style, numFmt: (indicatorName.includes('(บาท)')) ? '#,##0.00' : '#,##0' };
+                    } else if (indicatorName.includes('%')) { // Growth Rate columns
+                        if (value !== '-') {
+                            const numValue = parseFloat(value);
+                            if (numValue > 0) { style = greenStyle; }
+                            else if (numValue < 0) { style = redStyle; }
+                            else { style = { ...style, font: { ...style.font, bold: isTotalCategory } }; }
+                        }
+                    }
+                    ws[cellRef].s = style;
+                }
+            }
+        });
+    };
+
+    const cols: { wch: number }[] = [{ wch: 20 }, { wch: 30 }];
+    periods.forEach(() => cols.push({ wch: 15 }));
+
+    // Return as a single sheet (Summary of growth rates)
+    return { 'อัตราเติบโต (สรุป)': { data: finalData, merges: merges, cols: cols, customStyle: customStyleGrowth, headerRows: 1 } };
+};
+
+// --------------------------------------------------------------------
+// 4. ตารางสถานะการกรอก (Sheet 2) - Member Summary (Non-Transposed/Vertical)
+// --------------------------------------------------------------------
+const getMemberSummaryReportDataForExport = (): { [key: string]: ExportResult } => {
+    const summary = memberSubmissionSummary.value;
+    const periods = summary.periodCounts;
+
+    const header = ['รายละเอียด', 'จำนวนสมาชิก (คน)'];
+    const data: any[][] = [
+        ['สมาชิกทั้งหมด (ประเภท User)', summary.totalUsers.toLocaleString('th-TH')],
+        ['', ''],
+        ['จำนวนสมาชิกที่กรอกในแต่ละช่วงเวลา:', ''],
+        ...periods.map(p => [`> ${p.label}`, p.count.toLocaleString('th-TH')]),
+        ['', ''],
+        [summary.submittedLabel, summary.submittedTotal.toLocaleString('th-TH')],
+        [summary.notSubmittedLabel, summary.notSubmittedTotal.toLocaleString('th-TH')]
+    ];
+
+    const cols = [{ wch: 40 }, { wch: 15 }];
+
+    const customStyleMemberSummary = (ws: XLSX.WorkSheet, startRow: number) => {
+        const fontName = COMMON_FONT_NAME; // ใช้ Angsana New
+        const defaultStyle = { font: { name: fontName, sz: 11 }, border: { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } }, alignment: { vertical: "center", horizontal: "right" } };
+        const headerStyle = { ...defaultStyle, font: { name: fontName, sz: 12, bold: true }, fill: { fgColor: { rgb: "A3C9E2" } }, alignment: { vertical: "center", horizontal: "center" } };
+        const redStyle = { ...defaultStyle, font: { name: fontName, sz: 12, color: { rgb: "FF0000" }, bold: true }, fill: { fgColor: { rgb: "F8D7DA" } } }; // เน้นสีแดงเข้มสำหรับ "ยังไม่กรอก"
+        const boldStyle = { ...defaultStyle, font: { name: fontName, sz: 11, bold: true }, alignment: { vertical: "center", horizontal: "left" } };
+
+        // Apply header styles
+        for (let c = 0; c < header.length; c++) {
+            const cellRef = XLSX.utils.encode_cell({ r: startRow, c: c });
+            if (ws[cellRef]) { ws[cellRef].s = headerStyle; }
+        }
+
+        // Apply red/bold style to the last row (not submitted) and bold to key rows
+        data.forEach((row, rowIndex) => {
+            const excelRow = rowIndex + 1 + startRow;
+            const isLastRow = rowIndex === data.length - 1; // ยังไม่กรอก
+            const isTotalRow = rowIndex === data.length - 2; // กรอกแล้ว
+            const isGroupHeader = rowIndex === 0 || rowIndex === 2;
+
+            for (let c = 0; c < header.length; c++) {
+                const cellRef = XLSX.utils.encode_cell({ r: excelRow, c: c });
+                if (ws[cellRef]) {
+                    if (isLastRow) {
+                        ws[cellRef].s = redStyle;
+                    } else if (isTotalRow) {
+                        ws[cellRef].s = { ...boldStyle, fill: { fgColor: { rgb: "D9E1F2" } }, horizontal: (c === 0 ? "left" : "right") }; // สีฟ้าอ่อนสำหรับ "กรอกแล้ว"
+                    } else if (isGroupHeader) {
+                        ws[cellRef].s = { ...boldStyle, font: { ...boldStyle.font, sz: 12 }, horizontal: "left" };
+                    } else if (row[c] !== '') {
+                        ws[cellRef].s = defaultStyle;
+                    } else {
+                        ws[cellRef].s = { ...defaultStyle, border: { top: { style: "none" }, bottom: { style: "none" }, left: { style: "none" }, right: { style: "none" } } }; // Hide border for blank row
+                    }
+                    if (c === 0 && !isLastRow && !isTotalRow) {
+                        ws[cellRef].s = { ...(ws[cellRef].s || defaultStyle), horizontal: "left" };
+                    }
+                }
+            }
+        });
+    };
+
+
+    return { 'สรุปสถานะสมาชิก': { data: [header, ...data], merges: [], cols: cols, customStyle: customStyleMemberSummary, headerRows: 1 } };
+};
+
+
+// --------------------------------------------------------------------
+// 5. ตารางสถานะการกรอกรายเดือน (Sheet 3) - Member Monthly Submission (Non-Transposed)
+// --------------------------------------------------------------------
+const getMemberMonthlySubmissionDataForExport = (): { [key: string]: ExportResult } => {
+    const data = memberMonthlySubmissionTableData.value;
+    const periods = tablePeriods.value.filter(p => p.key !== 'TOTAL_PERIODS');
+
+    const periodHeaders = periods.map(p => p.label);
+
+    // Header Row 1: Merge 'สถานะการกรอก' over periods
+    const headerRow1 = ['รายชื่อสมาชิก', 'ประเภท', 'ยอดรวม', ...periods.map(() => 'สถานะการกรอก')];
+    // Header Row 2: Period Labels
+    const headerRow2 = ['รายชื่อสมาชิก', 'ประเภท', 'ยอดรวม', ...periodHeaders];
+
+    const dataRows = data.map(m => {
+        return [
+            m.name,
+            m.member_type,
+            m.total_submitted_in_period.toLocaleString('th-TH'),
+            ...periods.map(p => m.submissions[p.key] || '-')
+        ];
+    });
+
+    const merges: any[] = [];
+    // Merge periods (Horizontal)
+    if (periods.length > 1) {
+        merges.push({ s: { r: 0, c: 3 }, e: { r: 0, c: 3 + periods.length - 1 } });
+    }
+
+    // Merge first three columns (Vertical)
+    merges.push({ s: { r: 0, c: 0 }, e: { r: 1, c: 0 } });
+    merges.push({ s: { r: 0, c: 1 }, e: { r: 1, c: 1 } });
+    merges.push({ s: { r: 0, c: 2 }, e: { r: 1, c: 2 } });
+
+    const finalAOAData = [headerRow1, headerRow2.map((h, i) => i < 3 ? '' : h), ...dataRows];
+
+    const cols = [{ wch: 25 }, { wch: 15 }, { wch: 10 }];
+    periods.forEach(() => cols.push({ wch: 8 }));
+
+    const customStyleMemberMonthly = (ws: XLSX.WorkSheet, startRow: number) => {
+        const fontName = COMMON_FONT_NAME; // ใช้ Angsana New
+        const defaultStyle = { font: { name: fontName, sz: 11 }, alignment: { horizontal: 'center', vertical: "center" }, border: { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } } };
+        const headerStyle = { ...defaultStyle, font: { name: fontName, sz: 12, bold: true }, fill: { fgColor: { rgb: "A3C9E2" } } };
+        const successStyle = { ...defaultStyle, font: { name: fontName, sz: 11, color: { rgb: "00B050" }, bold: true } }; // X = สีเขียว
+        const errorStyle = { ...defaultStyle, font: { name: fontName, sz: 11, color: { rgb: "FF0000" } } }; // - = สีแดง
+        const boldStyle = { ...defaultStyle, font: { name: fontName, sz: 11, bold: true }, alignment: { horizontal: "left", vertical: "center" } };
+
+        // Apply header styles
+        for (let r = 0; r < 2; r++) {
+            for (let c = 0; c < finalAOAData[r].length; c++) {
+                const cellRef = XLSX.utils.encode_cell({ r: r + startRow, c: c });
+                if (ws[cellRef]) { ws[cellRef].s = headerStyle; }
+            }
+        }
+
+        // Apply data row styles (X/ - colors)
+        dataRows.forEach((row, rowIndex) => {
+            const excelRow = rowIndex + 2 + startRow; // +2 for 2 header rows
+
+            // Name/Type/Total columns
+            for (let c = 0; c < 3; c++) {
+                const cellRef = XLSX.utils.encode_cell({ r: excelRow, c: c });
+                if (ws[cellRef]) {
+                    if (c === 0) {
+                        ws[cellRef].s = boldStyle; // Name: Bold, Left
+                    } else if (c === 1) {
+                        ws[cellRef].s = { ...defaultStyle, horizontal: "left" }; // Type: Normal, Left
+                    } else if (c === 2) {
+                        ws[cellRef].s = { ...boldStyle, horizontal: "right" }; // Total: Bold, Right
+                    }
+                }
+            }
+
+            // Status columns (X / -)
+            for (let c = 3; c < row.length; c++) {
+                const cellRef = XLSX.utils.encode_cell({ r: excelRow, c: c });
+                if (ws[cellRef]) {
+                    if (row[c] === 'X') {
+                        ws[cellRef].s = successStyle;
+                    } else if (row[c] === '-') {
+                        ws[cellRef].s = errorStyle;
+                    } else {
+                        ws[cellRef].s = defaultStyle;
+                    }
+                }
+            }
+        });
+    };
+
+    return { 'สถานะการกรอกรายเดือน': { data: finalAOAData, merges: merges, cols: cols, customStyle: customStyleMemberMonthly, headerRows: 2 } };
+};
+
+// --------------------------------------------------------------------
+// 6. ฟังก์ชันหลักสำหรับรวมและ Export
+// --------------------------------------------------------------------
+const exportToExcel = () => {
+    // 1. เตรียมข้อมูลสำหรับแต่ละชีต
+    const sheet1 = getGrowthRateReportDataForExport();
+    const sheet4 = getMonthlyReportDataForExport();
+    const sheet5 = getRegionReportDataForExport();
+    const sheet6 = getRegionCategoryReportDataForExport();
+    const sheet2 = getMemberSummaryReportDataForExport();
+    const sheet3 = getMemberMonthlySubmissionDataForExport();
+
+
+    // 2. จัดเรียงลำดับชีตตามที่ user ต้องการ: 1, 2, 3, 4, 5, 6
+    const allSheets: Record<string, ExportResult> = {
+        '1. อัตราเติบโต (มูลค่าบ้าน)': sheet1['อัตราเติบโต (สรุป)'],
+        '2. สรุปสถานะสมาชิก': sheet2['สรุปสถานะสมาชิก'],
+        '3. สถานะการกรอกรายเดือน': sheet3['สถานะการกรอกรายเดือน'],
+        '4. สรุปตามมูลค่าบ้าน': sheet4['สรุปตามมูลค่าบ้าน'],
+        '5. สรุปตามภูมิภาค': sheet5['สรุปตามภูมิภาค'],
+        '6. สรุปตามภูมิภาคและมูลค่า': sheet6['สรุปตามภูมิภาคและมูลค่า'],
+    };
+
+
+    if (Object.keys(allSheets).length === 0) {
+        console.warn('No data available for export.');
+        alert('ไม่พบข้อมูลสำหรับ Export กรุณาเลือกช่วงเวลาหรือตรวจสอบข้อมูล');
+        return;
+    }
+
+    // 3. สร้าง Workbook และเพิ่มชีต
+    const workbook = XLSX.utils.book_new();
+    const chartSubtitleText = chartSubtitle.value;
+    const blankRowsBeforeData = 3; // Title + Subtitle + Blank row
+
+    // ** New Title/Subtitle Styles (Angsana New) **
+    const fontName = COMMON_FONT_NAME; // ใช้ Angsana New
+    const defaultTitleStyle = { font: { name: fontName, sz: 18, bold: true, color: { rgb: "3F51B5" } }, alignment: { horizontal: 'center', vertical: "center" } }; // เน้นตัวหนา สีน้ำเงิน ขนาดใหญ่
+    const defaultSubtitleStyle = { font: { name: fontName, sz: 14, bold: true, color: { rgb: "000000" } }, alignment: { horizontal: 'center', vertical: "center" } }; // เน้นตัวหนา ขนาดกลาง
+
+    for (const [sheetName, { data, merges, cols, customStyle, headerRows }] of Object.entries(allSheets)) {
+        // เพิ่มแถวหัวข้อรายงาน (Title and Subtitle)
+        const reportTitle = `รายงานยอดเซ็นสัญญา: ${sheetName.replace(/^[0-9]\. /g, '').replace(/\(.+\)/g, '').trim()}`;
+        const subTitle = chartSubtitleText.startsWith('กรุณา') ? 'รายงานรวมตามปีปัจจุบัน' : chartSubtitleText;
+        const reportHeaders = [
+            [reportTitle], // Row 1: Title
+            [subTitle],    // Row 2: Subtitle
+            []             // Row 3: Blank row separator
+        ];
+
+        // ผสานเซลล์สำหรับ Title และ Subtitle
+        const maxCols = data[0].length;
+        const titleMerges = [
+            { s: { r: 0, c: 0 }, e: { r: 0, c: maxCols - 1 } },
+            { s: { r: 1, c: 0 }, e: { r: 1, c: maxCols - 1 } }
+        ];
+
+        // สร้าง Worksheet โดยใช้ Title/Subtitle นำหน้า
+        const worksheet = XLSX.utils.aoa_to_sheet([...reportHeaders, ...data]);
+
+        // เลื่อน merges ที่คำนวณไว้เดิมลงมา 3 แถว (บวก Title, Subtitle, ช่องว่าง)
+        const shiftedMerges = merges.map(m => ({
+            s: { r: m.s.r + blankRowsBeforeData, c: m.s.c },
+            e: { r: m.e.r + blankRowsBeforeData, c: m.e.c }
+        }));
+
+        // รวม merges ทั้งหมดเข้าด้วยกัน
+        worksheet['!merges'] = [...titleMerges, ...shiftedMerges];
+
+        // กำหนดความกว้างคอลัมน์
+        if (cols) {
+            worksheet['!cols'] = cols;
+        }
+
+        // *** [สำคัญ]: ใช้ Custom Style Function เพื่อกำหนดฟอนต์และสี ***
+        if (customStyle) {
+            // ส่งค่า startRow ที่ถูกต้องเข้าไปใน customStyle
+            customStyle(worksheet, blankRowsBeforeData);
+        }
+
+        // กำหนด style ให้กับ Title/Subtitle 
+        const titleRef = XLSX.utils.encode_cell({ r: 0, c: 0 });
+        const subtitleRef = XLSX.utils.encode_cell({ r: 1, c: 0 });
+
+        if (!worksheet[titleRef]) { worksheet[titleRef] = { t: 's', v: reportTitle }; }
+        worksheet[titleRef].s = defaultTitleStyle;
+
+        if (!worksheet[subtitleRef]) { worksheet[subtitleRef] = { t: 's', v: subTitle }; }
+        worksheet[subtitleRef].s = defaultSubtitleStyle;
+
+
+        XLSX.utils.book_append_sheet(workbook, worksheet, sheetName.substring(0, 31));
+    }
+
+    // 4. สร้างไฟล์และดาวน์โหลด
+    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const filename = `HBA_Report_${dateStr}.xlsx`;
+    XLSX.writeFile(workbook, filename);
+};
 </script>
 
 
@@ -2284,6 +2963,9 @@ watch(memberTypeSubmissionChartData, (newData) => {
                                     <h3 class="text-h5 card-title">รายงานเปรียบเทียบยอดเซ็นสัญญา</h3>
                                 </div>
                             </div>
+                            <v-btn color="success" prepend-icon="mdi-microsoft-excel" @click="exportToExcel">
+                                Export Excel
+                            </v-btn>
                         </div>
                     </div>
                 </v-col>
