@@ -2291,7 +2291,6 @@ const FONT_HEADER: Partial<Font> = { name: COMMON_FONT_NAME, size: 16, bold: tru
 const FONT_TOTAL: Partial<Font> = { name: COMMON_FONT_NAME, size: 15, bold: true, color: { argb: 'FF000000' } };
 const FONT_TOTAL_PRIMARY: Partial<Font> = { name: COMMON_FONT_NAME, size: 15, bold: true, color: { argb: 'FF3F51B5' } };
 
-// --- Border (เหมือนเดิม) ---
 const STYLE_BORDER: Partial<ExcelJS.Borders> = {
     top: { style: 'thin' as BorderStyle }, bottom: { style: 'thin' as BorderStyle },
     left: { style: 'thin' as BorderStyle }, right: { style: 'thin' as BorderStyle }
@@ -2379,6 +2378,27 @@ const STYLE_STATUS_ERROR_FILL: Partial<Style> = {
     fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFEBEE' } } as Fill,
     border: STYLE_BORDER, // <--- (แก้ไข) ระบุชัดเจน
     alignment: STYLE_ALIGNMENT_CENTER,
+};
+
+// --- Border (ปรับปรุงใหม่) ---
+// 1. สไตล์สำหรับ Header (เส้นขอบ 4 ด้านเหมือนเดิม)
+const STYLE_FULL_BORDER: Partial<ExcelJS.Borders> = {
+    top: { style: 'thin' as BorderStyle, color: { argb: 'FFBFBFBF' } }, // ทำให้สีอ่อนลง
+    bottom: { style: 'thin' as BorderStyle, color: { argb: 'FFBFBFBF' } },
+    left: { style: 'thin' as BorderStyle, color: { argb: 'FFBFBFBF' } },
+    right: { style: 'thin' as BorderStyle, color: { argb: 'FFBFBFBF' } }
+};
+
+// 2. สไตล์สำหรับ Data (เน้นเส้นแนวนอน)
+const STYLE_HORIZONTAL_BORDER: Partial<ExcelJS.Borders> = {
+    // ไม่มี top, left, right
+    bottom: { style: 'thin' as BorderStyle, color: { argb: 'FFEEEEEE' } } // สีเทาอ่อนมาก
+};
+
+// 3. สไตล์สำหรับแถว Total (มีเส้นขีดบนเพื่อแบ่งส่วน)
+const STYLE_TOTAL_BORDER: Partial<ExcelJS.Borders> = {
+    top: { style: 'thin' as BorderStyle, color: { argb: 'FFBFBFBF' } }, // เส้นบนสีเทา
+    bottom: { style: 'thin' as BorderStyle, color: { argb: 'FFEEEEEE' } } // เส้นล่างสีเทาอ่อน
 };
 
 // --------------------------------------------------------------------
