@@ -581,6 +581,10 @@ interface TableCategory {
 }
 
 
+const showQoQ = computed(() => {
+
+    return selectQuarters.value.length > 0;
+});
 
 const getRegionalMetrics = (period: typeof tablePeriods.value[0], region: string, category: string): Metrics => {
     let metrics: Metrics | undefined;
@@ -1314,10 +1318,10 @@ const barChartHeight = computed(() => {
 });
 
 // ก้อนที่ 2: computed สำหรับ Options (ที่ "ไม่มี" height อยู่ข้างใน)
-const barChartOptions = computed(() => ({
+// ก้อนที่ 2: (แก้ไข) เปลี่ยนเป็น ref
+const barChartOptions = ref({
     chart: {
         type: 'bar',
-        // สังเกต!!: height ที่เคยอยู่ตรงนี้ "ถูกลบออกไปแล้ว"
         fontFamily: 'inherit',
         foreColor: '#adb0bb',
         toolbar: { show: false },
@@ -1337,7 +1341,7 @@ const barChartOptions = computed(() => ({
         offsetX: 0
     },
     xaxis: {
-        categories: memberListChartData.value.categories,
+        categories: [] as string[],
         title: {
             text: 'จำนวนสัญญา'
         }
@@ -1353,7 +1357,23 @@ const barChartOptions = computed(() => ({
         borderColor: 'rgba(0, 0, 0, 0.1)'
     },
     legend: { show: false }
-}));
+});
+
+// (เพิ่ม) Watcher สำหรับอัปเดต categories และบังคับ re-render
+watch(memberListChartData, (newData) => {
+    // 1. อัปเดต options (เหมือนเดิม)
+    barChartOptions.value = {
+        ...barChartOptions.value,
+        xaxis: {
+            ...barChartOptions.value.xaxis,
+            categories: newData.categories
+        }
+    };
+
+    // 2. สั่งเปลี่ยน key เพื่อบังคับให้ Vue สร้าง chart ใหม่
+    barChartKey.value += 1; // ⬅️ เพิ่มบรรทัดนี้
+});
+const barChartKey = ref(0);
 
 const donutChartOptions = computed(() => ({
     chart: {
@@ -1536,6 +1556,8 @@ const growthRateReportTableData = computed<GrowthRateCategory[]>(() => {
 
                     if (prevValue !== 0) {
                         YoY = ((currentValue / prevValue) - 1) * 100;
+                    } else if (currentValue > 0) {
+                        YoY = 100; // ⬅️ ถ้าของเก่าเป็น 0 แต่ของใหม่มีค่า ให้แสดง 100%
                     }
                 }
 
@@ -1567,6 +1589,8 @@ const growthRateReportTableData = computed<GrowthRateCategory[]>(() => {
 
                     if (prevYearValue !== 0) {
                         YoY = ((currentValue / prevYearValue) - 1) * 100;
+                    } else if (currentValue > 0) {
+                        YoY = 100; // ⬅️ ถ้าของเก่าเป็น 0 แต่ของใหม่มีค่า ให้แสดง 100%
                     }
 
 
@@ -1575,6 +1599,8 @@ const growthRateReportTableData = computed<GrowthRateCategory[]>(() => {
 
                     if (prevYTDValue !== 0) {
                         YTD = ((currentYTDValue / prevYTDValue) - 1) * 100;
+                    } else if (currentYTDValue > 0) {
+                        YTD = 100; // ⬅️ ถ้าของเก่าเป็น 0 แต่ของใหม่มีค่า ให้แสดง 100%
                     }
 
 
@@ -1604,6 +1630,8 @@ const growthRateReportTableData = computed<GrowthRateCategory[]>(() => {
 
                             if (prevQValue !== 0) {
                                 QoQ = ((currentQValue / prevQValue) - 1) * 100;
+                            } else if (currentQValue > 0) {
+                                QoQ = 100; // ⬅️ ถ้าของเก่าเป็น 0 แต่ของใหม่มีค่า ให้แสดง 100%
                             }
                         }
                     }
@@ -1710,7 +1738,8 @@ const growthRateReportTableData = computed<GrowthRateCategory[]>(() => {
                                             style="min-width: 150px;">รายละเอียด</th>
 
                                         <th v-for="period in tablePeriods.filter(p => p.key !== 'TOTAL_PERIODS')"
-                                            :key="period.key" :colspan="4" class="text-center text-h6 border-b-sm"
+                                            :key="period.key" :colspan="showQoQ ? 4 : 3"
+                                            class="text-center text-h6 border-b-sm"
                                             :class="{ 'bg-blue-grey-lighten-5': !period.monthIndex }">
                                             {{ period.label }}
                                         </th>
@@ -1842,7 +1871,7 @@ const growthRateReportTableData = computed<GrowthRateCategory[]>(() => {
                             <h3 class="card-title mb-1">รายงานสถานะการกรอกสัญญาของสมาชิก</h3>
                             <h5 class="card-subtitle">ข้อมูลอ้างอิง: สมาชิกประเภท User ทั้งหมด</h5>
                             <v-row class="mt-4">
-                                <v-col cols="12" md="4">
+                                <v-col cols="12" md="6">
                                     <v-card variant="tonal" color="primary">
                                         <v-card-title
                                             class="text-center text-subtitle-1 pt-4 pb-0">สถานะการกรอกสัญญารวม</v-card-title>
@@ -1853,7 +1882,7 @@ const growthRateReportTableData = computed<GrowthRateCategory[]>(() => {
                                     </v-card>
                                 </v-col>
 
-                                <v-col cols="12" md="4">
+                                <v-col cols="12" md="6">
                                     <v-table density="compact" class="mt-4 border">
                                         <thead>
                                             <tr>
@@ -1896,16 +1925,17 @@ const growthRateReportTableData = computed<GrowthRateCategory[]>(() => {
                                     </v-table>
                                 </v-col>
 
-                                <v-col cols="12" md="4">
-                                    <v-card>
-                                        <v-card-title
-                                            class="text-center text-subtitle-1 pt-4 pb-0">จำนวนสัญญาที่กรอกต่อรายสมาชิก
-                                            (ปีที่เลือก)</v-card-title>
-                                        <v-card-text class="pa-2">
-                                            <apexchart id="barChartMember" type="bar" :options="barChartOptions"
-                                                :series="memberListChartData.series" :height="barChartHeight" />
-                                        </v-card-text>
-                                    </v-card>
+                                <v-col cols="12" md="12">
+
+                                    <v-card-title
+                                        class="text-center text-subtitle-1 pt-4 pb-0">จำนวนสัญญาที่กรอกต่อรายสมาชิก
+                                        (ปีที่เลือก)</v-card-title>
+                                    <v-card-text class="pa-2">
+                                        <apexchart id="barChartMember" type="bar" :key="barChartKey"
+                                            :options="barChartOptions" :series="memberListChartData.series"
+                                            :height="barChartHeight" />
+                                    </v-card-text>
+
                                 </v-col>
                             </v-row>
                         </v-card-text>
