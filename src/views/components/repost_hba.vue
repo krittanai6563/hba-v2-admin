@@ -57,6 +57,32 @@ const availableMonths = computed(() => {
     }
 });
 
+
+const availableQuarters = computed(() => {
+    // ใช้ฟังก์ชันที่แก้ไขแล้วเพื่อดึงปีและเดือนปัจจุบัน
+    const { currentBuddhistYear, currentMonthIndex } = getCurrentPeriod();
+    const selectedYears = selectyear.value;
+
+    // ตรวจสอบว่ากำลังดูบริบทของ "ปีปัจจุบัน" อยู่หรือไม่
+    const isCurrentYearInContext =
+        selectedYears.length === 0 ||
+        selectedYears.includes(currentBuddhistYear);
+
+    if (isCurrentYearInContext) {
+        // ถ้าเป็นปีปัจจุบัน หรือยังไม่ได้เลือกปี: กรองไตรมาสที่ผ่านมา/ถึงปัจจุบัน
+        return Quarters.filter(q => {
+            // ตรวจสอบเดือนสุดท้ายของไตรมาสนั้น (เช่น ไตรมาส 1 คือเดือน 3)
+            const lastMonthOfQuarter = q.months[q.months.length - 1];
+            // อนุญาตให้เลือกไตรมาสที่เดือนสุดท้าย <= เดือนปัจจุบัน
+            return lastMonthOfQuarter <= currentMonthIndex;
+        });
+    } else {
+        // ถ้าเลือกปีในอดีต: ให้แสดง 4 ไตรมาสเต็ม
+        return Quarters;
+    }
+});
+
+
 const selectyear = ref<string[]>([]);
 const selectMonths = ref<string[]>([]);
 const selectQuarters = ref<string[]>([]);
@@ -250,40 +276,45 @@ const fetchSummary = async (
     }
 };
 
-
-
-
-
-
-
-
-
-
-
-
-
 const combinedTargetMonthIndices = computed<number[]>(() => {
     let indices: number[] = [];
 
+    const { currentBuddhistYear, currentMonthIndex } = getCurrentPeriod();
+    const selectedYears = selectyear.value;
+
+    const isCurrentYearSelected =
+        selectedYears.length === 1 && selectedYears.includes(currentBuddhistYear);
 
     const selectedQuarters = selectQuarters.value;
     if (selectedQuarters.length > 0) {
         selectedQuarters.forEach(qName => {
             const quarter = Quarters.find(q => q.name === qName);
-            if (quarter) indices.push(...quarter.months);
+            if (quarter) {
+                let monthsToInclude = quarter.months;
+
+                // ⬇️⬇️⬇️ [ส่วนที่แก้ไข] กรองเดือนสำหรับปีปัจจุบัน ⬇️⬇️⬇️
+                if (isCurrentYearSelected) {
+                    // ถ้าเลือกปีปัจจุบัน: กรองเอาเฉพาะเดือนที่มีค่า <= เดือนปัจจุบัน
+                    monthsToInclude = monthsToInclude.filter(monthIndex =>
+                        monthIndex <= currentMonthIndex
+                    );
+                }
+                // ⬆️⬆️⬆️ [ส่วนที่แก้ไข] ⬆️⬆️⬆️
+
+                indices.push(...monthsToInclude);
+            }
         });
     }
 
-
+    // 2. ดึงเดือนจาก "เดือน" ที่เลือก (ส่วนนี้ยังทำงานได้เหมือนเดิม เพราะ availableMonths กรองใน UI แล้ว)
     const manualMonthIndices = selectMonths.value.map(m => monthMap[m]).filter(Boolean) as number[];
     if (manualMonthIndices.length > 0) {
         indices.push(...manualMonthIndices);
     }
 
-
+    // 3. คืนค่าเป็นรายการเดือนที่ไม่ซ้ำกัน และเรียงลำดับแล้ว
     return Array.from(new Set(indices)).sort((a, b) => a - b);
 });
-
 const updateChartData = (data: SummaryData) => {
     const finalSeries: any[] = [];
     const dataForAverageCalc: number[][] = [];
@@ -2123,9 +2154,10 @@ watch(memberTypeSubmissionChartData, (newData) => {
                                                     density="comfortable"></v-combobox>
                                             </v-col>
                                             <v-col cols="12" md="4">
-                                                <v-combobox v-model="selectQuarters" :items="Quarters.map(q => q.name)"
-                                                    label="เลือกไตรมาส" chips multiple clearable variant="outlined"
-                                                    density="comfortable"></v-combobox>
+                                                <v-combobox v-model="selectQuarters"
+                                                    :items="availableQuarters.map(q => q.name)" label="เลือกไตรมาส"
+                                                    chips multiple clearable variant="outlined" density="comfortable">
+                                                </v-combobox>
                                             </v-col>
                                             <v-col cols="12" md="4">
                                                 <v-combobox v-model="selectMonths" :items="availableMonths"
@@ -2469,7 +2501,7 @@ watch(memberTypeSubmissionChartData, (newData) => {
                                     <template v-if="memberMonthlySubmissionTableData.length > 0">
                                         <tr v-for="member in memberMonthlySubmissionTableData" :key="member.name">
                                             <td class="text-left font-weight-bold text-caption border-e">{{ member.name
-                                                }}</td>
+                                            }}</td>
 
                                             <td class="text-left text-caption border-e">
                                                 {{ member.member_type }} </td>
