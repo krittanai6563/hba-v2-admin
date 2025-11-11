@@ -582,8 +582,18 @@ interface TableCategory {
 
 
 const showQoQ = computed(() => {
+    //  START: *** V.2 ***
+    // ตรวจสอบว่ามีเดือนสุดท้ายของไตรมาสที่ถูกเลือกหรือไม่
+    const targetMonths = combinedTargetMonthIndices.value;
+    if (targetMonths.length === 0) return false;
 
-    return selectQuarters.value.length > 0;
+    // ตรวจสอบว่าในเดือนที่เลือก มีเดือนที่เป็นเดือนสุดท้ายของไตรมาส (3, 6, 9, 12) หรือไม่
+    const hasQuarterEndMonth = targetMonths.some(monthIndex =>
+        Quarters.some(q => q.months[q.months.length - 1] === monthIndex)
+    );
+
+    return hasQuarterEndMonth;
+    // END: *** V.2 ***
 });
 
 const getRegionalMetrics = (period: typeof tablePeriods.value[0], region: string, category: string): Metrics => {
@@ -1228,50 +1238,191 @@ const generateMockMemberData = (): MemberSubmission[] => {
 
 
 const memberSubmissionSummary = computed(() => {
-
     const allMembers = generateMockMemberData();
     const users = allMembers.filter(u => u.role === 'user');
-    const targetYears = [...selectyear.value].sort((a, b) => a.localeCompare(b, 'th-TH'));
-    const yearA = targetYears[0];
-    const yearB = targetYears[1];
-
     const allUsersCount = users.length;
-    let submittedTotal = 0;
-    let submittedYearA = 0;
-    let submittedYearB = 0;
-    let notSubmittedTotal = 0;
 
-    users.forEach(user => {
-        const hasSubmitted = user.total_submitted_count > 0;
+    const targetPeriods = tablePeriods.value.filter(p => p.key !== 'TOTAL_PERIODS');
+    const hasFilters = targetPeriods.length > 0 &&
+        (selectyear.value.length > 0 || selectMonths.value.length > 0 || selectQuarters.value.length > 0);
 
-        if (hasSubmitted) {
-            submittedTotal++;
-        } else {
-            notSubmittedTotal++;
-        }
+    // --- START: V.6 (เพิ่มการนับแยกย่อย) ---
 
-        if (yearA && user.submissions_by_year[yearA] && user.submissions_by_year[yearA] > 0) {
-            submittedYearA++;
-        }
-        if (yearB && user.submissions_by_year[yearB] && user.submissions_by_year[yearB] > 0) {
-            submittedYearB++;
-        }
-    });
+    // 1. ใช้ Set เพื่อนับ "ยอดรวม
+    //    (Unique)"
+    //    สำหรับ
+    //    Donut
+    //    Chart
+    //    และ
+    //    แถว
+    //    สรุป
+    let submittedInPeriod_Set = new Set<string>();
+
+    // 2. [ใหม่]
+    //    ใช้
+    //    Array
+    //    เพื่อนับ
+    //    "ยอด
+    //    แยก
+    //    ย่อย"
+    //    สำหรับ
+    //    แถว
+    //    รายละเอียด
+    //    ใน
+    //    ตาราง
+    const periodCounts: { key: string, label: string, count: number }[] = [];
+
+    // --- Loop 1: คำนวณ
+    //    ยอด
+    //    แยก
+    //    ย่อย
+    //    และ
+    //    รวบ
+    //    รวม
+    //    ยอด
+    //    Unique
+    //    ---
+    if (targetPeriods.length > 0) {
+        targetPeriods.forEach(period => {
+            let countForThisPeriod = 0; // นับ 0
+            // ใหม่
+            // ทุก
+            // period
+
+            users.forEach(user => {
+                let hasSubmittedThisPeriod = false;
+
+                // ตรวจสอบ
+                //    ว่า
+                //    user
+                //    คน
+                //    นี้
+                //    ส่ง
+                //    ใน
+                //    period
+                //    นี้
+                //    หรือไม่
+                if (period.monthIndex) {
+                    // เคส
+                    //    ราย
+                    //    เดือน
+                    if (user.submissions_in_period[period.year]?.includes(period.monthIndex)) {
+                        hasSubmittedThisPeriod = true;
+                    }
+                } else if (period.year) {
+                    // เคส
+                    //    ราย
+                    //    ปี
+                    if ((user.submissions_by_year[period.year] || 0) > 0) {
+                        hasSubmittedThisPeriod = true;
+                    }
+                }
+
+                if (hasSubmittedThisPeriod) {
+                    submittedInPeriod_Set.add(user.member_id); // เพิ่ม
+                    // ใน
+                    // "ยอด
+                    // รวม
+                    // (Unique)"
+                    countForThisPeriod++; // เพิ่ม
+                    // ใน
+                    // "ยอด
+                    // แยก
+                    // ย่อย"
+                }
+            });
+
+            // [ใหม่]
+            //    เก็บ
+            //    ผล
+            //    ลัพธ์
+            //    ของ
+            //    "ยอด
+            //    แยก
+            //    ย่อย"
+            //    ของ
+            //    period
+            //    นี้
+            periodCounts.push({
+                key: period.key,
+                label: `สมาชิกที่กรอก ${period.label}`, // เช่น "สมาชิกที่กรอก มกราคม 2567"
+                count: countForThisPeriod
+            });
+        });
+    } else {
+        // Default (ถ้า
+        //    ไม่
+        //    มี
+        //    ฟิลเตอร์):
+        //    ใช้
+        //    ยอด
+        //    รวม
+        //    all-time
+        //    สำหรับ
+        //    "ยอด
+        //    รวม
+        //    (Unique)"
+        users.forEach(user => {
+            if (user.total_submitted_count > 0) {
+                submittedInPeriod_Set.add(user.member_id);
+            }
+        });
+        // (ยอด
+        //    แยก
+        //    ย่อย
+        //    periodCounts
+        //    จะ
+        //    เป็น
+        //    array
+        //    ว่าง)
+    }
+
+    // --- คำนวณ
+    //    แถว
+    //    สรุป
+    //    (ตรรกะ
+    //    V.5
+    //    เดิม)
+    //    ---
+    const submittedInPeriod_Count = submittedInPeriod_Set.size;
+    const notSubmittedInPeriod_Count = allUsersCount - submittedInPeriod_Count;
+
+    const submittedLabel = hasFilters ? 'สมาชิกที่กรอก (ในช่วงที่เลือก)' : 'สมาชิกที่เคยกรอก (ทั้งหมด)';
+    const notSubmittedLabel = hasFilters ? 'สมาชิกที่ไม่ได้กรอก (ในช่วงที่เลือก)' : 'สมาชิกที่ไม่เคยกรอก (ทั้งหมด)';
 
     return {
-
         totalUsers: allUsersCount,
-        submittedTotal: submittedTotal,
-        submittedYearA: submittedYearA,
-        submittedYearB: submittedYearB,
-        notSubmittedTotal: notSubmittedTotal,
-        yearA: yearA,
-        yearB: yearB,
+        totalUsersIncludingAdmin: allMembers.length,
 
-        donutData: [submittedTotal, notSubmittedTotal],
-        donutLabels: ['เคยส่งสัญญาแล้ว', 'ไม่เคยส่งสัญญา'],
-        totalUsersIncludingAdmin: allMembers.length
+        // แถว
+        //    สรุป
+        //    (สำหรับ
+        //    Donut
+        //    และ
+        //    2
+        //    แถว
+        //    หลัก
+        //    ใน
+        //    ตาราง)
+        submittedTotal: submittedInPeriod_Count,
+        notSubmittedTotal: notSubmittedInPeriod_Count,
+        submittedLabel: submittedLabel,
+        notSubmittedLabel: notSubmittedLabel,
+        donutData: [submittedInPeriod_Count, notSubmittedInPeriod_Count],
+        donutLabels: [submittedLabel, notSubmittedLabel],
+
+        // [ใหม่]
+        //    แถว
+        //    แยก
+        //    ย่อย
+        //    (สำหรับ
+        //    v-for
+        //    ใหม่
+        //    ใน
+        //    ตาราง)
+        periodCounts: periodCounts,
     };
+    // --- END: V.6 ---
 });
 
 
@@ -1279,30 +1430,118 @@ const memberListChartData = computed(() => {
 
     const allMembers = generateMockMemberData();
     const users = allMembers.filter(u => u.role === 'user');
-    const targetYears = [...selectyear.value].sort((a, b) => a.localeCompare(b, 'th-TH'));
 
+    // --- START: การเปลี่ยนแปลง
+    //    V.5
+    //    ---
+
+    // 1. ดึง "ช่วงเวลา" ที่ผู้ใช้เลือก
+    const targetPeriods = tablePeriods.value.filter(p => p.key !== 'TOTAL_PERIODS');
+
+    // 2. สร้าง
+    //    Set
+    //    ของ
+    //    "ปี"
+    //    ที่
+    //    เกี่ยวข้อง
+    //    กับ
+    //    ฟิลเตอร์
+    const yearsToAggregateSet = new Set<string>();
+    if (targetPeriods.length > 0) {
+        targetPeriods.forEach(p => yearsToAggregateSet.add(p.year));
+    }
+
+    const yearsToAggregate = Array.from(yearsToAggregateSet);
 
     const aggregatedUsers = users.map(user => {
         let totalSubmissionsInPeriod = 0;
 
+        // 3. กำหนด
+        //    "ปี"
+        //    ที่
+        //    จะ
+        //    ใช้
+        //    รวม
+        //    ยอด
+        let yearsToSum: string[];
+        if (yearsToAggregate.length > 0) {
+            // ถ้า
+            //    มี
+            //    ฟิลเตอร์
+            //    (เช่น
+            //    [ '2567',
+            //    '2566'
+            //    ])
+            //    ให้
+            //    ใช้
+            //    ปี
+            //    นั้น
+            yearsToSum = yearsToAggregate;
+        } else {
+            // ถ้า
+            //    ไม่
+            //    มี
+            //    ฟิลเตอร์
+            //    ให้
+            //    ใช้
+            //    ทุก
+            //    ปี
+            //    ที่
+            //    มี
+            //    ข้อมูล
+            yearsToSum = Object.keys(user.submissions_by_year);
+        }
 
-        const yearsToAggregate = targetYears.length > 0 ? targetYears : Object.keys(user.submissions_by_year);
-
-        yearsToAggregate.forEach(year => {
+        // 4. [สำคัญ]
+        //    รวม
+        //    ยอด
+        //    "รายปี"
+        //    (submissions_by_year)
+        //    ตาม
+        //    "ปี"
+        //    ที่
+        //    เลือก
+        //    (ตรรกะ
+        //    นี้
+        //    ไม่
+        //    สามารถ
+        //    เจาะ
+        //    จง
+        //    ราย
+        //    เดือน
+        //    /ไตรมาส
+        //    ได้
+        //    เพราะ
+        //    ข้อ
+        //    จำกัด
+        //    ของ
+        //    data
+        //    structure)
+        yearsToSum.forEach(year => {
             totalSubmissionsInPeriod += (user.submissions_by_year[year] || 0);
         });
+
         return {
             name: user.name,
             submissions: totalSubmissionsInPeriod,
         };
-    }).filter(u => u.submissions > 0);
+    }).filter(u => u.submissions > 0); // กรอง
+    //    คน
+    //    ที่
+    //    ไม่
+    //    มี
+    //    ยอด
+    //    ออก
 
+    // --- END: การเปลี่ยนแปลง
+    //    V.5
+    //    ---
 
     aggregatedUsers.sort((a, b) => b.submissions - a.submissions);
 
     return {
         series: [{
-            name: `จำนวนสัญญาที่กรอก (ปีที่เลือก)`,
+            name: `จำนวนสัญญาที่กรอก (รวมยอดทั้งปี)`,
             data: aggregatedUsers.map(u => u.submissions)
         }],
         categories: aggregatedUsers.map(u => u.name)
@@ -1418,44 +1657,143 @@ const donutChartOptions = computed(() => ({
 interface MemberMonthlyData {
     name: string;
     submissions: Record<string, string>;
+    role: 'user' | 'admin' | 'master';
+    member_type: string;
+    total_submitted_in_period: number;
 }
-
 
 const memberMonthlySubmissionTableData = computed<MemberMonthlyData[]>(() => {
 
     const allMembers = generateMockMemberData();
-    const users = allMembers.filter(u => u.role === 'user');
+    const users = allMembers; // (ใช้ allMembers เหมือนเดิม)
 
     const periods = tablePeriods.value.filter(p => p.key !== 'TOTAL_PERIODS' && (p.monthIndex || p.year));
 
-    if (periods.length === 0) return [];
+    // --- START: V.8 (เพิ่มตรรกะคำนวณ "ผลรวมตามที่เลือก") ---
+
+    // 1. ดึง "ปี" ที่เกี่ยวข้องกับฟิลเตอร์ (เหมือนที่
+    //    ใช้
+    //    ใน
+    //    Bar
+    //    Chart)
+    const targetPeriods = tablePeriods.value.filter(p => p.key !== 'TOTAL_PERIODS');
+    const yearsToAggregateSet = new Set<string>();
+    if (targetPeriods.length > 0) {
+        targetPeriods.forEach(p => yearsToAggregateSet.add(p.year));
+    }
+    const yearsToAggregate = Array.from(yearsToAggregateSet);
+    // --- END: V.8 ---
 
     const tableData: MemberMonthlyData[] = [];
 
     users.forEach(user => {
+
+        // --- START: V.8 (คำนวณ "ผลรวมตามที่เลือก") ---
+
+        // 2. คำนวณ
+        //    ผล
+        //    รวม
+        //    ของ
+        //    user
+        //    คน
+        //    นี้
+        //    "ตาม
+        //    ปี
+        //    ที่
+        //    เลือก"
+        let totalSubmissionsInPeriod = 0;
+        let yearsToSum: string[];
+
+        if (yearsToAggregate.length > 0) {
+            // 2a. ถ้ามีฟิลเตอร์:
+            //     ใช้
+            //     "ปี"
+            //     ที่
+            //     กรอง
+            //     แล้ว
+            yearsToSum = yearsToAggregate;
+        } else {
+            // 2b. ถ้าไม่มีฟิลเตอร์:
+            //     ใช้
+            //     "ทุก
+            //     ปี"
+            //     (เท่า
+            //     กับ
+            //     all-time)
+            yearsToSum = Object.keys(user.submissions_by_year);
+        }
+
+        yearsToSum.forEach(year => {
+            totalSubmissionsInPeriod += (user.submissions_by_year[year] || 0);
+        });
+        // --- END: V.8 ---
+
+
+        // 3. [V.8]
+        //    สร้าง
+        //    row
+        //    ด้วย
+        //    ข้อมูล
+        //    ใหม่
         const row: MemberMonthlyData = {
             name: user.name,
-            submissions: {}
+            submissions: {},
+            role: user.role, // <-- V.8: เก็บ role ไว้ (สำหรับจัดเรียง)
+            member_type: (user as any).member_type || '', // <-- V.8: ดึง member_type (ถ้ามี)
+            total_submitted_in_period: totalSubmissionsInPeriod // <-- V.8: ใช้ "ผลรวมตามที่เลือก"
         };
 
+        // (ตรรกะเดิม:
+        //    วน
+        //    ลูป
+        //    ใส่
+        //    X
+        //    หรือ
+        //    -)
         periods.forEach(period => {
             const periodKey = period.key;
-
             let submittedInPeriod = false;
-
             if (period.monthIndex) {
-
                 const submittedMonths = user.submissions_in_period[period.year] || [];
                 submittedInPeriod = submittedMonths.includes(period.monthIndex);
             } else if (period.year) {
-
                 submittedInPeriod = (user.submissions_by_year[period.year] || 0) > 0;
             }
-
             row.submissions[periodKey] = submittedInPeriod ? 'X' : '-';
         });
 
         tableData.push(row);
+    });
+
+    // (V.7
+    //    เดิม:
+    //    จัด
+    //    เรียง
+    //    ตาม
+    //    role
+    //    (master
+    //    ->
+    //    admin
+    //    ->
+    //    user)
+    //    ก่อน)
+    tableData.sort((a, b) => {
+        const roleOrder = { master: 1, admin: 2, user: 3 };
+        const roleA = roleOrder[a.role] || 4;
+        const roleB = roleOrder[b.role] || 4;
+
+        if (roleA !== roleB) {
+            return roleA - roleB;
+        }
+        // ถ้า
+        //    role
+        //    เดียว
+        //    กัน
+        //    ให้
+        //    เรียง
+        //    ตาม
+        //    ชื่อ
+        return a.name.localeCompare(b.name, 'th-TH');
     });
 
     return tableData;
@@ -1477,11 +1815,16 @@ interface GrowthRatePeriods {
     [key: string]: GrowthRateMetrics;
 }
 
+// START: *** การเปลี่ยนแปลงที่ 1 ***
+// เพิ่ม total_value_raw และ total_units_raw เพื่อเก็บข้อมูลดิบ
 interface GrowthRateCategory {
     categoryName: string;
     total_value: GrowthRatePeriods;
     total_units: GrowthRatePeriods;
+    total_value_raw: Record<string, number>; // <--- เพิ่ม
+    total_units_raw: Record<string, number>; // <--- เพิ่ม
 }
+// END: *** การเปลี่ยนแปลงที่ 1 ***
 
 
 type MetricGrowthKey = 'total_value' | 'total_units';
@@ -1532,16 +1875,26 @@ const growthRateReportTableData = computed<GrowthRateCategory[]>(() => {
     const metricsToTrack: MetricGrowthKey[] = ['total_value', 'total_units'];
 
     allCategories.forEach(categoryName => {
+        // START: *** การเปลี่ยนแปลงที่ 2 ***
+        // เพิ่ม total_value_raw และ total_units_raw ตอนสร้าง categoryData
         const categoryData: GrowthRateCategory = {
             categoryName: categoryName,
             total_value: {},
             total_units: {},
+            total_value_raw: {}, // <--- เพิ่ม
+            total_units_raw: {}  // <--- เพิ่ม
         };
+        // END: *** การเปลี่ยนแปลงที่ 2 ***
 
         metricsToTrack.forEach(metricKey => {
             periodsToCalculate.forEach((currentPeriod, index) => {
                 const currentValue = getMetricValue(currentPeriod, categoryName, metricKey as keyof Metrics);
                 const periodKey = currentPeriod.key;
+
+                // START: *** การเปลี่ยนแปลงที่ 3 ***
+                // เก็บค่า currentValue (ข้อมูลดิบ) ลงใน _raw
+                categoryData[`${metricKey}_raw`][periodKey] = currentValue;
+                // END: *** การเปลี่ยนแปลงที่ 3 ***
 
                 let MoM: number | null = null;
                 let YoY: number | null = null;
@@ -1652,6 +2005,11 @@ const growthRateReportTableData = computed<GrowthRateCategory[]>(() => {
     return finalTable;
 });
 
+const lastPeriod = computed(() => {
+    const periods = tablePeriods.value.filter(p => p.key !== 'TOTAL_PERIODS');
+    return periods.length > 0 ? periods[periods.length - 1] : null;
+});
+
 </script>
 
 
@@ -1721,48 +2079,72 @@ const growthRateReportTableData = computed<GrowthRateCategory[]>(() => {
                     </v-card>
                 </v-col>
 
-
                 <v-col cols="12">
                     <v-card>
                         <v-card-text>
-                            <h3 class="card-title mb-1">ตารางอัตราการเติบโต MoM% / YoY% / QoQ% / YTD% (แยกตามมูลค่าบ้าน)
+                            <h3 class="card-title mb-1">ตารางอัตราการเติบโต (แยกตามมูลค่าบ้าน)
                             </h3>
                             <h5 class="card-subtitle">{{ chartSubtitle }}</h5>
 
                             <v-table density="compact" class="mt-4 border">
                                 <thead>
                                     <tr>
-                                        <th rowspan="2" class="text-center text-subtitle-1 border-e"
+                                        <th rowspan="3" class="text-center text-subtitle-1 border-e"
                                             style="min-width: 150px;">ช่วงมูลค่าบ้าน</th>
-                                        <th rowspan="2" class="text-center text-subtitle-1 border-e"
+                                        <th rowspan="3" class="text-center text-subtitle-1 border-e"
                                             style="min-width: 150px;">รายละเอียด</th>
-
-                                        <th v-for="period in tablePeriods.filter(p => p.key !== 'TOTAL_PERIODS')"
-                                            :key="period.key" :colspan="showQoQ ? 4 : 3"
-                                            class="text-center text-h6 border-b-sm"
-                                            :class="{ 'bg-blue-grey-lighten-5': !period.monthIndex }">
-                                            {{ period.label }}
+                                        <th :colspan="tablePeriods.filter(p => p.key !== 'TOTAL_PERIODS').length"
+                                            class="text-center text-h6 border-b-sm border-e">
+                                            ข้อมูล
+                                        </th>
+                                        <th :colspan="showQoQ ? 4 : 3" class="text-center text-h6 border-b-sm">
+                                            อัตราการเติบโต (สรุป)
                                         </th>
                                     </tr>
                                     <tr>
-                                        <template v-for="period in tablePeriods.filter(p => p.key !== 'TOTAL_PERIODS')"
-                                            :key="period.key">
+                                        <th v-for="(period, index) in tablePeriods.filter(p => p.key !== 'TOTAL_PERIODS')"
+                                            :key="`raw-${period.key}`" class="text-center text-subtitle-1 border-b-sm"
+                                            style="min-width: 120px;" :class="{
+                                                'bg-blue-grey-lighten-5': !period.monthIndex,
+                                                'border-e': index === tablePeriods.filter(p => p.key !== 'TOTAL_PERIODS').length - 1
+                                            }">
+                                            {{ period.label }}
+                                        </th>
+
+                                        <th :colspan="showQoQ ? 4 : 3"
+                                            class="text-center text-h6 border-b-sm bg-blue-grey-lighten-5"
+                                            v-if="lastPeriod">
+                                            สรุป ณ {{ lastPeriod.label }}
+                                        </th>
+                                        <th v-else :colspan="showQoQ ? 4 : 3" class="text-center text-h6 border-b-sm">
+                                            -
+                                        </th>
+                                    </tr>
+                                    <tr>
+                                        <td :colspan="tablePeriods.filter(p => p.key !== 'TOTAL_PERIODS').length"
+                                            class="border-e"></td>
+
+                                        <template v-if="lastPeriod">
                                             <th class="text-center text-subtitle-1" style="min-width: 80px;">MoM%</th>
                                             <th class="text-center text-subtitle-1" style="min-width: 80px;">YoY%</th>
-                                            <th class="text-center text-subtitle-1" style="min-width: 80px;">QoQ%</th>
+                                            <th v-if="showQoQ" class="text-center text-subtitle-1"
+                                                style="min-width: 80px;">QoQ%</th>
                                             <th class="text-center text-subtitle-1 border-e" style="min-width: 80px;">
                                                 YTD%</th>
+                                        </template>
+                                        <template v-else>
+                                            <td :colspan="showQoQ ? 4 : 3"></td>
                                         </template>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <template v-if="growthRateReportTableData.length > 0">
+                                    <template v-if="growthRateReportTableData.length > 0 && lastPeriod">
                                         <template v-for="(category, catIndex) in growthRateReportTableData"
                                             :key="category.categoryName">
 
                                             <template v-for="(metricEntry, rowIndex) in [
-                                                { key: 'total_units', name: 'จำนวนหลัง', data: category.total_units },
-                                                { key: 'total_value', name: 'มูลค่ารวม (บาท)', data: category.total_value }
+                                                { key: 'total_units', name: 'จำนวนหลัง', format: metricRows.find(r => r.key === 'total_units')!.format, data: category.total_units, raw_data: category.total_units_raw },
+                                                { key: 'total_value', name: 'มูลค่ารวม (บาท)', format: metricRows.find(r => r.key === 'total_value')!.format, data: category.total_value, raw_data: category.total_value_raw }
                                             ]" :key="`${category.categoryName}-${metricEntry.key}`">
 
                                                 <tr :class="{
@@ -1780,48 +2162,56 @@ const growthRateReportTableData = computed<GrowthRateCategory[]>(() => {
                                                     </td>
 
                                                     <template
-                                                        v-for="period in tablePeriods.filter(p => p.key !== 'TOTAL_PERIODS')"
-                                                        :key="period.key">
+                                                        v-for="(period, index) in tablePeriods.filter(p => p.key !== 'TOTAL_PERIODS')"
+                                                        :key="`raw-cell-${period.key}`">
+                                                        <td class="text-right text-subtitle-2" :class="{
+                                                            'border-e': index === tablePeriods.filter(p => p.key !== 'TOTAL_PERIODS').length - 1,
+                                                            'text-primary font-weight-bold': category.categoryName === 'รวม' && metricEntry.key === 'total_value'
+                                                        }">
+                                                            {{ metricEntry.format(metricEntry.raw_data[period.key] || 0)
+                                                            }}
+                                                        </td>
+                                                    </template>
 
+                                                    <template v-if="lastPeriod">
                                                         <td class="text-right text-subtitle-2"
-                                                            :class="{ 'text-success': (metricEntry.data[period.key]?.MoM || 0) > 0, 'text-error': (metricEntry.data[period.key]?.MoM || 0) < 0 }">
-                                                            {{ metricEntry.data[period.key]?.MoM != null
-                                                                ? metricEntry.data[period.key]!.MoM!.toFixed(2) + '%'
+                                                            :class="{ 'text-success': (metricEntry.data[lastPeriod.key]?.MoM || 0) > 0, 'text-error': (metricEntry.data[lastPeriod.key]?.MoM || 0) < 0 }">
+                                                            {{ metricEntry.data[lastPeriod.key]?.MoM != null
+                                                                ? metricEntry.data[lastPeriod.key]!.MoM!.toFixed(2) + '%'
                                                                 : '-'
                                                             }}
                                                         </td>
 
                                                         <td class="text-right text-subtitle-2"
-                                                            :class="{ 'text-success': (metricEntry.data[period.key]?.YoY || 0) > 0, 'text-error': (metricEntry.data[period.key]?.YoY || 0) < 0 }">
-                                                            {{ metricEntry.data[period.key]?.YoY != null
-                                                                ? metricEntry.data[period.key]!.YoY!.toFixed(2) + '%'
+                                                            :class="{ 'text-success': (metricEntry.data[lastPeriod.key]?.YoY || 0) > 0, 'text-error': (metricEntry.data[lastPeriod.key]?.YoY || 0) < 0 }">
+                                                            {{ metricEntry.data[lastPeriod.key]?.YoY != null
+                                                                ? metricEntry.data[lastPeriod.key]!.YoY!.toFixed(2) + '%'
                                                                 : '-'
                                                             }}
                                                         </td>
 
-                                                        <td class="text-right text-subtitle-2"
-                                                            :class="{ 'text-success': (metricEntry.data[period.key]?.QoQ || 0) > 0, 'text-error': (metricEntry.data[period.key]?.QoQ || 0) < 0 }">
-                                                            {{ metricEntry.data[period.key]?.QoQ != null
-                                                                ? metricEntry.data[period.key]!.QoQ!.toFixed(2) + '%'
+                                                        <td v-if="showQoQ" class="text-right text-subtitle-2"
+                                                            :class="{ 'text-success': (metricEntry.data[lastPeriod.key]?.QoQ || 0) > 0, 'text-error': (metricEntry.data[lastPeriod.key]?.QoQ || 0) < 0 }">
+                                                            {{ metricEntry.data[lastPeriod.key]?.QoQ != null
+                                                                ? metricEntry.data[lastPeriod.key]!.QoQ!.toFixed(2) + '%'
                                                                 : '-'
                                                             }}
                                                         </td>
 
                                                         <td class="text-right text-subtitle-2 border-e"
-                                                            :class="{ 'text-success': (metricEntry.data[period.key]?.YTD || 0) > 0, 'text-error': (metricEntry.data[period.key]?.YTD || 0) < 0 }">
-                                                            {{ metricEntry.data[period.key]?.YTD != null
-                                                                ? metricEntry.data[period.key]!.YTD!.toFixed(2) + '%'
+                                                            :class="{ 'text-success': (metricEntry.data[lastPeriod.key]?.YTD || 0) > 0, 'text-error': (metricEntry.data[lastPeriod.key]?.YTD || 0) < 0 }">
+                                                            {{ metricEntry.data[lastPeriod.key]?.YTD != null
+                                                                ? metricEntry.data[lastPeriod.key]!.YTD!.toFixed(2) + '%'
                                                                 : '-'
                                                             }}
                                                         </td>
-
                                                     </template>
                                                 </tr>
                                             </template>
                                         </template>
                                     </template>
                                     <tr v-else>
-                                        <td :colspan="(tablePeriods.filter(p => p.key !== 'TOTAL_PERIODS').length * 4) + 2"
+                                        <td :colspan="2 + tablePeriods.filter(p => p.key !== 'TOTAL_PERIODS').length + (showQoQ ? 4 : 3)"
                                             class="text-center text-subtitle-1 py-4">ไม่พบข้อมูลตามเงื่อนไขที่เลือก
                                             หรือช่วงเวลาที่เลือกไม่ต่อเนื่อง
                                         </td>
@@ -1872,14 +2262,14 @@ const growthRateReportTableData = computed<GrowthRateCategory[]>(() => {
                             <h5 class="card-subtitle">ข้อมูลอ้างอิง: สมาชิกประเภท User ทั้งหมด</h5>
                             <v-row class="mt-4">
                                 <v-col cols="12" md="6">
-                                    <v-card variant="tonal" color="primary">
+                                    <div>
                                         <v-card-title
                                             class="text-center text-subtitle-1 pt-4 pb-0">สถานะการกรอกสัญญารวม</v-card-title>
                                         <v-card-text class="pa-2">
                                             <apexchart id="donutChartMember" type="donut" :options="donutChartOptions"
                                                 :series="memberSubmissionSummary.donutData" height="350" />
                                         </v-card-text>
-                                    </v-card>
+                                    </div>
                                 </v-col>
 
                                 <v-col cols="12" md="6">
@@ -1890,42 +2280,47 @@ const growthRateReportTableData = computed<GrowthRateCategory[]>(() => {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            <tr class="bg-blue-grey-lighten-5">
+                                            <!-- <tr class="bg-blue-grey-lighten-5">
                                                 <td class="font-weight-bold">สมาชิกทั้งหมด (รวมผู้ดูแล)</td>
                                                 <td class="text-right font-weight-bold">{{
                                                     memberSubmissionSummary.totalUsersIncludingAdmin }} คน</td>
-                                            </tr>
+                                            </tr> -->
                                             <tr>
-                                                <td class="font-weight-bold">สมาชิกทั้งหมด (ตัดผู้ดูแล)</td>
+                                                <td class="font-weight-bold">สมาชิกทั้งหมด</td>
                                                 <td class="text-right font-weight-bold">{{
                                                     memberSubmissionSummary.totalUsers }} คน</td>
                                             </tr>
+
+
+                                            <template v-if="memberSubmissionSummary.periodCounts.length > 0">
+                                                <tr class="bg-blue-grey-lighten-5">
+
+                                                </tr>
+                                                <tr v-for="period in memberSubmissionSummary.periodCounts"
+                                                    :key="period.key">
+                                                    <td>{{ period.label }}</td>
+                                                    <td class="text-right">{{ period.count }} คน</td>
+                                                </tr>
+                                            </template>
                                             <tr>
-                                                <td>สมาชิกที่เคยกรอกสัญญา (ทั้งหมด)</td>
+                                                <td>{{ memberSubmissionSummary.submittedLabel }}</td>
                                                 <td class="text-right">{{ memberSubmissionSummary.submittedTotal }} คน
                                                 </td>
                                             </tr>
-                                            <tr v-if="memberSubmissionSummary.yearA">
-                                                <td>สมาชิกที่กรอกสัญญา ปี {{ memberSubmissionSummary.yearA }}</td>
-                                                <td class="text-right">{{ memberSubmissionSummary.submittedYearA }} คน
-                                                </td>
-                                            </tr>
-                                            <tr v-if="memberSubmissionSummary.yearB">
-                                                <td>สมาชิกที่กรอกสัญญา ปี {{ memberSubmissionSummary.yearB }}</td>
-                                                <td class="text-right">{{ memberSubmissionSummary.submittedYearB }} คน
-                                                </td>
-                                            </tr>
                                             <tr class="bg-red-lighten-5">
-                                                <td class="font-weight-bold text-error">สมาชิกที่ยังไม่ได้กรอกสัญญาเลย
+                                                <td class="font-weight-bold text-error">{{
+                                                    memberSubmissionSummary.notSubmittedLabel }}
                                                 </td>
                                                 <td class="text-right font-weight-bold text-error">{{
                                                     memberSubmissionSummary.notSubmittedTotal }} คน</td>
                                             </tr>
+
+
                                         </tbody>
                                     </v-table>
                                 </v-col>
 
-                                <v-col cols="12" md="12">
+                                <!-- <v-col cols="12" md="12">
 
                                     <v-card-title
                                         class="text-center text-subtitle-1 pt-4 pb-0">จำนวนสัญญาที่กรอกต่อรายสมาชิก
@@ -1936,7 +2331,7 @@ const growthRateReportTableData = computed<GrowthRateCategory[]>(() => {
                                             :height="barChartHeight" />
                                     </v-card-text>
 
-                                </v-col>
+                                </v-col> -->
                             </v-row>
                         </v-card-text>
                     </v-card>
@@ -1953,6 +2348,15 @@ const growthRateReportTableData = computed<GrowthRateCategory[]>(() => {
                                         <th rowspan="2" class="text-center text-subtitle-1 border-e"
                                             style="min-width: 200px;">
                                             รายชื่อสมาชิก</th>
+
+                                        <th rowspan="2" class="text-center text-subtitle-1 border-e"
+                                            style="min-width: 100px;">
+                                            ประเภท (Member Type) </th>
+
+                                        <th rowspan="2" class="text-center text-subtitle-1 border-e"
+                                            style="min-width: 80px;">
+                                            ผลรวม (ตามที่เลือก) </th>
+
                                         <th :colspan="tablePeriods.filter(p => p.key !== 'TOTAL_PERIODS').length"
                                             class="text-center text-h6 border-b-sm">
                                             <span v-if="tablePeriods.length > 0">{{ chartSubtitle }}</span>
@@ -1971,8 +2375,13 @@ const growthRateReportTableData = computed<GrowthRateCategory[]>(() => {
                                     <template v-if="memberMonthlySubmissionTableData.length > 0">
                                         <tr v-for="member in memberMonthlySubmissionTableData" :key="member.name">
                                             <td class="text-left font-weight-bold text-caption border-e">{{ member.name
-                                            }}</td>
+                                                }}</td>
 
+                                            <td class="text-left text-caption border-e">
+                                                {{ member.member_type }} </td>
+                                            <td class="text-center font-weight-bold text-subtitle-2 border-e">
+                                                {{ member.total_submitted_in_period.toLocaleString('th-TH') }}
+                                            </td>
                                             <td v-for="period in tablePeriods.filter(p => p.key !== 'TOTAL_PERIODS')"
                                                 :key="period.key" class="text-center text-subtitle-2"
                                                 :class="{ 'text-success font-weight-bold': member.submissions[period.key] === 'X', 'text-error': member.submissions[period.key] === '-' }">
@@ -1981,8 +2390,10 @@ const growthRateReportTableData = computed<GrowthRateCategory[]>(() => {
                                         </tr>
                                     </template>
                                     <tr v-else>
-                                        <td :colspan="tablePeriods.length + 1" class="text-center text-subtitle-1 py-4">
-                                            ไม่พบข้อมูลสมาชิกที่แสดงผลตามเงื่อนไข</td>
+                                        <td :colspan="3 + tablePeriods.filter(p => p.key !== 'TOTAL_PERIODS').length"
+                                            class="text-center text-subtitle-1 py-4">
+                                            ไม่พบข้อมูลสมาชิกที่แสดงผลตามเงื่อนไข
+                                        </td>
                                     </tr>
                                 </tbody>
                             </v-table>
