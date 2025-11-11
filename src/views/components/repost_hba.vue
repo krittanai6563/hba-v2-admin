@@ -5,6 +5,10 @@ import { useDate } from 'vuetify/lib/framework.mjs';
 import ExcelJS from 'exceljs';
 import type {Cell, Worksheet, Column, Style, Font, Alignment, Fill, BorderStyle} from 'exceljs';
 
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import html2canvas from 'html2canvas';
+
 const date = useDate();
 
 
@@ -16,6 +20,7 @@ const currentBuddhistYearStr = currentBuddhistYearNum.toString(); // 3. แป�
 const previousBuddhistYearStr = (currentBuddhistYearNum - 1).toString(); // 4. "2567"
 
 const tab = ref('monthly');
+const isPdfLoading = ref(false);
 
 interface Metrics {
     total_value: number;
@@ -3169,6 +3174,261 @@ const exportToExcel = async () => {
     a.click();
     window.URL.revokeObjectURL(url);
 };
+
+//PDF
+
+const blobToBase64 = (blob: Blob): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            const dataUrl = reader.result as string;
+            // remove the prefix 'data:application/octet-stream;base64,'
+            const base64 = dataUrl.split(',')[1];
+            resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+    });
+};
+const addThaiFont = async (doc: jsPDF) => {
+    const fontUrl = '/fonts/THSarabunNew.ttf'; // <-- นี่คือ URL ที่คุณระบุ
+
+    try {
+        // 1. Fetch the font file from your public folder
+        const response = await fetch(fontUrl);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch font: ${response.statusText}`);
+        }
+        const fontBlob = await response.blob();
+
+        // 2. Convert to Base64
+        const thSarabunBase64 = await blobToBase64(fontBlob);
+
+        if (!thSarabunBase64 || thSarabunBase64.length < 1000) {
+             throw new Error("Fetched font data is invalid or empty.");
+        }
+
+        // 3. Add to jsPDF
+        doc.addFileToVFS("THSarabunNew.ttf", thSarabunBase64);
+        doc.addFont("THSarabunNew.ttf", "THSarabunNew", "normal");
+        doc.setFont("THSarabunNew");
+        console.log("Thai font loaded successfully from URL.");
+        return true;
+
+    } catch (e) {
+        console.error("[PDF Export] Error loading/adding Thai font from URL:", e);
+        doc.setFont("helvetica"); // Fallback
+        return false;
+    }
+};
+
+// Helper function สำหรับวาดหัวข้อและจัดการการขึ้นหน้าใหม่
+let cursorY = 0;
+const pageHeight = 595; // A4 landscape height in px (approx)
+const pageWidth = 842; // A4 landscape width in px (approx)
+const margin = 30;
+
+const pdfNewPage = (doc: jsPDF) => {
+    doc.addPage();
+    cursorY = margin;
+};
+
+const pdfCheckAddPage = (doc: jsPDF, heightNeeded: number) => {
+    if (cursorY + heightNeeded > pageHeight - margin) {
+        pdfNewPage(doc);
+    }
+};
+
+const pdfAddTitle = (doc: jsPDF, title: string) => {
+    pdfCheckAddPage(doc, 30);
+    doc.setFontSize(16);
+    doc.text(title, margin, cursorY);
+    cursorY += 20;
+};
+
+// Helper function สำหรับจับภาพ Chart
+const pdfAddChart = async (doc: jsPDF, elementId: string) => {
+    const chartEl = document.getElementById(elementId);
+    if (!chartEl) {
+        console.warn(`[PDF Export] Chart element not found: #${elementId}`);
+        return;
+    }
+
+    try {
+        const canvas = await html2canvas(chartEl, { useCORS: true, scale: 2 });
+        const imgData = canvas.toDataURL('image/png');
+
+        const imgWidth = pageWidth - (margin * 2);
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+        pdfCheckAddPage(doc, imgHeight + 10); // +10 for padding
+
+        doc.addImage(imgData, 'PNG', margin, cursorY, imgWidth, imgHeight);
+        cursorY += imgHeight + 20; // Add padding after chart
+    } catch (e) {
+        console.error(`Error capturing chart #${elementId}:`, e);
+    }
+};
+
+// Helper function สำหรับวาดตาราง (ตัวอย่างแบบง่าย)
+const pdfAddSimpleTable = (doc: jsPDF, head: any[], body: any[]) => {
+    pdfCheckAddPage(doc, 40); // Space for header
+
+    autoTable(doc, {
+        head: head,
+        body: body,
+        startY: cursorY,
+        theme: 'grid',
+        styles: {
+            font: "THSarabunNew", // *** สำคัญมาก ***
+            fontSize: 10,
+            cellPadding: 2,
+        },
+        headStyles: {
+            fillColor: [41, 128, 185], // สีน้ำเงิน
+            textColor: 255,
+            fontSize: 12,
+        },
+        didDrawPage: (data) => {
+            // อัปเดต cursorY หลังจาก autoTable วาดเสร็จ (รวมถึงการขึ้นหน้าใหม่)
+            cursorY = data.cursor ? data.cursor.y + 10 : margin;
+        }
+    });
+    // @ts-ignore
+    cursorY = doc.autoTable.previous.finalY + 20; // อัปเดต Y หลังจากตารางจบ
+};
+
+
+// ... (โค้ดทั้งหมดของคุณก่อนหน้านี้ เช่น blobToBase64, addThaiFont, pdfNewPage, pdfAddChart ฯลฯ) ...
+
+const exportToPDF = async () => {
+    isPdfLoading.value = true;
+    try {
+        const doc = new jsPDF({
+            orientation: 'landscape', // --- [สำคัญ] แนวนอน ---
+            unit: 'px',
+            format: 'a4'
+        });
+
+        // --- 1. Add Thai Font ---
+        const fontAdded = await addThaiFont(doc); 
+        
+        if (!fontAdded) {
+            console.error("Stopping PDF generation due to font loading failure.");
+            alert("เกิดข้อผิดพลาดในการโหลดฟอนต์ภาษาไทยสำหรับ PDF");
+            isPdfLoading.value = false;
+            return;
+        }
+
+        cursorY = margin; // Reset cursor
+
+        // ==========================================================
+        // === นี่คือส่วนที่ขาดไป (ขั้นตอนที่ 2, 3, 4) ===
+        // ==========================================================
+
+        // --- 2. Add Title ---
+        doc.setFontSize(20);
+        doc.text("รายงานเปรียบเทียบยอดเซ็นสัญญา", pageWidth / 2, cursorY, { align: 'center' });
+        cursorY += 25;
+        doc.setFontSize(14);
+        doc.text(chartSubtitle.value, pageWidth / 2, cursorY, { align: 'center' });
+        cursorY += 30;
+
+        // --- 3. Add Sections (กราฟและตาราง) ---
+
+        // === Section 1: กราฟเปรียบเทียบหลัก ===
+        pdfAddTitle(doc, "1. กราฟเปรียบเทียบยอดเซ็นสัญญา (แยกตามมูลค่าบ้าน)");
+        await pdfAddChart(doc, 'chart1');
+
+        // === Section 2: กราฟสัดส่วน ===
+        pdfAddTitle(doc, "2. กราฟสัดส่วนมูลค่ารวม");
+        // (ตัวอย่างนี้จะวางกราฟต่อกัน)
+        await pdfAddChart(doc, 'polarChartPrice');
+        await pdfAddChart(doc, 'polarChartRegion');
+        
+        pdfNewPage(doc); // ขึ้นหน้าใหม่ก่อนเริ่มตาราง
+
+        // === Section 3: ตารางสรุปตามมูลค่าบ้าน ===
+        pdfAddTitle(doc, "3. ตารางสรุปยอดเซ็นสัญญา (แยกตามมูลค่าบ้าน)");
+        if (monthlyReportTableData.value.length > 0) {
+            // เตรียม Header สำหรับ autoTable
+            const periods = tablePeriods.value.map(p => p.label);
+            const head = [
+                ['มูลค่าบ้าน', 'รายละเอียด', ...periods, 'MoM%', 'YTD%']
+            ];
+            
+            // เตรียม Body
+            const body: any[] = [];
+            monthlyReportTableData.value.forEach(category => {
+                category.rows.forEach((row, index) => {
+                    const rowData: any[] = [];
+                    // จัดการ RowSpan
+                    if (index === 0) {
+                        rowData.push({ content: category.categoryName, rowSpan: category.rows.length });
+                    }
+                    rowData.push(row.metricName);
+                    
+                    // เพิ่มข้อมูลตาม Period
+                    tablePeriods.value.forEach(p => {
+                        rowData.push(row.format(row.data[p.key] || 0));
+                    });
+                    
+                    // เพิ่ม Growth
+                    rowData.push(row.growth.mom != null ? `${row.growth.mom.toFixed(2)}%` : '-');
+                    rowData.push(row.growth.ytd != null ? `${row.growth.ytd.toFixed(2)}%` : '-');
+                    
+                    body.push(rowData);
+                });
+            });
+            
+            pdfAddSimpleTable(doc, head, body);
+        }
+
+        // === Section 4: ตารางสรุปตามภูมิภาค ===
+        pdfAddTitle(doc, "4. ตารางสรุปยอดเซ็นสัญญา (แยกตามภูมิภาค)");
+        if (regionReportTableData.value.length > 0) {
+             const periods = tablePeriods.value.map(p => p.label);
+            const head = [
+                ['ภูมิภาค', 'รายละเอียด', ...periods, 'MoM%', 'YTD%']
+            ];
+             const body: any[] = [];
+            regionReportTableData.value.forEach(category => {
+                category.rows.forEach((row, index) => {
+                    const rowData: any[] = [];
+                    if (index === 0) {
+                        rowData.push({ content: category.categoryName, rowSpan: category.rows.length });
+                    }
+                    rowData.push(row.metricName);
+                    tablePeriods.value.forEach(p => {
+                        rowData.push(row.format(row.data[p.key] || 0));
+                    });
+                    rowData.push(row.growth.mom != null ? `${row.growth.mom.toFixed(2)}%` : '-');
+                    rowData.push(row.growth.ytd != null ? `${row.growth.ytd.toFixed(2)}%` : '-');
+                    body.push(rowData);
+                });
+            });
+             pdfAddSimpleTable(doc, head, body);
+        }
+        
+        // ... คุณสามารถเพิ่มตารางอื่นๆ ที่นี่โดยใช้ pdfAddTitle และ pdfAddSimpleTable ...
+        // เช่น ตาราง "สรุปสถานะสมาชิก" หรือ "สถานะการกรอกรายเดือน"
+
+
+        // --- 4. Save Document (ส่วนที่สำคัญที่สุดที่ทำให้ไฟล์ดาวน์โหลด) ---
+        const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+        doc.save(`HBA_Report_PDF_${dateStr}.pdf`);
+
+        // ==========================================================
+        // === สิ้นสุดส่วนที่ขาดไป ===
+        // ==========================================================
+
+    } catch (error) {
+        console.error("[PDF Export] Error generating PDF:", error);
+        alert("เกิดข้อผิดพลาดระหว่างการสร้างไฟล์ PDF");
+    } finally {
+        isPdfLoading.value = false;
+    }
+};
 </script>
 
 
@@ -3186,9 +3446,26 @@ const exportToExcel = async () => {
                                     <h3 class="text-h5 card-title">รายงานเปรียบเทียบยอดเซ็นสัญญา</h3>
                                 </div>
                             </div>
-                            <v-btn color="success" prepend-icon="mdi-microsoft-excel" @click="exportToExcel">
-                                Export Excel
-                            </v-btn>
+                           <v-col cols="auto">
+                                <v-btn 
+                                    color="success" 
+                                    prepend-icon="mdi-microsoft-excel" 
+                                    @click="exportToExcel"
+                                    class="mr-2"
+                                >
+                                    Export Excel
+                                </v-btn>
+                                
+                                <v-btn 
+                                    color="error" 
+                                    prepend-icon="mdi-file-pdf-box" 
+                                    @click="exportToPDF"
+                                    :loading="isPdfLoading"
+                                    :disabled="isPdfLoading"
+                                >
+                                    Export PDF
+                                </v-btn>
+                                </v-col>
                         </div>
                     </div>
                 </v-col>
