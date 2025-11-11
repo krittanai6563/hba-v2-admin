@@ -1,2916 +1,1520 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue';
-import { useDate } from 'vuetify/lib/framework.mjs';
-const date = useDate();
+import ExcelJS from 'exceljs';
+import type { BorderStyle, Cell } from 'exceljs';
+import jsPDF from 'jspdf'; // ⭐️ [ใหม่] Import PDF
+import html2canvas from 'html2canvas'; // ⭐️ [ใหม่] Import Canvas
 
-// *** [เพิ่ม]: นำเข้าไลบรารี Excel ***
-// คุณต้องติดตั้งไลบรารีนี้ก่อน (e.g., npm install xlsx)
-import * as XLSX from 'xlsx';
-// *** [สิ้นสุดส่วนเพิ่ม] ***
-
-const today = new Date();
-const currentGregorianYear = today.getFullYear(); // 1. ดึงปี ค.ศ. (เช่น 2025)
-const currentBuddhistYearNum = currentGregorianYear + 543; // 2. บวก 543 (เช่น 2568)
-const currentBuddhistYearStr = currentBuddhistYearNum.toString(); // 3. แปลงเป็น "2568"
-const previousBuddhistYearStr = (currentBuddhistYearNum - 1).toString(); // 4. "2567"
-
-const tab = ref('monthly');
-
-interface Metrics {
-    total_value: number;
-    total_area: number;
-    total_units: number;
-    average_price_per_sqm: number;
-}
-
-interface MemberSubmission {
-    member_id: string;
-    name: string;
-    role: 'user' | 'admin' | 'master';
-    member_type: string;
-    total_submitted_count: number;
-    submissions_by_year: Record<string, number>;
-    submissions_in_period: Record<string, number[]>;
-}
-
-interface SummaryData {
-    yearly_data: Record<string, Record<string, Metrics>>;
-    monthly_data: Record<string, Record<number, Record<string, Metrics>>>;
-    quarterly_data?: Record<string, Record<number, Record<string, Metrics>>>;
-    region_data?: Record<string, Record<number, Record<string, Record<string, Metrics>>>>;
-    membership_data?: MemberSubmission[];
-}
-
-
-// (ไฟล์ repost_hba.vue บรรทัดที่ 40)
-const availableMonths = computed(() => {
-    const { currentBuddhistYear, currentMonthIndex } = getCurrentPeriod();
-    const selectedYears = selectyear.value;
-
-    // ตรวจสอบว่า "ปีปัจจุบัน" อยู่ในเงื่อนไขหรือไม่ (ยังไม่เลือกปี หรือ เลือกปีปัจจุบัน)
-    const isCurrentYearInContext =
-        selectedYears.length === 0 ||
-        selectedYears.includes(currentBuddhistYear);
-
-    if (isCurrentYearInContext) {
-        // ⬇️ นี่คือส่วนที่ซ่อนเดือนที่ยังไม่มาถึง
-        // โดยการตัด (slice) อาร์เรย์ Months ให้เหลือแค่ถึงเดือนปัจจุบัน
-        return Months.slice(0, currentMonthIndex);
-    } else {
-        // ถ้าเลือกเฉพาะปีในอดีต: ให้แสดง 12 เดือนเต็ม
-        return Months;
-    }
-});
-
-
-// src/views/components/repost_hba.vue (ประมาณบรรทัดที่ 67)
-
-const availableQuarters = computed(() => {
-    // ใช้ฟังก์ชันที่แก้ไขแล้วเพื่อดึงปีและเดือนปัจจุบัน
-    const { currentBuddhistYear, currentMonthIndex } = getCurrentPeriod(); // currentMonthIndex = 11 (พ.ย.)
-    const selectedYears = selectyear.value;
-
-    // ตรวจสอบว่ากำลังดูบริบทของ "ปีปัจจุบัน" อยู่หรือไม่
-    const isCurrentYearInContext =
-        selectedYears.length === 0 ||
-        selectedYears.includes(currentBuddhistYear);
-
-    if (isCurrentYearInContext) {
-        // ถ้าเป็นปีปัจจุบัน หรือยังไม่ได้เลือกปี: กรองไตรมาสที่ผ่านมา/ถึงปัจจุบัน
-        return Quarters.filter(q => {
-            // ⬇️ เปลี่ยนการตรวจสอบจากเดือนสุดท้าย เป็น เดือนแรกของไตรมาส
-            // ตรวจสอบเดือนแรกของไตรมาสนั้น (เช่น ไตรมาส 1 คือเดือน 1)
-            const firstMonthOfQuarter = q.months[0];
-            // อนุญาตให้เลือกไตรมาสที่เดือนแรก <= เดือนปัจจุบัน
-            return firstMonthOfQuarter <= currentMonthIndex; // 10 <= 11 เป็น จริง (Q4 แสดงผล)
-        });
-    } else {
-        // ถ้าเลือกปีในอดีต: ให้แสดง 4 ไตรมาสเต็ม
-        return Quarters;
-    }
-});
-
-
-const selectyear = ref<string[]>([]);
-const selectMonths = ref<string[]>([]);
-const selectQuarters = ref<string[]>([]);
-const year = [currentBuddhistYearStr, previousBuddhistYearStr];
-const Months = [
-    'มกราคม',
-    'กุมภาพันธ์',
-    'มีนาคม',
-    'เมษายน',
-    'พฤษภาคม',
-    'มิถุนายน',
-    'กรกฎาคม',
-    'สิงหาคม',
-    'กันยายน',
-    'ตุลาคม',
-    'พฤศจิกายน',
-    'ธันวาคม'
-];
-const MonthAbbreviations = [
-    'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
-    'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'
-];
-const Quarters = [
-    { name: 'ไตรมาส 1', index: 1, months: [1, 2, 3], names: ['มกราคม', 'กุมภาพันธ์', 'มีนาคม'] },
-    { name: 'ไตรมาส 2', index: 2, months: [4, 5, 6], names: ['เมษายน', 'พฤษภาคม', 'มิถุนายน'] },
-    { name: 'ไตรมาส 3', index: 3, months: [7, 8, 9], names: ['กรกฎาคม', 'สิงหาคม', 'กันยายน'] },
-    { name: 'ไตรมาส 4', index: 4, months: [10, 11, 12], names: ['ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'] },
-];
-const quarterMap = Quarters.reduce((acc, q) => { acc[q.name] = q.index; return acc; }, {} as Record<string, number>);
-
-const regionCategories = [
-    'กรุงเทพปริมณฑล',
-    'ภาคกลาง',
-    'ภาคเหนือ',
-    'ภาคตะวันออกเฉียงเหนือ',
-    'ภาคใต้',
-    'ภาคตะวันออก',
-    'ภาคตะวันตก',
-    'รวมทั่วประเทศ'
-];
+// --- (1) ส่วนฟิลเตอร์และเวลา (เหมือน house.vue) ---
+const jsDate = new Date();
+const currentJsYear = jsDate.getFullYear();
+const currentJsMonth = jsDate.getMonth() + 1; // (1-12)
 
 const userId = localStorage.getItem('user_id');
 const userRole = localStorage.getItem('user_role') || 'user';
-const summaryData = ref<SummaryData | null>(null);
-const chartSeries = ref<any[]>([]);
-const categoryOrder = ['ไม่เกิน 2.50 ล้านบาท', '2.51 - 5 ล้านบาท', '5.01 - 10 ล้านบาท', '10.01 - 20 ล้านบาท', '20.01 ล้านขึ้นไป', 'รวม'];
-const valueCategories = categoryOrder.filter(cat => cat !== 'รวม');
-const metricRows = [
-    {
-        key: 'total_units',
-        name: 'จำนวนหลัง',
-        format: (v: number) => v.toLocaleString('th-TH', { maximumFractionDigits: 0 })
-    },
-    {
-        key: 'total_value',
-        name: 'มูลค่ารวม (บาท)',
-        format: (v: number) => v.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    },
-    {
-        key: 'total_area',
-        name: 'พื้นที่ใช้สอย (ตร.ม.)',
-        format: (v: number) => v.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    },
-    {
-        key: 'average_price_per_sqm',
-        name: 'ราคาเฉลี่ย/ตร.ม.',
-        format: (v: number) => v.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    },
+
+// ⭐️ [ใหม่] State สำหรับ Loading และ Snackbar (จาก house.vue)
+const exportLoading = ref(false);
+const showSnackbar = ref(false);
+const snackbarText = ref('');
+const snackbarColor = ref('info');
+const snackbarTimeout = ref(5000);
+
+// --- (2) โครงสร้างข้อมูล ---
+
+// (2.1) โครงสร้างข้อมูล Metrics
+interface RegionMetrics {
+    unit: number;
+    value: number;
+    area: number;
+    price_per_sqm: number;
+}
+// ⭐️ data[Region][PriceRange]
+const rawData = ref<Record<string, Record<string, { unit: number; value: number; area: number }>>>({});
+
+
+// ⭐️ [ใหม่] เพิ่ม State นี้ (เหมือน house.vue)
+const previousYearDetailedTableData = ref<Record<number, Record<string, Record<string, { unit: number; value: number; area: number }>>>>({});
+
+// ⭐️ detailedTableData[Month][Region][PriceRange]
+const detailedTableData = ref<Record<number, Record<string, Record<string, { unit: number; value: number; area: number }>>>>({});
+
+
+// (2.2) ค่าคงที่ (แกนแถว)
+const priceRanges = ['ไม่เกิน 2.50 ล้านบาท', '2.51 - 5 ล้านบาท', '5.01 - 10 ล้านบาท', '10.01 - 20 ล้านบาท', '20.01 ล้านขึ้นไป'];
+const dataTypes: (keyof RegionMetrics)[] = ['unit', 'value', 'area', 'price_per_sqm'];
+const dataTypeLabels: Record<string, string> = {
+    unit: 'จำนวนหลัง',
+    value: 'มูลค่ารวม',
+    area: 'พื้นที่ใช้สอย',
+    price_per_sqm: 'ราคาเฉลี่ย/ตร.ม.'
+};
+
+// (2.3) แกนคอลัมน์ (ดึงข้อมูลแบบ Dynamic)
+const regions = computed(() => Object.keys(rawData.value).sort());
+
+// --- (3) State ของฟิลเตอร์ (เหมือน house.vue) ---
+const allMonthItems = [
+    { title: 'มกราคม', short: 'ม.ค.', value: 1 },
+    { title: 'กุมภาพันธ์', short: 'ก.พ.', value: 2 },
+    { title: 'มีนาคม', short: 'มี.ค.', value: 3 },
+    { title: 'เมษายน', short: 'เม.ย.', value: 4 },
+    { title: 'พฤษภาคม', short: 'พ.ค.', value: 5 },
+    { title: 'มิถุนายน', short: 'มิ.ย.', value: 6 },
+    { title: 'กรกฎาคม', short: 'ก.ค.', value: 7 },
+    { title: 'สิงหาคม', short: 'ส.ค.', value: 8 },
+    { title: 'กันยายน', short: 'ก.ย.', value: 9 },
+    { title: 'ตุลาคม', short: 'ต.ค.', value: 10 },
+    { title: 'พฤศจิกายน', short: 'พ.ย.', value: 11 },
+    { title: 'ธันวาคม', short: 'ธ.ค.', value: 12 }
 ];
 
+const selectedYear = ref(currentJsYear + 543);
+const isUpdatingFromMonths = ref(false);
+const selectedQuarter = ref('all');
+const selectedMonths = ref<number[]>([]);
+const yearOptions = ref(Array.from({ length: 2 }, (_, i) => currentJsYear + 543 - i));
 
-const monthMap: { [key: string]: number } = {
-    มกราคม: 1,
-    กุมภาพันธ์: 2,
-    มีนาคม: 3,
-    เมษายน: 4,
-    พฤษภาคม: 5,
-    มิถุนายน: 6,
-    กรกฎาคม: 7,
-    สิงหาคม: 8,
-    กันยายน: 9,
-    ตุลาคม: 10,
-    พฤศจิกายน: 11,
-    ธันวาคม: 12
-};
+const activeTab = ref('summary'); // (State นี้ไม่ได้ใช้แล้ว แต่เก็บไว้ก่อนได้)
 
-const quartersToMonthsNames = computed<string[]>(() => {
-    if (selectQuarters.value.length === 0) return [];
-
-    let monthIndices: number[] = [];
-    selectQuarters.value.forEach(qName => {
-        const quarter = Quarters.find(q => q.name === qName);
-        if (quarter) monthIndices.push(...quarter.months);
-    });
-    const uniqueMonthIndices = Array.from(new Set(monthIndices)).sort((a, b) => a - b);
-    return uniqueMonthIndices.map(index => Months[index - 1]);
-});
-
-const getCurrentPeriod = () => {
-    const today = new Date();
-    // ⬇️ แก้ไข 2 บรรทัดนี้ ⬇️
-    const currentGregorianYear = today.getFullYear();
-    const currentBuddhistYear = (currentGregorianYear + 543).toString();
-    // ⬆️ สิ้นสุดส่วนที่แก้ไข ⬆️
-    const currentMonthIndex = today.getMonth() + 1;
-    return { currentBuddhistYear, currentMonthIndex };
-};
-onMounted(() => {
-    const { currentBuddhistYear } = getCurrentPeriod();
-    if (!selectyear.value || selectyear.value.length === 0) {
-        if (year.includes(currentBuddhistYear)) {
-            selectyear.value = [currentBuddhistYear];
-        }
+const monthOptions = computed(() => {
+    const yearAD = selectedYear.value - 543;
+    if (yearAD === currentJsYear) {
+        return allMonthItems.filter((m) => m.value <= currentJsMonth);
+    } else if (yearAD > currentJsYear) {
+        return [];
+    } else {
+        return allMonthItems;
     }
-
-    fetchSummary(selectyear.value, selectMonths.value, selectQuarters.value);
 });
 
-const fetchSummary = async (
-    currentYears: string[],
-    currentMonths: string[],
-    currentQuarters: string[]
-) => {
+const quarterOptions = ref([
+    { title: 'ทุกไตรมาส / ทุกเดือน', value: 'all' },
+    { title: 'ไตรมาส 1 (ม.ค. - มี.ค.)', value: 'Q1' },
+    { title: 'ไตรมาส 2 (เม.ย. - มิ.ย.)', value: 'Q2' },
+    { title: 'ไตรมาส 3 (ก.ค. - ก.ย.)', value: 'Q3' },
+    { title: 'ไตรมาส 4 (ต.ค. - ธ.ค.)', value: 'Q4' }
+]);
 
-    if (!currentYears || currentYears.length === 0) {
-        console.error('Please select at least one year.');
-        summaryData.value = null;
-        chartSeries.value = [];
+// --- (4) ฟังก์ชันดึงข้อมูล (ใช้ API จาก house.vue) ---
+
+function processMonthData(data: any): Record<string, Record<string, { unit: number; value: number; area: number }>> {
+    // data for one month: { "Region1": { "PriceRange1": ... }, ... }
+    // สำหรับ region.vue ข้อมูลดิบพร้อมใช้งาน ไม่ต้องประมวลผลเพิ่ม
+    return data || {};
+}
+// (4.1) ดึงข้อมูล "สรุป" (สำหรับ Chart, Cards, และ Pivot Table)
+const fetchData = async () => {
+    if (!userId && userRole !== 'admin') return;
+    if (selectedMonths.value.length === 0 || !selectedYear.value) {
+        rawData.value = {};
         return;
     }
-    const data: any = {
-        user_id: userId,
-        buddhist_year: currentYears,
-        role: userRole
-    };
-
-
-
-    let indices: number[] = [];
-    if (currentQuarters.length > 0) {
-        currentQuarters.forEach(qName => {
-            const quarter = Quarters.find(q => q.name === qName);
-            if (quarter) indices.push(...quarter.months);
-        });
-    }
-    const manualMonthIndices = currentMonths.map(m => monthMap[m]).filter(Boolean) as number[];
-    if (manualMonthIndices.length > 0) {
-        indices.push(...manualMonthIndices);
-    }
-
-    const monthsToFetch = Array.from(new Set(indices)).sort((a, b) => a - b);
-    const quartersToFetch = currentQuarters.map((quarterName: string) => quarterMap[quarterName] || null).filter(Boolean);
-
-
-
-    if (monthsToFetch.length > 0) {
-        data.months = monthsToFetch;
-    }
-    if (quartersToFetch.length > 0) {
-        data.quarters = quartersToFetch;
-    }
-
-    console.log('Sending data to backend:', data);
-
     try {
-
-        const res = await fetch('https://uat.hba-sales.org/backend/repost_admin.php', {
+        const res = await fetch('https://uat.hba-sales.org/backend/get_contract_summary_main.php', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(data)
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+                user_id: userId,
+                buddhist_year: selectedYear.value,
+                months: selectedMonths.value.sort((a, b) => a - b),
+                role: userRole
+            })
         });
-
-        if (!res.ok) {
-
-            const errorText = await res.text();
-            console.error(`❌ HTTP Error: ${res.status} ${res.statusText}`, errorText);
-            throw new Error(`Server responded with ${res.status}: ${errorText}`);
-        }
-
-        const responseData: SummaryData = await res.json();
-
-        summaryData.value = responseData;
-        updateChartData(responseData);
+        if (!res.ok) throw new Error(`HTTP error! Status: ${res.status}`);
+        const data = await res.json();
+        rawData.value = data;
+        console.log('✅ ข้อมูลดิบ (สรุป) ที่ได้รับ:', data);
 
     } catch (err) {
-        console.error('❌ Error fetching summary:', err);
-        summaryData.value = null;
-        chartSeries.value = [];
+        console.error('❌ Error fetching summary data:', err);
+        rawData.value = {};
     }
 };
 
-const combinedTargetMonthIndices = computed<number[]>(() => {
-    let indices: number[] = [];
+// (4.2) fetchDetailedTableData
+const fetchDetailedTableData = async () => {
+    if (!userId && userRole !== 'admin') return;
 
-    const { currentBuddhistYear, currentMonthIndex } = getCurrentPeriod();
-    const selectedYears = selectyear.value;
+    let monthsToFetch = [...selectedMonths.value].sort((a, b) => a - b);
 
-    const isCurrentYearSelected =
-        selectedYears.length === 1 && selectedYears.includes(currentBuddhistYear);
+    if (monthsToFetch.length === 0 || !selectedYear.value) {
+        detailedTableData.value = {};
+        previousYearDetailedTableData.value = {}; // ⭐️ [ใหม่] ล้างข้อมูลปีก่อน
+        return;
+    }
 
-    const selectedQuarters = selectQuarters.value;
-    if (selectedQuarters.length > 0) {
-        selectedQuarters.forEach(qName => {
-            const quarter = Quarters.find(q => q.name === qName);
-            if (quarter) {
-                let monthsToInclude = quarter.months;
+    // ⭐️ [จาก house.vue] ตรวจสอบและเพิ่ม "เดือนก่อนหน้า" 1 เดือนสำหรับคำนวณ MoM
+    const firstMonth = monthsToFetch[0];
+    if (firstMonth > 1) {
+        const prevMonth = firstMonth - 1;
+        if (!monthsToFetch.includes(prevMonth)) {
+            monthsToFetch.push(prevMonth); // เพิ่มเดือนก่อนหน้าเข้าไปใน list ที่จะ fetch
+        }
+    }
 
-                // ⬇️⬇️⬇️ [ส่วนที่แก้ไข] กรองเดือนสำหรับปีปัจจุบัน ⬇️⬇️⬇️
-                if (isCurrentYearSelected) {
-                    // ถ้าเลือกปีปัจจุบัน: กรองเอาเฉพาะเดือนที่มีค่า <= เดือนปัจจุบัน
-                    monthsToInclude = monthsToInclude.filter(monthIndex =>
-                        monthIndex <= currentMonthIndex
-                    );
-                }
-                // ⬆️⬆️⬆️ [ส่วนที่แก้ไข] ⬆️⬆️⬆️
+    const currentYear = selectedYear.value;
+    const previousYear = currentYear - 1;
 
-                indices.push(...monthsToInclude);
+    // ⭐️ [จาก house.vue] สร้างฟังก์ชันย่อยสำหรับ Fetch API
+    const fetchMonthData = async (year: number, month: number) => {
+        try {
+            const res = await fetch('https://uat.hba-sales.org/backend/get_contract_summary_main.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                    user_id: userId,
+                    buddhist_year: year,
+                    months: [month],
+                    role: userRole
+                })
+            });
+            if (!res.ok) {
+                console.error(`Error fetching data for month ${month}/${year}: Status ${res.status}`);
+                return null; // คืนค่า null ถ้า error
             }
-        });
-    }
-
-    // 2. ดึงเดือนจาก "เดือน" ที่เลือก (ส่วนนี้ยังทำงานได้เหมือนเดิม เพราะ availableMonths กรองใน UI แล้ว)
-    const manualMonthIndices = selectMonths.value.map(m => monthMap[m]).filter(Boolean) as number[];
-    if (manualMonthIndices.length > 0) {
-        indices.push(...manualMonthIndices);
-    }
-
-    // 3. คืนค่าเป็นรายการเดือนที่ไม่ซ้ำกัน และเรียงลำดับแล้ว
-    return Array.from(new Set(indices)).sort((a, b) => a - b);
-});
-const updateChartData = (data: SummaryData) => {
-    const finalSeries: any[] = [];
-    const dataForAverageCalc: number[][] = [];
-    let finalCategories: string[] = categoryOrder;
-
-
-    const sortedYears = [...selectyear.value].sort((a, b) => a.localeCompare(b, 'th-TH'));
-    const selectedYears = sortedYears;
-
-    const selectedMonths = selectMonths.value;
-    const selectedQuarters = selectQuarters.value;
-    const getValue = (dataObj: Metrics | undefined) => (dataObj?.total_value || 0);
-
-
-
-    /*
-    const getSelectedMonthIndices = () => {
-        ... (ตรรกะ if/else ที่ผิด) ...
+            return await res.json();
+        } catch (err) {
+            console.error(`❌ Error fetching detailed summary for month ${month}/${year}:`, err);
+            return null; // คืนค่า null ถ้า error
+        }
     };
-    */
 
-    const targetMonths = combinedTargetMonthIndices.value;
+    // ⭐️ [จาก house.vue] สร้างรายการ Promises ทั้งหมด
+    const promises: Promise<{ month: number; year: number; data: any; }>[] = [];
 
+    // ⭐️ [ปรับปรุง] เราต้องดึง "ทุกเดือน" ที่จำเป็นสำหรับ MoM และ YTD
+    // `monthsToFetch` (มีเดือนก่อนหน้า)
+    // `selectedMonths.value` (มีแค่เดือนที่เลือก)
+    const allMonthsSet = new Set([...monthsToFetch, ...selectedMonths.value]);
 
-
-    if (selectedYears.length === 1 && (selectedMonths.length > 1 || selectedQuarters.length > 0 || targetMonths.length > 1)) {
-
-        finalCategories = categoryOrder;
-        const selectedYear = selectedYears[0];
-        const monthsToDisplay = targetMonths;
-
-        monthsToDisplay.forEach((monthIndex) => {
-            const monthlyData = categoryOrder.map((category) => {
-                const dataObj = data.monthly_data[selectedYear]?.[monthIndex]?.[category];
-                return getValue(dataObj);
-            });
-
-            dataForAverageCalc.push(monthlyData);
-            finalSeries.push({
-                name: `${Months[monthIndex - 1]} ${selectedYear}`,
-                type: 'column',
-                data: monthlyData
-            });
-        });
-    } else if (selectedYears.length > 1 && (selectedMonths.length > 0 || selectedQuarters.length > 0 || targetMonths.length > 0)) {
-
-        finalCategories = categoryOrder;
-        const monthsToDisplay = targetMonths;
-
-        monthsToDisplay.forEach((monthIndex) => {
-            const monthName = Months[monthIndex - 1];
-
-
-            selectedYears.forEach((year) => {
-                const monthlyData = categoryOrder.map((category) => getValue(data.monthly_data[year]?.[monthIndex]?.[category]));
-
-                dataForAverageCalc.push(monthlyData);
-                finalSeries.push({ name: `${monthName} ${year}`, type: 'column', data: monthlyData });
-            });
-        });
-    } else if (selectedYears.length === 1 && selectedMonths.length === 0 && selectedQuarters.length === 0) {
-
-        finalCategories = categoryOrder;
-        const yearlyData = categoryOrder.map((category) => getValue(data.yearly_data[selectedYears[0]]?.[category]));
-        dataForAverageCalc.push(yearlyData);
-        finalSeries.push({ name: `ปี ${selectedYears[0]}`, type: 'column', data: dataForAverageCalc[0] });
-    } else if (selectedMonths.length === 0 && selectedQuarters.length === 0 && selectedYears.length > 1) {
-
-        finalCategories = categoryOrder;
-
-        selectedYears.forEach((year) => {
-            const yearlyData = categoryOrder.map((category) => getValue(data.yearly_data[year]?.[category]));
-            dataForAverageCalc.push(yearlyData);
-            finalSeries.push({ name: `ปี ${year}`, type: 'column', data: yearlyData });
-        });
-    } else if (selectedYears.length === 1 && selectedMonths.length === 1 && selectedQuarters.length === 0 && targetMonths.length === 1) {
-
-        finalCategories = categoryOrder;
-        const selectedYear = selectedYears[0];
-        const monthIndex = targetMonths[0];
-
-        const monthlyData = categoryOrder.map((category) => getValue(data.monthly_data[selectedYear]?.[monthIndex]?.[category]));
-        dataForAverageCalc.push(monthlyData);
-        finalSeries.push({ name: `${Months[monthIndex - 1]} ${selectedYear}`, type: 'column', data: monthlyData });
+    for (const month of allMonthsSet) {
+        // ข้อมูลปีปัจจุบัน
+        promises.push(fetchMonthData(currentYear, month).then(data => ({ month, year: currentYear, data })));
+        // ข้อมูลปีก่อน (สำหรับ YTD)
+        promises.push(fetchMonthData(previousYear, month).then(data => ({ month, year: previousYear, data })));
     }
 
+    // ⭐️ [จาก house.vue] สั่ง Run Promise ทั้งหมด
+    const results = await Promise.all(promises);
 
-    let finalChartSeries = finalSeries;
-    const averageData: number[] = [];
-    const numSeries = dataForAverageCalc.length;
-    const numCategories = categoryOrder.length;
+    const newCurrentYearData: Record<number, Record<string, Record<string, { unit: number; value: number; area: number }>>> = {};
+    const newPreviousYearData: Record<number, Record<string, Record<string, { unit: number; value: number; area: number }>>> = {};
 
-    if (numSeries > 0) {
-        for (let i = 0; i < numCategories; i++) {
-            let sum = 0;
-            for (let j = 0; j < numSeries; j++) {
-                sum += (dataForAverageCalc[j][i] || 0);
-            }
-            averageData.push(Math.round(sum / numSeries));
+    // ⭐️ [จาก house.vue] ประมวลผลข้อมูล
+    for (const result of results) {
+        if (result.year === currentYear && result.data) {
+            newCurrentYearData[result.month] = processMonthData(result.data);
+        } else if (result.year === previousYear && result.data) {
+            newPreviousYearData[result.month] = processMonthData(result.data);
         }
-
-        finalChartSeries.push({
-            name: 'ค่าเฉลี่ย',
-            type: 'line',
-            data: averageData,
-        });
     }
 
-    chartSeries.value = finalChartSeries;
+    detailedTableData.value = newCurrentYearData;
+    previousYearDetailedTableData.value = newPreviousYearData; // ⭐️ [ใหม่] เก็บข้อมูลปีก่อน
+
+    console.log('✅ (ปรับปรุง) ข้อมูลตาราง (ปัจจุบัน):', newCurrentYearData);
+    console.log('✅ (ใหม่) ข้อมูลตาราง (ปีก่อน):', newPreviousYearData);
 };
 
+function getRawDataMonthly(
+    dataSource: Record<number, Record<string, Record<string, { unit: number; value: number; area: number }>>>,
+    monthValue: number,
+    region: string,
+    range: string,
+    metric: 'unit' | 'value' | 'area'
+): number {
+    return Number(dataSource?.[monthValue]?.[region]?.[range]?.[metric] || 0);
+}
 
-const chartSubtitle = computed(() => {
+// ⭐️ [ใหม่] Helper (ปรับปรุงจาก house.vue) เพื่อคำนวณ YTD% (YoY)
+function getSummaryGrandTotalYoY(metric: keyof RegionMetrics): number | null {
 
-    const sortedYears = [...selectyear.value].sort((a, b) => a.localeCompare(b, 'th-TH'));
-    const firstYear = sortedYears[0];
-    const lastYear = sortedYears[sortedYears.length - 1];
+    const currentValue = getMonthlyTabGrandTotal(metric);
 
-    const selectedMonths = selectMonths.value;
-    const selectedQuarters = selectQuarters.value;
+    let previousValue = 0;
+    let previousTotalValue = 0;
+    let previousTotalArea = 0;
 
-    const yearText = sortedYears.length === 1 ? `ปี ${firstYear}` :
-        sortedYears.length > 1 ? `ปี ${firstYear} - ปี ${lastYear}` : '';
-
-
-
-    /*
-    let monthIndices: number[] = [];
-    if (selectedQuarters.length > 0) {
-        ...
-    } else if (selectedMonths.length > 0) {
-        ...
-    }
-    */
-    let monthIndices: number[] = combinedTargetMonthIndices.value;
-
-
-    const sortedMonthIndices = Array.from(new Set(monthIndices)).sort((a, b) => a - b);
-    const firstMonthIndex = sortedMonthIndices[0];
-    const lastMonthIndex = sortedMonthIndices[sortedMonthIndices.length - 1];
-    const firstMonthName = firstMonthIndex ? Months[firstMonthIndex - 1] : '';
-    const lastMonthName = lastMonthIndex ? Months[lastMonthIndex - 1] : '';
-
-
-    if (selectedQuarters.length > 0) {
-        const quarterNames = selectedQuarters.join(', ');
-
-        if (firstMonthName && lastMonthName) {
-
-            return `ไตรมาส: ${quarterNames} (${firstMonthName} - ${lastMonthName}) ${yearText}`;
-        }
-        return `ไตรมาส: ${quarterNames} ${yearText}`;
-    }
-
-
-    if (sortedMonthIndices.length > 1) {
-
-
-        if (sortedYears.length === 1) {
-            const monthIndicesString = sortedMonthIndices.join(',');
-            const Q = Quarters.find(q => q.months.join(',') === monthIndicesString);
-
-            if (Q) {
-
-                return `${yearText} - ${Q.name} (${Q.names.join(' - ')})`;
+    for (const month of displayedMonths.value) {
+        for (const region of regions.value) {
+            for (const range of priceRanges) {
+                if (metric === 'price_per_sqm') {
+                    previousTotalValue += getRawDataMonthly(previousYearDetailedTableData.value, month.value, region, range, 'value');
+                    previousTotalArea += getRawDataMonthly(previousYearDetailedTableData.value, month.value, region, range, 'area');
+                }
+                // ⭐️ [แก้ไข] ⭐️
+                // เปลี่ยนจาก 'else if (metric !== 'price_per_sqm')' เป็น 'else'
+                else {
+                    // TS รู้ว่า 'metric' ในที่นี้คือ 'unit' | 'value' | 'area'
+                    previousValue += getRawDataMonthly(previousYearDetailedTableData.value, month.value, region, range, metric);
+                }
             }
         }
-
-
-        if (sortedYears.length === 1) {
-            return `เดือน ${firstMonthName} - ${lastMonthName} ปี ${firstYear}`;
-        } else if (sortedYears.length > 1) {
-
-            return `เดือน ${firstMonthName} - ${lastMonthName} ปี ${firstYear} - ปี ${lastYear}`;
-        }
     }
 
-    else if (sortedMonthIndices.length === 1) {
-        const selectedMonthName = firstMonthName;
-        if (sortedYears.length === 1) {
-            return `เดือน ${selectedMonthName} ปี ${firstYear}`;
-        } else if (sortedYears.length > 1) {
-
-            return `เดือน ${selectedMonthName} ปี ${firstYear} - ปี ${lastYear}`;
-        }
+    if (metric === 'price_per_sqm') {
+        const previousAvg = previousTotalArea > 0 ? (previousTotalValue / previousTotalArea) : 0;
+        return calculateMoMPercent(currentValue, previousAvg);
     }
 
-    else if (sortedYears.length > 0) {
-        if (sortedYears.length === 1) {
-            return `สรุปรายปี ${firstYear}`;
+    return calculateMoMPercent(currentValue, previousValue);
+}
+
+// ⭐️ [แทนที่] (7.3) เปลี่ยนจาก MoM เป็น YTD% (YoY)
+const summaryCardYTDData = computed(() => {
+
+    // ⭐️ ตรวจสอบว่ามีข้อมูลปีก่อนหรือไม่
+    if (Object.keys(previousYearDetailedTableData.value).length === 0) {
+        return { unit: null, value: null, area: null, price_per_sqm: null };
+    }
+
+    const ytdValues: Record<string, string | null> = {};
+
+    for (const field of dataTypes) {
+        // ⭐️ เรียกใช้ Helper ใหม่
+        const percent = getSummaryGrandTotalYoY(field);
+
+        if (percent === null) {
+            ytdValues[field] = null;
         } else {
-            return `เปรียบเทียบรายปี ${firstYear} - ปี ${lastYear}`;
+            const percentStr = percent.toFixed(0); // ไม่เอาทศนิยม
+            if (percent > 0) {
+                ytdValues[field] = `(+${percentStr}%)`;
+            } else if (percent < 0) {
+                ytdValues[field] = `(${percentStr}%)`;
+            } else {
+                ytdValues[field] = null; // ไม่แสดง 0%
+            }
         }
     }
 
+    return ytdValues as Record<keyof RegionMetrics, string | null>;
+});
 
-    const { currentBuddhistYear } = getCurrentPeriod();
-    const currentMonthName = Months[new Date().getMonth()];
+// --- (5) ⭐️ [ใหม่] State และ Logic สำหรับฟิลเตอร์ปุ่ม (จาก house.vue) ---
+const showMoM = ref(true); // ⭐️ State สำหรับ v-switch
+const selectedTimeRange = ref<string | null>(null); // State สำหรับ 1M, 2M, 3M, 6M, YTD
+const timeRangeOptions = [
+    { label: '1M', value: '1M' },
+    { label: '2M', value: '2M' },
+    { label: '3M', value: '3M' },
+    { label: '6M', value: '6M' },
+    { label: 'YTD', value: 'YTD' }
+];
 
+// Helper (จาก house.vue)
+function getAvailableMonths(yearInBE: number): number[] {
+    const yearAD = yearInBE - 543;
+    const allMonths = allMonthItems.map(m => m.value);
+    if (yearAD === currentJsYear) {
+        return allMonths.filter(m => m <= currentJsMonth);
+    } else if (yearAD > currentJsYear) {
+        return [];
+    } else {
+        return allMonths;
+    }
+}
 
-    if (sortedYears.length === 1 && sortedYears[0] === currentBuddhistYear) {
-        return `สรุปยอดเซ็นสัญญา ถึงเดือน ${currentMonthName} ปี ${currentBuddhistYear}`;
+// Helper (จาก house.vue)
+function setTimeRange(range: string | null) {
+    if (!range) {
+        return;
+    }
+    const availableMonths = getAvailableMonths(selectedYear.value);
+    if (availableMonths.length === 0) {
+        selectedMonths.value = [];
+        return;
     }
 
-    return 'กรุณาเลือกข้อมูลเพื่อแสดงผล';
+    let newSelectedMonths: number[] = [];
+    switch (range) {
+        case '1M': newSelectedMonths = availableMonths.slice(-1); break;
+        case '2M': newSelectedMonths = availableMonths.slice(-2); break;
+        case '3M': newSelectedMonths = availableMonths.slice(-3); break;
+        case '6M': newSelectedMonths = availableMonths.slice(-6); break;
+        case 'YTD': newSelectedMonths = [...availableMonths]; break;
+    }
+
+    selectedMonths.value = newSelectedMonths;
+}
+
+// ⭐️ [ใหม่] Watcher (จาก house.vue)
+watch(selectedTimeRange, (newRange) => {
+    if (newRange) {
+        setTimeRange(newRange); // เรียกใช้ setTimeRange เพื่ออัปเดต `selectedMonths`
+    }
 });
 
 
-
-
-/*
-watch(selectQuarters, (newQuarters) => {
-    if (newQuarters.length > 0) {
-        selectMonths.value = quartersToMonthsNames.value;
+// --- Watchers (ปรับปรุง) ---
+watch(selectedQuarter, (newQuarter) => {
+    if (isUpdatingFromMonths.value) {
+        isUpdatingFromMonths.value = false;
+        return;
     }
-}, { immediate: false });
-*/
+    const validMonthValues = monthOptions.value.map(m => m.value);
+    const filterValidMonths = (months: number[]) => months.filter(m => validMonthValues.includes(m));
 
+    if (newQuarter === 'all') updateToAllMonths();
+    else if (newQuarter === 'Q1') selectedMonths.value = filterValidMonths([1, 2, 3]);
+    else if (newQuarter === 'Q2') selectedMonths.value = filterValidMonths([4, 5, 6]);
+    else if (newQuarter === 'Q3') selectedMonths.value = filterValidMonths([7, 8, 9]);
+    else if (newQuarter === 'Q4') selectedMonths.value = filterValidMonths([10, 11, 12]);
+});
 
+// ⭐️ [ปรับปรุง] watch(selectedYear) (ผสาน house.vue)
+watch(selectedYear, () => {
+    if (selectedTimeRange.value) {
+        setTimeRange(selectedTimeRange.value);
+    } else {
+        const validMonths = monthOptions.value.map((m) => m.value);
+        selectedMonths.value = selectedMonths.value.filter((m) => validMonths.includes(m));
+
+        if (selectedQuarter.value === 'all') {
+            updateToAllMonths();
+        } else {
+            const currentQuarter = selectedQuarter.value;
+            selectedQuarter.value = '';
+            selectedQuarter.value = currentQuarter;
+        }
+    }
+});
+
+// ⭐️ [ปรับปรุง] watch(selectedMonths) (ผสาน house.vue)
 watch(
-    [selectyear, selectMonths, selectQuarters],
+    selectedMonths,
+    (newMonths, oldMonths) => {
+        if (newMonths.join(',') !== oldMonths.join(',')) {
+            activeTab.value = 'summary';
+        }
 
-    ([newYears, newMonths, newQuarters]) => {
+        const sortedMonthsKey = [...newMonths].sort((a, b) => a - b).join(',');
 
-        fetchSummary(newYears, newMonths, newQuarters);
+        const validMonthValues = monthOptions.value.map(m => m.value);
+        const q1Months = [1, 2, 3].filter(m => validMonthValues.includes(m)).join(',');
+        const q2Months = [4, 5, 6].filter(m => validMonthValues.includes(m)).join(',');
+        const q3Months = [7, 8, 9].filter(m => validMonthValues.includes(m)).join(',');
+        const q4Months = [10, 11, 12].filter(m => validMonthValues.includes(m)).join(',');
+
+        if (sortedMonthsKey === q1Months && q1Months.length > 0) selectedQuarter.value = 'Q1';
+        else if (sortedMonthsKey === q2Months && q2Months.length > 0) selectedQuarter.value = 'Q2';
+        else if (sortedMonthsKey === q3Months && q3Months.length > 0) selectedQuarter.value = 'Q3';
+        else if (sortedMonthsKey === q4Months && q4Months.length > 0) selectedQuarter.value = 'Q4';
+        else {
+            const allMonthsCurrentYear = allMonthItems.map((m) => m.value).slice(0, currentJsMonth).join(',');
+            const allMonthsPastYear = allMonthItems.map((m) => m.value).join(',');
+
+            if (sortedMonthsKey === allMonthsCurrentYear || sortedMonthsKey === allMonthsPastYear) {
+                if (selectedQuarter.value !== 'all') {
+                    isUpdatingFromMonths.value = true;
+                    selectedQuarter.value = 'all';
+                }
+            } else if (selectedQuarter.value !== 'all') {
+                isUpdatingFromMonths.value = true;
+                selectedQuarter.value = 'all';
+            }
+        }
+
+        const availableMonths = getAvailableMonths(selectedYear.value);
+        let matchedRange: string | null = null;
+        if (availableMonths.length > 0) {
+            if (sortedMonthsKey === availableMonths.slice(-1).join(',')) matchedRange = '1M';
+            else if (sortedMonthsKey === availableMonths.slice(-2).join(',')) matchedRange = '2M';
+            else if (sortedMonthsKey === availableMonths.slice(-3).join(',')) matchedRange = '3M';
+            else if (sortedMonthsKey === availableMonths.slice(-6).join(',')) matchedRange = '6M';
+            else if (sortedMonthsKey === availableMonths.join(',')) matchedRange = 'YTD';
+        }
+        selectedTimeRange.value = matchedRange;
+
+        fetchData();
+        fetchDetailedTableData();
     },
-    { immediate: false, deep: true }
+    { deep: true }
 );
 
-const chartOptions = ref({
-
-    chart: {
-        height: 350,
-        type: 'line',
-        stacked: false,
-        fontFamily: 'inherit',
-        foreColor: '#adb0bb',
-        toolbar: {
-            show: true,
-            tools: {
-                download: true
-            }
-        },
-        zoom: {
-            enabled: true,
-            type: 'xy'
-        }
-    },
-    plotOptions: {
-        bar: {
-            borderRadius: 4,
-            columnWidth: '50%',
-
-        },
-        line: {
-
-            curve: 'smooth'
-        }
-    },
-    dataLabels: {
-        enabled: true,
-        position: 'top',
-        offsetY: -15,
-        style: {
-            fontSize: '10px'
-        },
-        formatter: (value: number | null | undefined) => {
-            if (value === null || value === undefined) {
-                return '';
-            }
-            return value >= 1000 ? value.toLocaleString('th-TH') : value.toString();
-        }
-    },
-    stroke: {
-        width: 2,
-        curve: 'smooth'
-    },
-    grid: {
-        show: true,
-        strokeDashArray: 4,
-        borderColor: 'rgba(0, 0, 0, 0.1)'
-    },
-
-    yaxis: {
-        labels: {
-            show: false
-        }
-    },
-    xaxis: {
-        categories: categoryOrder,
-        labels: {
-            style: {
-                fontSize: '12px',
-                colors: '#6c757d'
-            }
-        },
-        tickPlacement: 'on'
-    },
-
-    tooltip: {
-        fixed: {
-            enabled: true,
-            position: 'topLeft',
-            offsetY: 0,
-            offsetX: 0
-        }
-    },
-    legend: {
-        horizontalAlign: 'center',
-        offsetX: 0
-    }
-});
-
-
-
-interface TableCellData {
-    [key: string]: number;
-}
-interface TableRow {
-    metricKey: keyof Metrics | 'average_price_per_sqm';
-    metricName: string;
-    format: (v: number) => string;
-    data: TableCellData;
-    growth: {
-        mom: number | null;
-        ytd: number | null;
-    }
-}
-interface TableCategory {
-    categoryName: string;
-    rows: TableRow[];
-}
-interface RegionCategoryGroup {
-    regionName: string;
-    categories: TableCategory[];
-}
-interface GrowthRateMetrics {
-    MoM: number | null;
-    YoY: number | null;
-    QoQ: number | null;
-    YTD: number | null;
-}
-interface GrowthRatePeriods {
-    [key: string]: GrowthRateMetrics;
-}
-interface GrowthRateCategory {
-    categoryName: string;
-    total_value: GrowthRatePeriods;
-    total_units: GrowthRatePeriods;
-    total_value_raw: Record<string, number>;
-    total_units_raw: Record<string, number>;
-}
-type MetricGrowthKey = 'total_value' | 'total_units';
-
-// *** [เพิ่ม]: Type Definition สำหรับข้อมูล Period (แก้ไขปัญหา Type) ***
-type PeriodItem = {
-    key: string;
-    label: string;
-    year: string;
-    monthIndex?: number | undefined;
-};
-// ************************************************
-
-
-const showQoQ = computed(() => {
-
-
-    const targetMonths = combinedTargetMonthIndices.value;
-    if (targetMonths.length === 0) return false;
-
-
-    const hasQuarterEndMonth = targetMonths.some(monthIndex =>
-        Quarters.some(q => q.months[q.months.length - 1] === monthIndex)
-    );
-
-    return hasQuarterEndMonth;
-
-});
-
-const getRegionalMetrics = (period: PeriodItem, region: string, category: string): Metrics => {
-    let metrics: Metrics | undefined;
-
-
-    if (region === 'รวมทั่วประเทศ') {
-        if (period.monthIndex && period.monthIndex !== 0) {
-
-            metrics = summaryData.value?.monthly_data[period.year]?.[period.monthIndex]?.[category];
-        } else if (!period.monthIndex && period.year !== 'TOTAL') {
-
-            metrics = summaryData.value?.yearly_data[period.year]?.[category];
-        }
-    }
-
-
-    if (!metrics && region !== 'รวมทั่วประเทศ') {
-
-        const regionDataForYear = summaryData.value?.region_data?.[period.year];
-
-        if (period.monthIndex && period.monthIndex !== 0) {
-
-            metrics = regionDataForYear?.[period.monthIndex]?.[region]?.[category];
-        }
-
-
-        else if (!period.monthIndex && period.year !== 'TOTAL' && regionDataForYear) {
-
-
-            let annualMetrics: Metrics = {
-                total_value: 0,
-                total_area: 0,
-                total_units: 0,
-                average_price_per_sqm: 0
-            };
-            let foundData = false;
-
-
-            const monthKeys = Object.keys(regionDataForYear);
-
-            for (const monthKey of monthKeys) {
-                const monthIndexAsNumber = parseInt(monthKey);
-
-                const monthlyMetrics = regionDataForYear[monthIndexAsNumber]?.[region]?.[category];
-
-                if (monthlyMetrics) {
-                    annualMetrics.total_value += monthlyMetrics.total_value;
-                    annualMetrics.total_area += monthlyMetrics.total_area;
-                    annualMetrics.total_units += monthlyMetrics.total_units;
-                    foundData = true;
-                }
-            }
-
-            if (foundData) {
-
-                annualMetrics.average_price_per_sqm = (annualMetrics.total_area > 0) ? (annualMetrics.total_value / annualMetrics.total_area) : 0;
-                metrics = annualMetrics;
-            }
-        }
-    }
-
-
-    if (!metrics) {
-        return { total_value: 0, total_area: 0, total_units: 0, average_price_per_sqm: 0 };
-    }
-    return metrics;
-};
-
-
-const tablePeriods = computed<PeriodItem[]>(() => {
-    const selectedYears = selectyear.value;
-    const { currentBuddhistYear, currentMonthIndex } = getCurrentPeriod();
-    let periods: PeriodItem[] = [];
-    const sortedYears = [...selectedYears].sort((a, b) => a.localeCompare(b, 'th-TH'));
-
-    const currentTargetMonthIndices = combinedTargetMonthIndices.value;
-
-    if (currentTargetMonthIndices.length > 0) {
-
-
-        const yearsToProcess = sortedYears.length > 0 ? sortedYears : [currentBuddhistYear];
-
-        yearsToProcess.forEach(year => {
-            currentTargetMonthIndices.forEach(monthIndex => {
-                periods.push({
-                    key: `M${monthIndex}Y${year}`,
-                    label: `${MonthAbbreviations[monthIndex - 1]} ${year.substring(2, 4)}`,
-                    year: year,
-                    monthIndex: monthIndex
-                });
-            });
-        });
+const updateToAllMonths = () => {
+    const yearAD = selectedYear.value - 543;
+    if (yearAD === currentJsYear) {
+        selectedMonths.value = allMonthItems.map((m) => m.value).filter((m) => m <= currentJsMonth);
+    } else if (yearAD > currentJsYear) {
+        selectedMonths.value = [];
     } else {
-
-
-        if (sortedYears.length > 0) {
-
-            sortedYears.forEach(year => {
-
-
-
-                const isCurrent = (year === currentBuddhistYear);
-
-                const loopEnd = isCurrent ? currentMonthIndex : 12;
-
-                for (let i = 1; i <= loopEnd; i++) {
-                    periods.push({
-                        key: `M${i}Y${year}`,
-                        label: `${MonthAbbreviations[i - 1]} ${year.substring(2, 4)}`,
-                        year: year,
-                        monthIndex: i
-                    });
-                }
-
-            });
-        } else {
-
-
-            if (year.includes(currentBuddhistYear)) {
-                for (let i = 1; i <= currentMonthIndex; i++) {
-                    periods.push({
-                        key: `M${i}Y${currentBuddhistYear}`,
-                        label: `${MonthAbbreviations[i - 1]} ${currentBuddhistYear.substring(2, 4)}`,
-                        year: currentBuddhistYear,
-                        monthIndex: i
-                    });
-                }
-            }
-        }
+        selectedMonths.value = allMonthItems.map((m) => m.value);
     }
-
-
-    periods.sort((a, b) => {
-        if (a.year !== b.year) {
-            return a.year.localeCompare(b.year, 'th-TH');
-        }
-        const monthA = a.monthIndex || 0;
-        const monthB = b.monthIndex || 0;
-        return monthA - monthB;
-    });
-
-    let finalPeriods = periods;
-
-    if (finalPeriods.length > 1) {
-        finalPeriods.push({
-            key: 'TOTAL_PERIODS',
-            label: 'รวมทุกช่วง',
-            year: 'TOTAL',
-            monthIndex: 0
-        });
-    }
-
-    return finalPeriods;
-});
-
-
-
-const monthlyReportTableData = computed<TableCategory[]>(() => {
-    if (!summaryData.value) {
-        return [];
-    }
-
-    const currentPeriods = tablePeriods.value;
-    const grandTotalPeriodKey = 'TOTAL_PERIODS';
-    const allCategories = [...valueCategories, 'รวม'];
-
-
-    const lp = lastPeriod.value;
-
-    const finalTable: TableCategory[] = [];
-
-    allCategories.forEach(categoryName => {
-        const categoryData: TableCategory = {
-            categoryName: categoryName,
-            rows: []
-        };
-
-        metricRows.forEach(metric => {
-            const row: TableRow = {
-                metricKey: metric.key as keyof Metrics | 'average_price_per_sqm',
-                metricName: metric.name,
-                format: metric.format,
-                data: {},
-
-                growth: { mom: null, ytd: null }
-            };
-
-            let totalMetricValue = 0;
-            let totalValueForAvg = 0;
-            let totalAreaForAvg = 0;
-
-
-            currentPeriods.forEach(p => {
-                if (p.key === grandTotalPeriodKey) return;
-
-
-                const getMetrics = (period: PeriodItem, category: string): Metrics => {
-                    let metrics: Metrics | undefined;
-                    if (period.monthIndex && period.monthIndex !== 0) {
-                        metrics = summaryData.value?.monthly_data[period.year]?.[period.monthIndex]?.[category];
-                    } else if (!period.monthIndex && period.year !== 'TOTAL') {
-                        metrics = summaryData.value?.yearly_data[period.year]?.[category];
-                    }
-                    if (!metrics) return { total_value: 0, total_area: 0, total_units: 0, average_price_per_sqm: 0 };
-                    return metrics;
-                };
-
-                const metrics = getMetrics(p, categoryName);
-                const metricValue: number = metrics[metric.key as keyof Metrics] || 0;
-                row.data[p.key] = metricValue;
-
-
-                if (metric.key !== 'average_price_per_sqm') {
-                    totalMetricValue += metricValue;
-                }
-                totalValueForAvg += metrics.total_value;
-                totalAreaForAvg += metrics.total_area;
-            });
-
-
-            if (currentPeriods.some(p => p.key === grandTotalPeriodKey)) {
-                let grandTotalMetricValue: number;
-                if (metric.key === 'average_price_per_sqm') {
-                    grandTotalMetricValue = totalAreaForAvg > 0 ? (totalValueForAvg / totalAreaForAvg) : 0;
-                } else {
-                    grandTotalMetricValue = totalMetricValue;
-                }
-                row.data[grandTotalPeriodKey] = grandTotalMetricValue;
-            }
-
-
-            if (lp && lp.monthIndex) {
-                const currentYear = lp.year;
-                const currentMonth = lp.monthIndex;
-                const prevYear = (parseInt(currentYear) - 1).toString();
-
-
-                const getMetricsForPeriod = (year: string, month: number, category: string): Metrics => {
-                    const metrics = summaryData.value?.monthly_data[year]?.[month]?.[category];
-                    return metrics || { total_value: 0, total_area: 0, total_units: 0, average_price_per_sqm: 0 };
-                };
-
-
-                const getAggregatedValueForMetric = (year: string, startMonth: number, endMonth: number, category: string, metricKey: keyof Metrics): number => {
-                    let sum = 0;
-                    const monthlyData = summaryData.value?.monthly_data[year];
-                    if (!monthlyData) return 0;
-                    for (let month = startMonth; month <= endMonth; month++) {
-                        const metrics = monthlyData[month]?.[category];
-                        if (metrics) {
-                            sum += metrics[metricKey] || 0;
-                        }
-                    }
-                    return sum;
-                };
-
-
-
-
-                const currentMetrics = getMetricsForPeriod(currentYear, currentMonth, categoryName);
-                const currentValue = currentMetrics[metric.key as keyof Metrics] || 0;
-
-                const prevMonth = (currentMonth === 1) ? 12 : currentMonth - 1;
-                const prevMonthYear = (currentMonth === 1) ? prevYear : currentYear;
-                const prevMonthMetrics = getMetricsForPeriod(prevMonthYear, prevMonth, categoryName);
-                const prevMonthValue = prevMonthMetrics[metric.key as keyof Metrics] || 0;
-
-
-                let currentYTDValue: number;
-                let prevYTDValue: number;
-
-                if (metric.key === 'average_price_per_sqm') {
-                    const currentYTD_Value = getAggregatedValueForMetric(currentYear, 1, currentMonth, categoryName, 'total_value');
-                    const currentYTD_Area = getAggregatedValueForMetric(currentYear, 1, currentMonth, categoryName, 'total_area');
-                    currentYTDValue = (currentYTD_Area > 0) ? (currentYTD_Value / currentYTD_Area) : 0;
-
-                    const prevYTD_Value = getAggregatedValueForMetric(prevYear, 1, currentMonth, categoryName, 'total_value');
-                    const prevYTD_Area = getAggregatedValueForMetric(prevYear, 1, currentMonth, categoryName, 'total_area');
-                    prevYTDValue = (prevYTD_Area > 0) ? (prevYTD_Value / prevYTD_Area) : 0;
-                } else {
-                    currentYTDValue = getAggregatedValueForMetric(currentYear, 1, currentMonth, categoryName, metric.key as keyof Metrics);
-                    prevYTDValue = getAggregatedValueForMetric(prevYear, 1, currentMonth, categoryName, metric.key as keyof Metrics);
-                }
-
-
-                if (prevMonthValue !== 0) {
-                    row.growth.mom = ((currentValue / prevMonthValue) - 1) * 100;
-                } else if (currentValue > 0) {
-                    row.growth.mom = 100;
-                }
-
-                if (prevYTDValue !== 0) {
-                    row.growth.ytd = ((currentYTDValue / prevYTDValue) - 1) * 100;
-                } else if (currentYTDValue > 0) {
-                    row.growth.ytd = 100;
-                }
-            }
-
-
-            categoryData.rows.push(row);
-        });
-        finalTable.push(categoryData);
-    });
-
-    return finalTable;
-});
-
-
-const getRegionalAggregatedValue = (year: string, startMonth: number, endMonth: number, region: string, category: string, metricKey: keyof Metrics): number => {
-    let sum = 0;
-    const regionDataForYear = summaryData.value?.region_data?.[year];
-
-    if (metricKey === 'average_price_per_sqm') return 0; // ต้องคำนวณจาก Value/Area รวม
-
-    if (!regionDataForYear) return 0;
-
-    for (let month = startMonth; month <= endMonth; month++) {
-        if (month < 1 || month > 12) continue;
-
-        const monthlyMetrics = regionDataForYear[month]?.[region]?.[category];
-        if (monthlyMetrics) {
-            sum += monthlyMetrics[metricKey] || 0;
-        }
-    }
-    return sum;
 };
 
-// src/views/components/repost_hba.vue (ประมาณบรรทัดที่ 687)
-
-const regionReportTableData = computed<TableCategory[]>(() => {
-    if (!summaryData.value) {
-        return [];
-    }
-
-    const currentPeriods = tablePeriods.value;
-    const grandTotalPeriodKey = 'TOTAL_PERIODS';
-
-    const finalTable: TableCategory[] = [];
-
-
-    regionCategories.forEach(regionName => {
-        const categoryData: TableCategory = {
-            categoryName: regionName,
-            rows: []
-        };
-
-        metricRows.forEach(metric => {
-            const row: TableRow = {
-                metricKey: metric.key as keyof Metrics | 'average_price_per_sqm',
-                metricName: metric.name,
-                format: metric.format,
-                data: {},
-                growth: { mom: null, ytd: null }
-            };
-
-            let totalMetricValue = 0;
-            let totalValueForAvg = 0;
-            let totalAreaForAvg = 0;
-
-
-            currentPeriods.filter(p => p.key !== grandTotalPeriodKey).forEach(p => {
-                const periodKey = p.key;
-
-
-
-                const metrics = getRegionalMetrics(p, regionName, 'รวม');
-
-                let metricValue: number = metrics[metric.key as keyof Metrics] || 0;
-
-                row.data[periodKey] = metricValue;
-
-
-                if (metric.key !== 'average_price_per_sqm') {
-                    totalMetricValue += metricValue;
-                }
-                totalValueForAvg += metrics.total_value;
-                totalAreaForAvg += metrics.total_area;
-            });
-
-
-            if (currentPeriods.some(p => p.key === grandTotalPeriodKey)) {
-                let grandTotalMetricValue: number;
-
-                if (metric.key === 'average_price_per_sqm') {
-                    grandTotalMetricValue = totalAreaForAvg > 0 ? (totalValueForAvg / totalAreaForAvg) : 0;
-                } else {
-                    grandTotalMetricValue = totalMetricValue;
-                }
-
-                row.data[grandTotalPeriodKey] = grandTotalMetricValue;
-            }
-
-            // ⬇️ [ส่วนที่เพิ่ม: การคำนวณอัตราเติบโต MoM และ YTD] ⬇️
-            const lp = lastPeriod.value;
-            if (lp && lp.monthIndex) {
-                const currentYear = lp.year;
-                const currentMonth = lp.monthIndex;
-                const prevYear = (parseInt(currentYear) - 1).toString();
-                const categoryName = 'รวม';
-
-                // --- 1. MoM Calculation ---
-                const currentMetrics = getRegionalMetrics(lp, regionName, categoryName);
-                const currentValue = currentMetrics[metric.key as keyof Metrics] || 0;
-
-                const prevMonth = (currentMonth === 1) ? 12 : currentMonth - 1;
-                const prevMonthYear = (currentMonth === 1) ? prevYear : currentYear;
-
-                const prevPeriod: PeriodItem = {
-                    key: `M${prevMonth}Y${prevMonthYear}`,
-                    label: `MoM`,
-                    year: prevMonthYear,
-                    monthIndex: prevMonth
-                };
-                const prevMonthMetrics = getRegionalMetrics(prevPeriod, regionName, categoryName);
-                const prevMonthValue = prevMonthMetrics[metric.key as keyof Metrics] || 0;
-
-                if (prevMonthValue !== 0) {
-                    row.growth.mom = ((currentValue / prevMonthValue) - 1) * 100;
-                } else if (currentValue > 0) {
-                    row.growth.mom = 100;
-                } else {
-                    row.growth.mom = 0;
-                }
-
-                // --- 2. YTD Calculation ---
-                let currentYTDValue: number;
-                let prevYTDValue: number;
-
-                if (metric.key === 'average_price_per_sqm') {
-                    const currentYTD_Value = getRegionalAggregatedValue(currentYear, 1, currentMonth, regionName, categoryName, 'total_value');
-                    const currentYTD_Area = getRegionalAggregatedValue(currentYear, 1, currentMonth, regionName, categoryName, 'total_area');
-                    currentYTDValue = (currentYTD_Area > 0) ? (currentYTD_Value / currentYTD_Area) : 0;
-
-                    const prevYTD_Value = getRegionalAggregatedValue(prevYear, 1, currentMonth, regionName, categoryName, 'total_value');
-                    const prevYTD_Area = getRegionalAggregatedValue(prevYear, 1, currentMonth, regionName, categoryName, 'total_area');
-                    prevYTDValue = (prevYTD_Area > 0) ? (prevYTD_Value / prevYTD_Area) : 0;
-                } else {
-                    currentYTDValue = getRegionalAggregatedValue(currentYear, 1, currentMonth, regionName, categoryName, metric.key as keyof Metrics);
-                    prevYTDValue = getRegionalAggregatedValue(prevYear, 1, currentMonth, regionName, categoryName, metric.key as keyof Metrics);
-                }
-
-                if (prevYTDValue !== 0) {
-                    row.growth.ytd = ((currentYTDValue / prevYTDValue) - 1) * 100;
-                } else if (currentYTDValue > 0) {
-                    row.growth.ytd = 100;
-                } else {
-                    row.growth.ytd = 0;
-                }
-            }
-            // ⬆️ [สิ้นสุดส่วนที่เพิ่ม] ⬆️
-
-            categoryData.rows.push(row);
-        });
-        finalTable.push(categoryData);
-    });
-
-    return finalTable;
+onMounted(() => {
+    updateToAllMonths();
 });
 
+// ... (
+// ⭐️ START: All Helper functions (6.A, 6.B, 6.D)
+// ... (Tons of helper functions go here)
+// ... )
 
-
-// src/views/components/repost_hba.vue (ประมาณบรรทัดที่ 802)
-
-const regionAndCategoryReportTableData = computed<RegionCategoryGroup[]>(() => {
-    if (!summaryData.value) {
-        return [];
+// (6.B.7)
+function getRegionHorizontalTotal(region: string, field: keyof RegionMetrics): number {
+    let totalUnit = 0;
+    let totalValue = 0;
+    let totalArea = 0;
+    for (const month of displayedMonths.value) {
+        totalUnit += getMonthlyVerticalTotal(month.value, region, 'unit');
+        totalValue += getMonthlyVerticalTotal(month.value, region, 'value');
+        totalArea += getMonthlyVerticalTotal(month.value, region, 'area');
     }
-
-    const currentPeriods = tablePeriods.value;
-    const grandTotalPeriodKey = 'TOTAL_PERIODS';
-
-    const allPriceCategories = [...valueCategories, 'รวม'];
-
-    const finalTable: RegionCategoryGroup[] = [];
-
-
-    regionCategories.forEach(regionName => {
-        const regionGroup: RegionCategoryGroup = {
-            regionName: regionName,
-            categories: []
-        };
-
-
-        allPriceCategories.forEach(categoryName => {
-            const categoryData: TableCategory = {
-                categoryName: categoryName,
-                rows: []
-            };
-
-
-            metricRows.forEach(metric => {
-                const row: TableRow = {
-                    metricKey: metric.key as keyof Metrics | 'average_price_per_sqm',
-                    metricName: metric.name,
-                    format: metric.format,
-                    data: {},
-                    growth: { mom: null, ytd: null }
-                };
-
-                let totalMetricValue = 0;
-                let totalValueForAvg = 0;
-                let totalAreaForAvg = 0;
-
-
-                currentPeriods.filter(p => p.key !== grandTotalPeriodKey).forEach(p => {
-                    const periodKey = p.key;
-
-
-
-                    const metrics = getRegionalMetrics(p, regionName, categoryName);
-
-                    let metricValue: number = metrics[metric.key as keyof Metrics] || 0;
-
-                    row.data[periodKey] = metricValue;
-
-
-                    if (metric.key !== 'average_price_per_sqm') {
-                        totalMetricValue += metricValue;
-                    }
-                    totalValueForAvg += metrics.total_value;
-                    totalAreaForAvg += metrics.total_area;
-                });
-
-
-                if (currentPeriods.some(p => p.key === grandTotalPeriodKey)) {
-                    let grandTotalMetricValue: number;
-
-                    if (metric.key === 'average_price_per_sqm') {
-                        grandTotalMetricValue = totalAreaForAvg > 0 ? (totalValueForAvg / totalAreaForAvg) : 0;
-                    } else {
-                        grandTotalMetricValue = totalMetricValue;
-                    }
-
-                    row.data[grandTotalPeriodKey] = grandTotalMetricValue;
-                }
-
-                // ⬇️ [ส่วนที่เพิ่ม: การคำนวณอัตราเติบโต MoM และ YTD] ⬇️
-                const lp = lastPeriod.value;
-                if (lp && lp.monthIndex) {
-                    const currentYear = lp.year;
-                    const currentMonth = lp.monthIndex;
-                    const prevYear = (parseInt(currentYear) - 1).toString();
-                    // categoryName ถูกกำหนดในลูปภายนอกแล้ว
-
-                    // --- 1. MoM Calculation ---
-                    const currentMetrics = getRegionalMetrics(lp, regionName, categoryName);
-                    const currentValue = currentMetrics[metric.key as keyof Metrics] || 0;
-
-                    const prevMonth = (currentMonth === 1) ? 12 : currentMonth - 1;
-                    const prevMonthYear = (currentMonth === 1) ? prevYear : currentYear;
-
-                    const prevPeriod: PeriodItem = {
-                        key: `M${prevMonth}Y${prevMonthYear}`,
-                        label: `MoM`,
-                        year: prevMonthYear,
-                        monthIndex: prevMonth
-                    };
-                    const prevMonthMetrics = getRegionalMetrics(prevPeriod, regionName, categoryName);
-                    const prevMonthValue = prevMonthMetrics[metric.key as keyof Metrics] || 0;
-
-                    if (prevMonthValue !== 0) {
-                        row.growth.mom = ((currentValue / prevMonthValue) - 1) * 100;
-                    } else if (currentValue > 0) {
-                        row.growth.mom = 100;
-                    } else {
-                        row.growth.mom = 0;
-                    }
-
-                    // --- 2. YTD Calculation ---
-                    let currentYTDValue: number;
-                    let prevYTDValue: number;
-
-                    if (metric.key === 'average_price_per_sqm') {
-                        const currentYTD_Value = getRegionalAggregatedValue(currentYear, 1, currentMonth, regionName, categoryName, 'total_value');
-                        const currentYTD_Area = getRegionalAggregatedValue(currentYear, 1, currentMonth, regionName, categoryName, 'total_area');
-                        currentYTDValue = (currentYTD_Area > 0) ? (currentYTD_Value / currentYTD_Area) : 0;
-
-                        const prevYTD_Value = getRegionalAggregatedValue(prevYear, 1, currentMonth, regionName, categoryName, 'total_value');
-                        const prevYTD_Area = getRegionalAggregatedValue(prevYear, 1, currentMonth, regionName, categoryName, 'total_area');
-                        prevYTDValue = (prevYTD_Area > 0) ? (prevYTD_Value / prevYTD_Area) : 0;
-                    } else {
-                        currentYTDValue = getRegionalAggregatedValue(currentYear, 1, currentMonth, regionName, categoryName, metric.key as keyof Metrics);
-                        prevYTDValue = getRegionalAggregatedValue(prevYear, 1, currentMonth, regionName, categoryName, metric.key as keyof Metrics);
-                    }
-
-                    if (prevYTDValue !== 0) {
-                        row.growth.ytd = ((currentYTDValue / prevYTDValue) - 1) * 100;
-                    } else if (currentYTDValue > 0) {
-                        row.growth.ytd = 100;
-                    } else {
-                        row.growth.ytd = 0;
-                    }
-                }
-                // ⬆️ [สิ้นสุดส่วนที่เพิ่ม] ⬆️
-
-                categoryData.rows.push(row);
-            });
-            regionGroup.categories.push(categoryData);
-        });
-        finalTable.push(regionGroup);
-    });
-
-    return finalTable;
-});
-
-
-const polarChartPriceData = computed(() => {
-    const data = monthlyReportTableData.value;
-    if (!data || data.length === 0) {
-        return { series: [], labels: [] };
+    if (field === 'unit') return totalUnit;
+    if (field === 'value') return totalValue;
+    if (field === 'area') return totalArea;
+    if (field === 'price_per_sqm') {
+        return totalArea > 0 ? (totalValue / totalArea) : 0;
     }
+    return 0;
+}
 
-    const priceLabels = valueCategories;
-    const seriesData: number[] = [];
+// (6.B.8)
+function getMonthlyTabGrandTotal(field: keyof RegionMetrics): number {
+    let totalUnit = 0;
+    let totalValue = 0;
+    let totalArea = 0;
+    for (const month of displayedMonths.value) {
+        totalUnit += getMonthlyGrandTotal(month.value, 'unit');
+        totalValue += getMonthlyGrandTotal(month.value, 'value');
+        totalArea += getMonthlyGrandTotal(month.value, 'area');
+    }
+    if (field === 'unit') return totalUnit;
+    if (field === 'value') return totalValue;
+    if (field === 'area') return totalArea;
+    if (field === 'price_per_sqm') {
+        return totalArea > 0 ? (totalValue / totalArea) : 0;
+    }
+    return 0;
+}
 
-    priceLabels.forEach(categoryName => {
+// (6.A.1)
+function getSummaryNumericValue(region: string, range: string, field: 'unit' | 'value' | 'area'): number {
+    return Number(rawData.value?.[region]?.[range]?.[field] || 0);
+}
 
-        const categoryGroup = data.find(c => c.categoryName === categoryName);
-        if (categoryGroup) {
+// (6.A.2)
+function getSummaryCalculatedMetrics(region: string, range: string): RegionMetrics {
+    const unit = getSummaryNumericValue(region, range, 'unit');
+    const value = getSummaryNumericValue(region, range, 'value');
+    const area = getSummaryNumericValue(region, range, 'area');
+    const price_per_sqm = area > 0 ? (value / area) : 0;
+    return { unit, value, area, price_per_sqm };
+}
 
-            const totalValueRow = categoryGroup.rows.find(r => r.metricKey === 'total_value');
+// (6.A.3)
+function getSummaryHorizontalTotal(range: string, field: keyof RegionMetrics): number {
+    let totalUnit = 0;
+    let totalValue = 0;
+    let totalArea = 0;
+    for (const region of regions.value) {
+        const metrics = getSummaryCalculatedMetrics(region, range);
+        totalUnit += metrics.unit;
+        totalValue += metrics.value;
+        totalArea += metrics.area;
+    }
+    if (field === 'unit') return totalUnit;
+    if (field === 'value') return totalValue;
+    if (field === 'area') return totalArea;
+    if (field === 'price_per_sqm') {
+        return totalArea > 0 ? (totalValue / totalArea) : 0;
+    }
+    return 0;
+}
 
-
-
-            const periodKey = totalValueRow?.data['TOTAL_PERIODS'] !== undefined
-                ? 'TOTAL_PERIODS'
-                : tablePeriods.value[0]?.key;
-
-            const totalValue = (periodKey ? totalValueRow?.data[periodKey] : 0) || 0;
-
-
-            seriesData.push(totalValue);
-        } else {
-            seriesData.push(0);
+// (6.A.4)
+function getSummaryVerticalTotal(region: string, field: keyof RegionMetrics): number {
+    let totalUnit = 0;
+    let totalValue = 0;
+    let totalArea = 0;
+    for (const range of priceRanges) {
+        const metrics = rawData.value?.[region]?.[range];
+        if (metrics) {
+            totalUnit += Number(metrics.unit) || 0;
+            totalValue += Number(metrics.value) || 0;
+            totalArea += Number(metrics.area) || 0;
         }
-    });
+    }
+    if (field === 'unit') return totalUnit;
+    if (field === 'value') return totalValue;
+    if (field === 'area') return totalArea;
+    if (field === 'price_per_sqm') {
+        return totalArea > 0 ? (totalValue / totalArea) : 0;
+    }
+    return 0;
+}
 
-    return {
-        series: seriesData,
-        labels: priceLabels,
-        totalValueSum: seriesData.reduce((sum, value) => sum + value, 0)
-    };
+// (6.A.5)
+function getSummaryGrandTotal(field: keyof RegionMetrics): number {
+    let totalUnit = 0;
+    let totalValue = 0;
+    let totalArea = 0;
+    for (const region of regions.value) {
+        for (const range of priceRanges) {
+            const metrics = rawData.value?.[region]?.[range];
+            if (metrics) {
+                totalUnit += Number(metrics.unit) || 0;
+                totalValue += Number(metrics.value) || 0;
+                totalArea += Number(metrics.area) || 0;
+            }
+        }
+    }
+    if (field === 'unit') return totalUnit;
+    if (field === 'value') return totalValue;
+    if (field === 'area') return totalArea;
+    if (field === 'price_per_sqm') {
+        return totalArea > 0 ? (totalValue / totalArea) : 0;
+    }
+    return 0;
+}
+
+// (6.B.1)
+const displayedMonths = computed(() => {
+    return allMonthItems.filter(m => selectedMonths.value.includes(m.value))
+        .sort((a, b) => a.value - b.value);
 });
 
+// (6.B.2)
+function getMonthlyNumericValue(month: number, region: string, range: string, field: 'unit' | 'value' | 'area'): number {
+    return Number(detailedTableData.value?.[month]?.[region]?.[range]?.[field] || 0);
+}
 
-const polarChartRegionData = computed(() => {
-    const data = regionReportTableData.value;
-    if (!data || data.length === 0) {
-        return { series: [], labels: [] };
+// (6.B.3)
+function getMonthlyCalculatedMetrics(month: number, region: string, range: string): RegionMetrics {
+    const unit = getMonthlyNumericValue(month, region, range, 'unit');
+    const value = getMonthlyNumericValue(month, region, range, 'value');
+    const area = getMonthlyNumericValue(month, region, range, 'area');
+    const price_per_sqm = area > 0 ? (value / area) : 0;
+    return { unit, value, area, price_per_sqm };
+}
+
+// (6.B.4)
+function getMonthlyHorizontalTotal(month: number, range: string, field: keyof RegionMetrics): number {
+    let totalUnit = 0;
+    let totalValue = 0;
+    let totalArea = 0;
+    for (const region of regions.value) {
+        const metrics = getMonthlyCalculatedMetrics(month, region, range);
+        totalUnit += metrics.unit;
+        totalValue += metrics.value;
+        totalArea += metrics.area;
+    }
+    if (field === 'unit') return totalUnit;
+    if (field === 'value') return totalValue;
+    if (field === 'area') return totalArea;
+    if (field === 'price_per_sqm') {
+        return totalArea > 0 ? (totalValue / totalArea) : 0;
+    }
+    return 0;
+}
+
+// (6.B.5)
+function getMonthlyVerticalTotal(month: number, region: string, field: keyof RegionMetrics): number {
+    let totalUnit = 0;
+    let totalValue = 0;
+    let totalArea = 0;
+    for (const range of priceRanges) {
+        const metrics = getMonthlyCalculatedMetrics(month, region, range);
+        totalUnit += metrics.unit;
+        totalValue += metrics.value;
+        totalArea += metrics.area;
+    }
+    if (field === 'unit') return totalUnit;
+    if (field === 'value') return totalValue;
+    if (field === 'area') return totalArea;
+    if (field === 'price_per_sqm') {
+        return totalArea > 0 ? (totalValue / totalArea) : 0;
+    }
+    return 0;
+}
+
+// (6.B.6)
+function getMonthlyGrandTotal(month: number, field: keyof RegionMetrics): number {
+    let totalUnit = 0;
+    let totalValue = 0;
+    let totalArea = 0;
+    for (const region of regions.value) {
+        for (const range of priceRanges) {
+            const metrics = getMonthlyCalculatedMetrics(month, region, range);
+            totalUnit += metrics.unit;
+            totalValue += metrics.value;
+            totalArea += metrics.area;
+        }
+    }
+    if (field === 'unit') return totalUnit;
+    if (field === 'value') return totalValue;
+    if (field === 'area') return totalArea;
+    if (field === 'price_per_sqm') {
+        return totalArea > 0 ? (totalValue / totalArea) : 0;
+    }
+    return 0;
+}
+
+// (6.C)
+function formatValue(value: number, field: keyof RegionMetrics): string {
+    if (field === 'unit') {
+        return value.toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    }
+    return value.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// (6.D.1)
+function calculateMoMPercent(current: number, prior: number): number | null {
+    if (prior === 0) {
+        return current > 0 ? 100 : 0;
+    }
+    const percent = ((current - prior) / prior) * 100;
+    if (!isFinite(percent)) {
+        return null;
+    }
+    return percent;
+}
+
+// (6.D.2)
+function getMoMFormatted(month: number, region: string, range: string, field: keyof RegionMetrics): string {
+    const priorMonth = month - 1;
+    if (!detailedTableData.value[priorMonth]) {
+        return "";
+    }
+    const currentValue = getMonthlyCalculatedMetrics(month, region, range)[field];
+    const priorValue = getMonthlyCalculatedMetrics(priorMonth, region, range)[field];
+    const percent = calculateMoMPercent(currentValue, priorValue);
+    if (percent === null) return "";
+    const percentStr = percent.toFixed(0);
+    if (percent > 0) return `<span class="mom-percent text-success">(+${percentStr}%)</span>`;
+    if (percent < 0) return `<span class="mom-percent text-error">(${percentStr}%)</span>`;
+    return "";
+}
+
+// (6.D.3)
+function getMoMFormatted_HorizontalTotal(month: number, range: string, field: keyof RegionMetrics): string {
+    const priorMonth = month - 1;
+    if (!detailedTableData.value[priorMonth]) return "";
+    const currentValue = getMonthlyHorizontalTotal(month, range, field);
+    const priorValue = getMonthlyHorizontalTotal(priorMonth, range, field);
+    const percent = calculateMoMPercent(currentValue, priorValue);
+    if (percent === null) return "";
+    const percentStr = percent.toFixed(0);
+    if (percent > 0) return `<span class="mom-percent text-success">(+${percentStr}%)</span>`;
+    if (percent < 0) return `<span class="mom-percent text-error">(${percentStr}%)</span>`;
+    return "";
+}
+
+// (6.D.4)
+function getMoMFormatted_VerticalTotal(month: number, region: string, field: keyof RegionMetrics): string {
+    const priorMonth = month - 1;
+    if (!detailedTableData.value[priorMonth]) return "";
+    const currentValue = getMonthlyVerticalTotal(month, region, field);
+    const priorValue = getMonthlyVerticalTotal(priorMonth, region, field);
+    const percent = calculateMoMPercent(currentValue, priorValue);
+    if (percent === null) return "";
+    const percentStr = percent.toFixed(0);
+    if (percent > 0) return `<span class="mom-percent text-success">(+${percentStr}%)</span>`;
+    if (percent < 0) return `<span class="mom-percent text-error">(${percentStr}%)</span>`;
+    return "";
+}
+
+// (6.D.5)
+function getMoMFormatted_GrandTotal(month: number, field: keyof RegionMetrics): string {
+    const priorMonth = month - 1;
+    if (!detailedTableData.value[priorMonth]) return "";
+    const currentValue = getMonthlyGrandTotal(month, field);
+    const priorValue = getMonthlyGrandTotal(priorMonth, field);
+    const percent = calculateMoMPercent(currentValue, priorValue);
+    if (percent === null) return "";
+    const percentStr = percent.toFixed(0);
+    if (percent > 0) return `<span class="mom-percent text-success">(+${percentStr}%)</span>`;
+    if (percent < 0) return `<span class="mom-percent text-error">(${percentStr}%)</span>`;
+    return "";
+}
+
+// ... ⭐️ END: Helper functions ⭐️ ...
+
+
+// --- (7) Computed Data สำหรับ Graph และ Cards ---
+
+// (7.A) State และฟังก์ชันสำหรับ Highlight (เหมือน house.vue)
+const selectedHighlight = ref<keyof RegionMetrics | null>(null);
+
+function highlightRow(field: keyof RegionMetrics) {
+    if (selectedHighlight.value === field) {
+        selectedHighlight.value = null;
+    } else {
+        selectedHighlight.value = field;
+    }
+}
+
+function isRowVisible(field: keyof RegionMetrics): boolean {
+    if (selectedHighlight.value === null) {
+        return true;
+    }
+    return selectedHighlight.value === field;
+}
+
+function getHighlightStyle(field: keyof RegionMetrics) {
+    if (selectedHighlight.value !== field) return null;
+    if (field === 'unit') return { backgroundColor: '#E3F2FD' };
+    if (field === 'value') return { backgroundColor: '#EDE7F6' };
+    if (field === 'area') return { backgroundColor: '#FFEBEE' };
+    if (field === 'price_per_sqm') return { backgroundColor: '#FFF8E1' };
+    return null;
+}
+// (7.B) จบส่วน Highlight
+
+
+// (7.1) [ปรับปรุง] ข้อมูลสำหรับ Polar Area Chart
+const polarAreaSeries = computed(() => {
+    const metricKey = selectedHighlight.value || 'value';
+    const series = regions.value.map(region => getSummaryVerticalTotal(region, metricKey));
+    const totalSum = series.reduce((a, b) => a + b, 0);
+    return totalSum > 0 ? series : [];
+});
+
+// ... (อยู่ก่อนหน้า dataLabels)
+// (7.1) [ปรับปรุง] Options สำหรับ Polar Area Chart
+const polarAreaOptions = computed(() => {
+    // ⭐️ (1) กำหนด Metric, Suffix, Title ตามค่าที่เลือก
+    const metricKey = selectedHighlight.value || 'value';
+    let tooltipSuffix = ' บาท';
+    let dataLabelTitle = 'มูลค่ารวม';
+
+    if (metricKey === 'unit') {
+        tooltipSuffix = ' หลัง';
+        dataLabelTitle = 'จำนวนหลัง';
+    } else if (metricKey === 'area') {
+        tooltipSuffix = ' ตร.ม.';
+        dataLabelTitle = 'พื้นที่ใช้สอย';
+    } else if (metricKey === 'price_per_sqm') {
+        tooltipSuffix = ' บาท/ตร.ม.';
+        dataLabelTitle = 'ราคาเฉลี่ย/ตร.ม.';
     }
 
-
-    const regionLabels = regionCategories.filter(reg => reg !== 'รวมทั่วประเทศ');
-    const seriesData: number[] = [];
-
-    regionLabels.forEach(regionName => {
-        const regionGroup = data.find(c => c.categoryName === regionName);
-        if (regionGroup) {
-            const totalValueRow = regionGroup.rows.find(r => r.metricKey === 'total_value');
-
-
-            const periodKey = totalValueRow?.data['TOTAL_PERIODS'] !== undefined
-                ? 'TOTAL_PERIODS'
-                : tablePeriods.value[0]?.key;
-
-            const totalValue = (periodKey ? totalValueRow?.data[periodKey] : 0) || 0;
-
-
-            seriesData.push(totalValue); // ใช้ค่ามูลค่าดิบ
-        } else {
-            seriesData.push(0);
-        }
-    });
-
-    return {
-        series: seriesData,
-        labels: regionLabels,
-        totalValueSum: seriesData.reduce((sum, value) => sum + value, 0)
-    };
-});
-
-
-const polarChartOptions = computed(() => {
-
-    // **[เพิ่ม]: กำหนดชุดสีที่แตกต่างกัน**
+    // ⭐️ [จุดแก้ไขที่ 1] ⭐️
+    // สร้าง Array สีที่คุณต้องการ (ใส่สีได้ตามจำนวนภูมิภาค)
     const chartColors = [
-        '#3F51B5', // Indigo
-        '#03A9F4', // Light Blue
-        '#4CAF50', // Green
-        '#FFC107', // Amber
-        '#F44336', // Red
-        '#9C27B0', // Purple
-        '#00BCD4', // Cyan
-        '#FF9800', // Orange
-        '#795548', // Brown
-        '#607D8B'  // Blue Grey
+        '#3F51B5', // สีน้ำเงินเข้ม
+        '#03A9F4', // สีฟ้า
+        '#4CAF50', // สีเขียว
+        '#FFC107', // สีเหลือง
+        '#F44336', // สีแดง
+        '#9C27B0', // สีม่วง
+        '#009688', // สีเขียวน้ำทะเล
+        '#E91E63'  // สีชมพู
     ];
 
+    // ⭐️ (2) คืนค่า Options Object
     return {
-        chart: {
-            type: 'polarArea',
-            height: 400,
-            fontFamily: 'inherit',
-            foreColor: '#adb0bb',
-        },
+        chart: { type: 'polarArea', fontFamily: 'inherit', foreColor: '#6c757d' },
+        labels: regions.value,
+        legend: { position: 'bottom', horizontalAlign: 'center' },
 
-        // **[เพิ่ม]: กำหนดสีให้กับกราฟ**
+        // ⭐️ [จุดแก้ไขที่ 2] ⭐️
+        // เพิ่ม 'colors' array เข้าไปที่นี่
         colors: chartColors,
 
-        stroke: {
+        stroke: { colors: ['#fff'] },
+        fill: { opacity: 0.8 }, // ⭐️ [ปรับปรุง] ที่นี่จะกลายเป็นความทึบของสี ไม่ใช่ตัวสี
+        responsive: [{ breakpoint: 480, options: { chart: { width: 200 }, legend: { position: 'bottom' } } }],
 
-        },
-        fill: {
-            opacity: 0.9
-        },
-        legend: {
-            position: 'bottom',
-            offsetY: 0
-        },
-
-
-        yaxis: {
-            labels: {
-                show: false
+        tooltip: {
+            theme: 'dark',
+            y: {
+                formatter: (val: number) => val.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + tooltipSuffix
             }
         },
 
-
+        // (โค้ด dataLabels... ที่เราแก้ไขล่าสุด)
+        // ... (อยู่ภายใน polarAreaOptions)
         dataLabels: {
             enabled: true,
 
-            formatter: function (val: number, opts: any) {
+            formatter: (val: number, opts: any) => {
 
-                // 1. ดึงค่ามูลค่าดิบ (Raw Value) ของชิ้นส่วนกราฟปัจจุบัน
-                const rawValue = opts.w.globals.series[opts.seriesIndex];
+                console.log(`--- DataLabel ---`);
+                console.log(`val (percent):`, val);
 
+                // 1. คำนวณ % (ยังไม่ใส่วงเล็บ)
+                let percentageText = '0.00%';
+                if (!isNaN(val)) percentageText = (Number(val) || 0).toFixed(2) + '%';
 
-                // 2. คำนวณ % (val คือค่าเปอร์เซ็นต์)
-                const percentage = (Number(val) || 0).toFixed(2);
+                const index = opts.seriesIndex;
+                const regionKey = opts.w.globals.labels[index];
+                const metricKey = selectedHighlight.value || 'value';
 
+                console.log(`metricKey:`, metricKey);
+                console.log(`regionKey (from labels[${index}]):`, regionKey);
 
-                // ⬇️ เปลี่ยนการจัดรูปแบบให้แสดงมูลค่าดิบ
-                const formattedValue = rawValue.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                if (!regionKey) {
+                    console.warn("ไม่สามารถหา regionKey ได้, index:", index);
+                    return percentageText;
+                }
 
+                const rawValue = getSummaryVerticalTotal(regionKey, metricKey);
+                console.log(`rawValue (total):`, rawValue);
 
-                // แสดงผลลัพธ์: [มูลค่าจริง, (เปอร์เซ็นต์)]
-                return [
-                    formattedValue + ' บาท', // เพิ่ม " บาท" ตรงนี้เพื่อให้ชัดเจน
-                    `(${percentage}%)`
-                ];
+                // 2. จัดรูปแบบ "ค่าจริง" (แบบไม่ใส่วงเล็บ)
+                const rawValueText = (Number(rawValue) || 0).toLocaleString('th-TH', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                });
+
+                // ⭐️ [จุดแก้ไข] ⭐️
+                // สลับลำดับ Array ให้ "ค่าจริง" (rawValueText) ขึ้นก่อน
+                // และใส่ (วงเล็บ) ให้กับ "เปอร์เซ็นต์" (percentageText)
+                const result = [rawValueText, `(${percentageText})`];
+
+                console.log(`Result Array:`, result);
+                console.log(`-----------------------------`);
+
+                return result; // คืนค่า Array [ค่าจริง, (เปอร์เซ็นต์)]
             },
-            // ...
+
+            // (Style และ DropShadow เหมือนเดิม)
             style: {
-                fontSize: '9px',
+                fontSize: '10px'
             },
             dropShadow: {
-                enabled: true,
-                top: 1,
-                left: 1,
-                blur: 1,
-                opacity: 0.5
+                enabled: false
             }
         },
-
-        tooltip: {
-            y: {
-                formatter: (val: number) => {
-                    // ใช้ค่าดิบ (Raw Value) โดยตรง
-                    const actualValue = val;
-
-                    // ⬇️ เปลี่ยนการจัดรูปแบบให้แสดงทศนิยม 2 ตำแหน่ง
-                    return actualValue.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' บาท';
-                }
-            }
-        },
-
-
-        plotOptions: {
-            polarArea: {
-                rings: {
-                    strokeWidth: 1,
-                    strokeColor: '#e0e0e0',
-                    strokeDashArray: 4
-                },
-                spokes: {
-                    strokeWidth: 1,
-                    strokeColor: '#e0e0e0',
-                    strokeDashArray: 4
-                },
-            }
-        }
+        // ...
+        noData: { text: 'ไม่พบข้อมูลสำหรับช่วงที่เลือก', align: 'center', verticalAlign: 'middle', offsetY: 0, style: { color: '#6c757d', fontSize: '14px', fontFamily: 'inherit' } },
     }
-
+});
+// (7.C) Computed สำหรับหัวข้อกราฟ (เหมือน house.vue)
+const chartTitle = computed(() => {
+    const selectedKey = selectedHighlight.value;
+    if (selectedKey === 'unit') return 'สัดส่วนจำนวนหลัง (Unit) ตามภูมิภาค';
+    if (selectedKey === 'area') return 'สัดส่วนพื้นที่ใช้สอย (Usable Area) ตามภูมิภาค';
+    if (selectedKey === 'price_per_sqm') return 'สัดส่วนราคาเฉลี่ย/ตร.ม. (Price/Sqm) ตามภูมิภาค';
+    return 'สัดส่วนมูลค่ารวม (Total Value) ตามภูมิภาค';
 });
 
-const generateMockMemberData = (): MemberSubmission[] => {
-    const memberData = summaryData.value?.membership_data || [];
 
-
-    if (Array.isArray(memberData)) {
-        return memberData as MemberSubmission[];
-    }
-
-    console.warn('Membership data format is incorrect or empty:', memberData);
-    return [];
-};
-
-
-const memberSubmissionSummary = computed(() => {
-    const allMembers = generateMockMemberData();
-    const users = allMembers.filter(u => u.role === 'user');
-    const allUsersCount = users.length;
-
-    const targetPeriods = tablePeriods.value.filter(p => p.key !== 'TOTAL_PERIODS');
-    const hasFilters = targetPeriods.length > 0 &&
-        (selectyear.value.length > 0 || selectMonths.value.length > 0 || selectQuarters.value.length > 0);
-
-
-
-
-
-
-
-
-
-
-
-    let submittedInPeriod_Set = new Set<string>();
-
-
-
-
-
-
-
-
-
-
-
-
-
-    const periodCounts: { key: string, label: string, count: number }[] = [];
-
-
-
-
-
-
-
-
-
-
-
-    if (targetPeriods.length > 0) {
-        targetPeriods.forEach(period => {
-            let countForThisPeriod = 0;
-
-
-
-
-            users.forEach(user => {
-                let hasSubmittedThisPeriod = false;
-
-
-
-
-
-
-
-
-
-
-
-                if (period.monthIndex) {
-
-
-
-                    if (user.submissions_in_period[period.year]?.includes(period.monthIndex)) {
-                        hasSubmittedThisPeriod = true;
-                    }
-                } else if (period.year) {
-
-
-
-                    if ((user.submissions_by_year[period.year] || 0) > 0) {
-                        hasSubmittedThisPeriod = true;
-                    }
-                }
-
-                if (hasSubmittedThisPeriod) {
-                    submittedInPeriod_Set.add(user.member_id);
-
-
-
-
-                    countForThisPeriod++;
-
-
-
-
-                }
-            });
-
-
-
-
-
-
-
-
-
-
-
-
-            periodCounts.push({
-                key: period.key,
-                label: `สมาชิกที่กรอก ${period.label}`,
-                count: countForThisPeriod
-            });
-        });
-    } else {
-
-
-
-
-
-
-
-
-
-
-
-
-        users.forEach(user => {
-            if (user.total_submitted_count > 0) {
-                submittedInPeriod_Set.add(user.member_id);
-            }
-        });
-    }
-    const submittedInPeriod_Count = submittedInPeriod_Set.size;
-    const notSubmittedInPeriod_Count = allUsersCount - submittedInPeriod_Count;
-
-    const submittedLabel = hasFilters ? 'สมาชิกที่กรอก (ในช่วงที่เลือก)' : 'สมาชิกที่เคยกรอก (ทั้งหมด)';
-    const notSubmittedLabel = hasFilters ? 'สมาชิกที่ไม่ได้กรอก (ในช่วงที่เลือก)' : 'สมาชิกที่ไม่เคยกรอก (ทั้งหมด)';
-
+// (7.2) ข้อมูลการ์ดสรุป
+const summaryCardData = computed(() => {
+    // ⭐️ [หมายเหตุ] ส่วนนี้ถูกแก้ไขใน v3.2 ให้คำนวณตาม tab ที่เลือก
+    // แต่ใน v3.1 (โค้ดนี้) มันจะแสดง "ยอดรวมของทุกเดือนที่เลือก" เสมอ
+    // ซึ่งอาจจะดีกว่าสำหรับ UI นี้ (เดี๋ยวรอดู v3.2)
+
+    // (ตรรกะเดิมจาก v3.1)
+    // if (activeTab.value !== 'summary' && typeof activeTab.value === 'number') {
+    //     const currentMonth = activeTab.value;
+    //     return { ... };
+    // }
     return {
-        totalUsers: allUsersCount,
-        totalUsersIncludingAdmin: allMembers.length,
-        submittedTotal: submittedInPeriod_Count,
-        notSubmittedTotal: notSubmittedInPeriod_Count,
-        submittedLabel: submittedLabel,
-        notSubmittedLabel: notSubmittedLabel,
-        donutData: [submittedInPeriod_Count, notSubmittedInPeriod_Count],
-        donutLabels: [submittedLabel, notSubmittedLabel],
-        periodCounts: periodCounts,
+        unit: getSummaryGrandTotal('unit'),
+        value: getSummaryGrandTotal('value'),
+        area: getSummaryGrandTotal('area'),
+        price_per_sqm: getSummaryGrandTotal('price_per_sqm')
     };
-
 });
 
+// (7.3) Computed สำหรับ MoM% ของ Summary Cards
+const summaryCardMoMData = computed(() => {
+    // ⭐️ [หมายเหตุ] โค้ดนี้จะคำนวณ MoM% ของการ์ด
+    // โดยอิงจาก "เดือนสุดท้ายที่เลือก" เทียบกับ "เดือนก่อนหน้า"
+    // (นี่คือการคาดเดา Requirement ที่ดีที่สุด)
+    // (ถ้า activeTab ถูกนำกลับมาใช้, logic นี้ต้องเปลี่ยน)
 
-const memberListChartData = computed(() => {
-
-    const allMembers = generateMockMemberData();
-    const users = allMembers.filter(u => u.role === 'user');
-    const targetPeriods = tablePeriods.value.filter(p => p.key !== 'TOTAL_PERIODS');
-    const yearsToAggregateSet = new Set<string>();
-    if (targetPeriods.length > 0) {
-        targetPeriods.forEach(p => yearsToAggregateSet.add(p.year));
+    if (selectedMonths.value.length === 0) {
+        return { unit: null, value: null, area: null, price_per_sqm: null };
     }
 
-    const yearsToAggregate = Array.from(yearsToAggregateSet);
+    // ⭐️ [ใหม่] หาเดือนสุดท้ายที่เลือก
+    const currentMonth = Math.max(...selectedMonths.value);
+    const priorMonth = currentMonth - 1;
 
-    const aggregatedUsers = users.map(user => {
-        let totalSubmissionsInPeriod = 0;
-        let yearsToSum: string[];
-        if (yearsToAggregate.length > 0) {
-            yearsToSum = yearsToAggregate;
+    if (priorMonth <= 0 || !detailedTableData.value[priorMonth]) {
+        return { unit: null, value: null, area: null, price_per_sqm: null };
+    }
+
+    const momValues: Record<string, string | null> = {};
+
+    for (const field of dataTypes) {
+        const currentValue = getMonthlyGrandTotal(currentMonth, field); // ⭐️ ยอดรวมของ "เดือนสุดท้าย"
+        const priorValue = getMonthlyGrandTotal(priorMonth, field);   // ⭐️ ยอดรวมของ "เดือนก่อนหน้า"
+        const percent = calculateMoMPercent(currentValue, priorValue);
+
+        if (percent === null) {
+            momValues[field] = null;
         } else {
-            yearsToSum = Object.keys(user.submissions_by_year);
-        }
-        yearsToSum.forEach(year => {
-            totalSubmissionsInPeriod += (user.submissions_by_year[year] || 0);
-        });
-
-        return {
-            name: user.name,
-            submissions: totalSubmissionsInPeriod,
-        };
-    }).filter(u => u.submissions > 0);
-    aggregatedUsers.sort((a, b) => b.submissions - a.submissions);
-
-    return {
-        series: [{
-            name: `จำนวนสัญญาที่กรอก (รวมยอดทั้งปี)`,
-            data: aggregatedUsers.map(u => u.submissions)
-        }],
-        categories: aggregatedUsers.map(u => u.name)
-    };
-});
-
-
-const barChartHeight = computed(() => {
-    const len = memberListChartData.value.categories.length;
-    return len > 0
-        ? 350 + (len * 30)
-        : 350;
-});
-
-
-const barChartOptions = ref({
-    chart: {
-        type: 'bar',
-        fontFamily: 'inherit',
-        foreColor: '#adb0bb',
-        toolbar: { show: false },
-    },
-    plotOptions: {
-        bar: {
-            horizontal: true,
-            dataLabels: {
-                position: 'top',
-            },
-            borderRadius: 4
-        }
-    },
-    dataLabels: {
-        enabled: true,
-        formatter: (val: number) => val.toLocaleString('th-TH', { maximumFractionDigits: 0 }),
-        offsetX: 0
-    },
-    xaxis: {
-        categories: [] as string[],
-        title: {
-            text: 'จำนวนสัญญา'
-        }
-    },
-    tooltip: {
-        y: {
-            formatter: (val: number) => val.toLocaleString('th-TH', { maximumFractionDigits: 0 })
-        }
-    },
-    grid: {
-        show: true,
-        strokeDashArray: 4,
-        borderColor: 'rgba(0, 0, 0, 0.1)'
-    },
-    legend: { show: false }
-});
-
-
-watch(memberListChartData, (newData) => {
-
-    barChartOptions.value = {
-        ...barChartOptions.value,
-        xaxis: {
-            ...barChartOptions.value.xaxis,
-            categories: newData.categories
-        }
-    };
-
-
-    barChartKey.value += 1;
-});
-const barChartKey = ref(0);
-
-const donutChartOptions = computed(() => ({
-    chart: {
-        type: 'donut',
-        height: 350,
-        fontFamily: 'inherit',
-        foreColor: '#adb0bb',
-    },
-    labels: memberSubmissionSummary.value.donutLabels,
-    legend: {
-        position: 'bottom',
-        offsetY: 0
-    },
-    dataLabels: {
-        enabled: true,
-        formatter: (val: number, opts: any) => {
-            const sum = memberSubmissionSummary.value.donutData.reduce((a, b) => a + b, 0);
-            const absoluteValue = opts.w.globals.series[opts.seriesIndex];
-            const percentage = (absoluteValue / sum) * 100;
-            return `${absoluteValue} (${percentage.toFixed(1)}%)`;
-        }
-    },
-    tooltip: {
-        y: {
-            formatter: (val: number, opts: any) => {
-                const sum = memberSubmissionSummary.value.donutData.reduce((a, b) => a + b, 0);
-                const percentage = (val / sum) * 100;
-                return `${val.toLocaleString('th-TH', { maximumFractionDigits: 0 })} (${percentage.toFixed(1)}%)`;
-            }
-        }
-    },
-    responsive: [{
-        breakpoint: 480,
-        options: {
-            chart: { width: 200 },
-            legend: { position: 'bottom' }
-        }
-    }]
-}));
-
-
-interface MemberMonthlyData {
-    name: string;
-    submissions: Record<string, string>;
-    role: 'user' | 'admin' | 'master';
-    member_type: string;
-    total_submitted_in_period: number;
-}
-
-const memberMonthlySubmissionTableData = computed(() => {
-    const members = summaryData.value?.membership_data || [];
-    const periodsToDisplay = tablePeriods.value.filter(p => p.key !== 'TOTAL_PERIODS');
-
-    if (members.length === 0) {
-        return [];
-    }
-    const filteredMembers = members.filter(member =>
-        ['สามัญ', 'สมทบ', 'วิสามัญ ก'].includes(member.member_type)
-    );
-
-    return filteredMembers.map(member => {
-        const submissions: Record<string, 'X' | '-'> = {};
-        let calculatedTotalInPeriod = 0;
-        periodsToDisplay.forEach(period => {
-
-            const year = period.year;
-            const month = period.monthIndex;
-
-            const hasSubmission = (month && member.submissions_in_period[year]?.includes(month)) || false;
-
-            if (hasSubmission) {
-                submissions[period.key] = 'X';
-
-
-                calculatedTotalInPeriod++;
+            const percentStr = percent.toFixed(0);
+            if (percent > 0) {
+                momValues[field] = `(+${percentStr}%)`;
+            } else if (percent < 0) {
+                momValues[field] = `(${percentStr}%)`;
             } else {
-                submissions[period.key] = '-';
+                momValues[field] = null;
             }
-        });
-
-
-        return {
-            name: member.name,
-            member_type: member.member_type,
-            total_submitted_in_period: calculatedTotalInPeriod,
-            submissions: submissions
-        };
-    });
-});
-
-
-const getAggregatedValue = (year: string, startMonth: number, endMonth: number, category: string, metricKey: keyof Metrics): number => {
-    let sum = 0;
-    const monthlyData = summaryData.value?.monthly_data[year];
-
-    if (metricKey === 'average_price_per_sqm') return 0;
-
-    if (!monthlyData) return 0;
-
-    for (let month = startMonth; month <= endMonth; month++) {
-        if (month < 1 || month > 12) continue;
-
-        const metrics = monthlyData[month]?.[category];
-        if (metrics) {
-            sum += metrics[metricKey] || 0;
         }
     }
-    return sum;
-};
 
-const getMetricValue = (period: PeriodItem, category: string, metricKey: keyof Metrics): number => {
-    let metrics: Metrics | undefined;
+    return momValues as Record<keyof RegionMetrics, string | null>;
+});
 
-    if (period.monthIndex && period.monthIndex !== 0) {
-        metrics = summaryData.value?.monthly_data[period.year]?.[period.monthIndex]?.[category];
-    } else if (!period.monthIndex && period.year !== 'TOTAL') {
-        metrics = summaryData.value?.yearly_data[period.year]?.[category];
+
+// (7.D) Helpers สำหรับ Chart MoM% (จาก house.vue)
+function getMonthTotalMoM(monthValue: number, metric: keyof RegionMetrics): number | null {
+    const prevMonthValue = monthValue - 1;
+    if (monthValue === 1 || !detailedTableData.value[prevMonthValue]) {
+        return null;
     }
-
-    return metrics ? (metrics[metricKey as keyof Metrics] || 0) : 0;
-};
-
-
-const growthRateReportTableData = computed<GrowthRateCategory[]>(() => {
-    if (!summaryData.value || tablePeriods.value.length === 0) {
-        return [];
-    }
-
-
-    const periodsToCalculate = tablePeriods.value.filter(p => p.key !== 'TOTAL_PERIODS');
-    const allCategories = [...valueCategories, 'รวม'];
-    const finalTable: GrowthRateCategory[] = [];
-    const metricsToTrack: MetricGrowthKey[] = ['total_value', 'total_units'];
-
-    allCategories.forEach(categoryName => {
-
-
-        const categoryData: GrowthRateCategory = {
-            categoryName: categoryName,
-            total_value: {},
-            total_units: {},
-            total_value_raw: {},
-            total_units_raw: {}
-        };
-
-
-        metricsToTrack.forEach(metricKey => {
-            periodsToCalculate.forEach((currentPeriod, index) => {
-                const currentValue = getMetricValue(currentPeriod, categoryName, metricKey as keyof Metrics);
-                const periodKey = currentPeriod.key;
-
-
-
-                categoryData[`${metricKey}_raw`][periodKey] = currentValue;
-
-
-                let MoM: number | null = null;
-                let YoY: number | null = null;
-                let QoQ: number | null = null;
-                let YTD: number | null = null;
-
-
-                if (!currentPeriod.monthIndex && currentPeriod.year !== 'TOTAL') {
-                    const prevYear = (parseInt(currentPeriod.year) - 1).toString();
-                    const prevPeriod: PeriodItem = { key: `Y${prevYear}`, label: `สรุปปี ${prevYear}`, year: prevYear };
-                    const prevValue = getMetricValue(prevPeriod, categoryName, metricKey as keyof Metrics);
-
-                    if (prevValue !== 0) {
-                        YoY = ((currentValue / prevValue) - 1) * 100;
-                    } else if (currentValue > 0) {
-                        YoY = 100;
-                    }
-                }
-
-                if (currentPeriod.monthIndex) {
-                    const currentYear = currentPeriod.year;
-                    const currentMonth = currentPeriod.monthIndex;
-
-
-                    if (index > 0) {
-                        const prevPeriod = periodsToCalculate[index - 1];
-                        const isPreviousMonth = (prevPeriod.monthIndex === currentMonth - 1) && (prevPeriod.year === currentYear);
-                        const isJanFromDec = (currentMonth === 1) && (prevPeriod.monthIndex === 12) && (parseInt(prevPeriod.year) === parseInt(currentYear) - 1);
-
-                        if (isPreviousMonth || isJanFromDec) {
-                            const prevMonthValue = getMetricValue(prevPeriod, categoryName, metricKey as keyof Metrics);
-                            if (prevMonthValue !== 0) {
-                                MoM = ((currentValue / prevMonthValue) - 1) * 100;
-                            }
-                        }
-                    }
-
-
-                    const prevYear = (parseInt(currentYear) - 1).toString();
-                    const prevYearPeriod: PeriodItem = {
-                        key: `M${currentMonth}Y${prevYear}`, label: `${Months[currentMonth - 1]} ${prevYear}`,
-                        year: prevYear, monthIndex: currentMonth
-                    };
-                    const prevYearValue = getMetricValue(prevYearPeriod, categoryName, metricKey as keyof Metrics);
-
-                    if (prevYearValue !== 0) {
-                        YoY = ((currentValue / prevYearValue) - 1) * 100;
-                    } else if (currentValue > 0) {
-                        YoY = 100;
-                    }
-
-
-                    const currentYTDValue = getAggregatedValue(currentYear, 1, currentMonth, categoryName, metricKey as keyof Metrics);
-                    const prevYTDValue = getAggregatedValue(prevYear, 1, currentMonth, categoryName, metricKey as keyof Metrics);
-
-                    if (prevYTDValue !== 0) {
-                        YTD = ((currentYTDValue / prevYTDValue) - 1) * 100;
-                    } else if (currentYTDValue > 0) {
-                        YTD = 100;
-                    }
-
-
-                    const currentQuarter = Quarters.find(q => q.months.includes(currentMonth));
-
-                    if (currentQuarter && currentQuarter.months[currentQuarter.months.length - 1] === currentMonth) {
-                        const currentQuarterIndex = currentQuarter.index;
-
-                        let prevQYear = currentYear;
-                        let prevQIndex: number;
-
-                        if (currentQuarterIndex > 1) {
-                            prevQIndex = currentQuarterIndex - 1;
-                        } else {
-                            prevQIndex = 4;
-                            prevQYear = prevYear;
-                        }
-
-                        const prevQuarter = Quarters.find(q => q.index === prevQIndex);
-
-                        if (prevQuarter) {
-
-                            const currentQValue = getAggregatedValue(currentYear, currentQuarter.months[0], currentQuarter.months[currentQuarter.months.length - 1], categoryName, metricKey as keyof Metrics);
-
-
-                            const prevQValue = getAggregatedValue(prevQYear, prevQuarter.months[0], prevQuarter.months[prevQuarter.months.length - 1], categoryName, metricKey as keyof Metrics);
-
-                            if (prevQValue !== 0) {
-                                QoQ = ((currentQValue / prevQValue) - 1) * 100;
-                            } else if (currentQValue > 0) {
-                                QoQ = 100;
-                            }
-                        }
-                    }
-                }
-
-
-                categoryData[metricKey][periodKey] = {
-                    MoM,
-                    YoY,
-                    QoQ,
-                    YTD
-                };
-            });
-        });
-        finalTable.push(categoryData);
-    });
-
-    return finalTable;
-});
-
-const lastPeriod = computed(() => {
-    const periods = tablePeriods.value.filter(p => p.key !== 'TOTAL_PERIODS');
-    return periods.length > 0 ? periods[periods.length - 1] : null;
-});
-
-
-
-
-const monthlySubmissionBarChartData = computed(() => {
-
-    const totalUsers = memberSubmissionSummary.value.totalUsers;
-
-
-    const periodCounts = memberSubmissionSummary.value.periodCounts;
-
-    if (periodCounts.length === 0 || totalUsers === 0) {
-
-        return { series: [], categories: [] };
-    }
-
-
-
-    const categories = periodCounts.map(p => p.label.replace('สมาชิกที่กรอก ', ''));
-
-
-    const seriesDataSubmitted = periodCounts.map(p => p.count);
-
-
-    const seriesDataNotSubmitted = periodCounts.map(p => totalUsers - p.count);
-
-    return {
-        series: [
-            { name: 'สมาชิกที่กรอก', data: seriesDataSubmitted },
-            { name: 'สมาชิกที่ยังไม่กรอก', data: seriesDataNotSubmitted }
-        ],
-        categories: categories
-    };
-});
-
-
-
-
-
-
-const monthlyBarChartKey = ref(0);
-
-
-const monthlyBarChartOptions = ref({
-    chart: {
-        type: 'bar',
-        height: 350,
-        stacked: true,
-        fontFamily: 'inherit',
-        foreColor: '#adb0bb',
-        toolbar: { show: true, tools: { download: true } },
-    },
-    plotOptions: {
-        bar: {
-            horizontal: false,
-            columnWidth: '60%',
-        },
-    },
-    dataLabels: {
-        enabled: true,
-        formatter: (val: number) => val.toLocaleString('th-TH', { maximumFractionDigits: 0 })
-    },
-    stroke: {
-        show: true,
-        width: 2,
-        colors: ['transparent']
-    },
-    xaxis: {
-        categories: [] as string[],
-        title: {
-            text: 'ช่วงเวลาที่เลือก'
-        }
-    },
-    yaxis: {
-        title: {
-            text: 'จำนวนสมาชิก (คน)'
-        }
-    },
-    fill: {
-        opacity: 1
-    },
-    tooltip: {
-        y: {
-            formatter: (val: number) => val.toLocaleString('th-TH', { maximumFractionDigits: 0 }) + ' คน'
-        }
-    },
-    legend: {
-        position: 'top',
-        horizontalAlign: 'center'
-    },
-    grid: {
-        show: true,
-        strokeDashArray: 4,
-        borderColor: 'rgba(0, 0, 0, 0.1)'
-    },
-});
-
-watch(monthlySubmissionBarChartData, (newData) => {
-
-    monthlyBarChartOptions.value.xaxis.categories = newData.categories;
-
-    monthlyBarChartKey.value += 1;
-});
-
-
-
-
-
-const memberTypeSubmissionChartData = computed(() => {
-
-    const typesToTrack = ['สามัญ', 'สมทบ', 'วิสามัญ ก'];
-
-
-    const allMembers = summaryData.value?.membership_data || [];
-
-
-    const targetPeriods = tablePeriods.value.filter(p => p.key !== 'TOTAL_PERIODS');
-
-
-    if (targetPeriods.length === 0 || allMembers.length === 0) {
-        return { series: [], categories: typesToTrack };
-    }
-
-    const submittedSeriesData: number[] = [];
-    const notSubmittedSeriesData: number[] = [];
-
-
-    typesToTrack.forEach(type => {
-
-
-        const membersInType = allMembers.filter(m => m.member_type === type);
-        const totalInType = membersInType.length;
-
-
-        const submittedMembersInThisType = new Set<string>();
-
-        membersInType.forEach(member => {
-
-            const hasSubmissionInPeriod = targetPeriods.some(period => {
-                const year = period.year;
-                const month = period.monthIndex;
-
-                return (month && member.submissions_in_period[year]?.includes(month)) || false;
-            });
-
-            if (hasSubmissionInPeriod) {
-                submittedMembersInThisType.add(member.member_id);
-            }
-        });
-
-        const submittedCount = submittedMembersInThisType.size;
-
-
-        submittedSeriesData.push(submittedCount);
-        notSubmittedSeriesData.push(totalInType - submittedCount);
-    });
-
-
-    return {
-        series: [
-            { name: 'สมาชิกที่กรอก (ในช่วงที่เลือก)', data: submittedSeriesData },
-            { name: 'สมาชิกที่ยังไม่กรอก (ในช่วงที่เลือก)', data: notSubmittedSeriesData }
-        ],
-        categories: typesToTrack
-    };
-});
-
-
-
-
-
-
-
-const memberTypeBarChartKey = ref(0);
-
-
-const memberTypeBarChartOptions = ref({
-    chart: {
-        type: 'bar',
-        height: 350,
-        stacked: true,
-        fontFamily: 'inherit',
-        foreColor: '#adb0bb',
-        toolbar: { show: true, tools: { download: true } },
-    },
-    plotOptions: {
-        bar: {
-            horizontal: false,
-            columnWidth: '60%',
-        },
-    },
-    dataLabels: {
-        enabled: true,
-        formatter: (val: number) => val.toLocaleString('th-TH', { maximumFractionDigits: 0 })
-    },
-    stroke: {
-        show: true,
-        width: 2,
-        colors: ['transparent']
-    },
-    xaxis: {
-
-        categories: ['สามัญ', 'สมทบ', 'วิสามัญ ก'] as string[],
-        title: {
-            text: 'ประเภทสมาชิก'
-        }
-    },
-    yaxis: {
-        title: {
-            text: 'จำนวนสมาชิก (คน)'
-        }
-    },
-    fill: {
-        opacity: 1
-    },
-    tooltip: {
-        y: {
-            formatter: (val: number) => val.toLocaleString('th-TH', { maximumFractionDigits: 0 }) + ' คน'
-        }
-    },
-    legend: {
-        position: 'top',
-        horizontalAlign: 'center'
-    },
-    grid: {
-        show: true,
-        strokeDashArray: 4,
-        borderColor: 'rgba(0, 0, 0, 0.1)'
-    },
-});
-
-
-watch(memberTypeSubmissionChartData, (newData) => {
-
-    memberTypeBarChartOptions.value.xaxis.categories = newData.categories;
-
-    memberTypeBarChartKey.value += 1;
-});
-
-
-// ====================================================================
-// *** [ส่วนที่เพิ่ม]: ฟังก์ชันและเมธอดสำหรับการ Export Excel (Vertical Structure + Styling) ***
-// ====================================================================
-
-interface ExportResult {
-    data: any[][];
-    merges: any[];
-    cols?: { wch: number }[];
-    customStyle?: (ws: XLSX.WorkSheet, headerRows: number) => void;
-    headerRows: number;
+    const currentValue = getMonthlyGrandTotal(monthValue, metric);
+    const previousValue = getMonthlyGrandTotal(prevMonthValue, metric);
+    return calculateMoMPercent(currentValue, previousValue);
 }
 
-// --------------------------------------------------------------------
-// 1. Helper Function: สำหรับการแปลงตารางสรุป (Vertical) และคำนวณ Merge
-// --------------------------------------------------------------------
-// ใช้สำหรับ Sheet 4, 5, 6
-const createVerticalTableExport = (
-    tableData: TableCategory[] | RegionCategoryGroup[],
-    periods: PeriodItem[],
-    isRegionCategory: boolean = false,
-    isRegionAndCategory: boolean = false
-): ExportResult => {
-    const finalData: any[][] = [];
-    const merges: any[] = [];
-    const periodsToDisplay = periods.filter(p => p.key !== 'TOTAL_PERIODS');
-    const lp = periodsToDisplay.pop() || null;
-
-    // --- 1. Header Generation ---
-    let headerRow: any[] = ['กลุ่มหลัก', 'รายละเอียด', ...periods.map(p => p.label)];
-    let finalHeaders: any[][] = [];
-
-    // Adjust header for different table types
-    if (isRegionAndCategory) {
-        finalHeaders.push(['ภูมิภาค', 'ช่วงมูลค่าบ้าน', 'รายละเอียด', ...periods.map(p => p.label)]); // Row 0
-        finalHeaders.push(['', '', '', ...periods.map(p => p.label)]); // Row 1 (for MoM/YTD label)
-    } else if (!isRegionCategory) { // Monthly Report Table (Sheet 4)
-        finalHeaders.push(['มูลค่าบ้าน', 'รายละเอียด', ...periods.map(p => p.label)]); // Row 0
-        finalHeaders.push(['', '', ...periods.map(p => p.label)]); // Row 1 (for MoM/YTD label)
-    } else { // Region Report Table (Sheet 5)
-        finalHeaders.push(['ภูมิภาค', 'รายละเอียด', ...periods.map(p => p.label)]); // Row 0
-        finalHeaders.push(['', '', ...periods.map(p => p.label)]); // Row 1 (for MoM/YTD label)
+// (7.E) Computed สำหรับ Chart MoM% (จาก house.vue)
+const chartMoMData = computed(() => {
+    if (selectedMonths.value.length === 0) {
+        return { percent: null, label: '', hasPreviousMonth: false };
     }
-
-    const hasGrowth = lp && lp.monthIndex;
-    if (hasGrowth) {
-        finalHeaders[0].push('MoM%', 'YTD%');
-        finalHeaders[1].push('อัตราเติบโต', 'อัตราเติบโต');
+    const lastSelectedMonth = Math.max(...selectedMonths.value);
+    const prevMonthValue = lastSelectedMonth - 1;
+    if (lastSelectedMonth === 1 || !detailedTableData.value[prevMonthValue]) {
+        const label = lastSelectedMonth === 1 ? '(ม.ค. ไม่มีข้อมูล MoM)' : '';
+        return { percent: null, label: label, hasPreviousMonth: false };
     }
+    const metricKey = selectedHighlight.value || 'value';
+    const percent = getMonthTotalMoM(lastSelectedMonth, metricKey);
+    const prevMonthShort = allMonthItems.find(m => m.value === prevMonthValue)?.short || '';
+    const label = `MoM % (เทียบ ${prevMonthShort}.)`;
+    return { percent: percent, label: label, hasPreviousMonth: true };
+});
 
-    // --- 2. Data Row Generation and Merges ---
-    let currentRow = 0; // Relative to data rows (excluding finalHeaders)
-    let headerRowsCount = finalHeaders.length;
+// (7.F) Helpers จัดรูปแบบ % (จาก house.vue)
+function formatPercentage(value: number | null): string {
+    if (value === null) return '';
+    if (value === 0) return '';
+    const prefix = value > 0 ? '+' : '';
+    return `(${prefix}${value.toFixed(1)}%)`;
+};
+function getPercentageColor(value: number | null): string {
+    if (value === null) return 'text-grey';
+    if (value > 0) return 'text-success';
+    if (value < 0) return 'text-error';
+    return 'text-grey';
+};
 
-    (tableData as any[]).forEach((group: TableCategory | RegionCategoryGroup, groupIndex: number) => {
-        const primaryGroupKey = isRegionAndCategory ? (group as RegionCategoryGroup).regionName : (group as TableCategory).categoryName;
 
-        const secondaryGroups = isRegionAndCategory ? (group as RegionCategoryGroup).categories : [group as TableCategory];
+// ⭐️ [ใหม่] (8.A) `dynamicFilename` (จาก house.vue)
+const dynamicFilename = computed(() => {
+    const cleanedSubtitle = filterSubtitle.value
+        .replace(/[\(\)]/g, '') // ลบวงเล็บ
+        .replace(/\s+/g, '_')   // แทนที่ช่องว่างด้วย _
+        .replace(/__/g, '_')
+        .replace(/_-_/g, '_');
 
-        secondaryGroups.forEach((category, categoryIndex) => {
-            const secondaryGroupKey = category.categoryName;
-            const groupRowCount = category.rows.length;
+    // ⭐️ [ปรับปรุง] เปลี่ยนชื่อไฟล์
+    const baseName = `รายงานสรุปภูมิภาค${cleanedSubtitle || ''}`;
 
-            category.rows.forEach((row, rowIndex) => {
-                const isTotalRow = primaryGroupKey === 'รวมทั่วประเทศ' || secondaryGroupKey === 'รวม' || primaryGroupKey === 'รวม';
+    return baseName.replace(/[/\\?%*:|"<>]/g, '');
+});
 
-                let rowData: any[] = [];
+// ⭐️ [ใหม่] (8.B) `blobToDataURL` (จาก house.vue)
+// (Helper นี้สำหรับ PDF แต่ควรมีไว้)
+const blobToDataURL = (blob: Blob): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            resolve(reader.result as string);
+        };
+        reader.onerror = (error) => reject(error);
+        reader.readAsDataURL(blob);
+    });
+};
 
-                let colIndex = 0;
 
-                // Col 0: Primary Group (Region or Price Range)
-                if (rowIndex === 0 && (!isRegionAndCategory || categoryIndex === 0)) {
-                    const mergeSpan = isRegionAndCategory ? (group as RegionCategoryGroup).categories.length * groupRowCount : groupRowCount;
-                    merges.push({ s: { r: currentRow + headerRowsCount, c: 0 }, e: { r: currentRow + headerRowsCount + mergeSpan - 1, c: 0 } });
-                    rowData.push(primaryGroupKey);
-                } else {
-                    rowData.push('');
-                }
-                colIndex++;
+// ⭐️ [ปรับปรุง] (8.C) `exportToExcel` (แก้ไขใหม่ทั้งหมดให้ตรงกับตาราง HTML)
+const exportToExcel = async () => {
+    exportLoading.value = true;
+    showSnackbar.value = false;
 
-                // Col 1: Secondary Group (Price Range or Metric Name)
-                if (isRegionAndCategory) {
-                    if (rowIndex === 0) {
-                        const mergeSpan = groupRowCount;
-                        merges.push({ s: { r: currentRow + headerRowsCount, c: 1 }, e: { r: currentRow + headerRowsCount + mergeSpan - 1, c: 1 } });
-                        rowData.push(secondaryGroupKey);
-                    } else {
-                        rowData.push('');
-                    }
-                    colIndex++;
-                }
+    try {
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('สรุปรายเดือน (ภูมิภาค x เดือน)');
+        const fontName = 'TH Sarabun PSK'; // ⭐️ (Optional) ถ้าต้องการฟอนต์ไทย
 
-                // Metric Name Column (Col 1 or 2)
-                rowData.push(row.metricName);
-                colIndex++;
+        // --- 1. Title Row ---
+        const title = `ตารางสรุปยอดรายเดือน (ภูมิภาค x เดือน) ${filterSubtitle.value}`;
+        const titleRow = worksheet.addRow([title]);
+        titleRow.font = { name: fontName, bold: true, size: 16 };
+        // ⭐️ คำนวณจำนวนคอลัมน์ใหม่ = 1 (Label) + จำนวนเดือน + 1 (Total)
+        worksheet.mergeCells(titleRow.number, 1, titleRow.number, displayedMonths.value.length + 2);
 
-                // Period Data Columns
-                periods.forEach(p => {
-                    const value = row.data[p.key] || 0;
-                    rowData.push(row.format(value).replace(/,/g, ''));
+        // --- 2. Header Row ---
+        const headerRowData: string[] = ['(ภูมิภาค / Metric)'];
+        displayedMonths.value.forEach(month => headerRowData.push(month.short));
+        headerRowData.push('รวม');
+
+        const headerRow = worksheet.addRow(headerRowData);
+        headerRow.font = { name: fontName, bold: true, size: 12 };
+        headerRow.alignment = { horizontal: 'center' };
+        headerRow.eachCell((cell: Cell) => {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'D3D3D3' } };
+            cell.border = { top: { style: 'thin' as BorderStyle }, left: { style: 'thin' as BorderStyle }, right: { style: 'thin' as BorderStyle }, bottom: { style: 'thin' as BorderStyle } };
+        });
+
+        // Helper function สำหรับกำหนด format ตัวเลข
+        const getNumFmt = (field: string) => {
+            return (field === 'unit') ? '#,##0' : '#,##0.00';
+        }
+
+        // ⭐️ [ใหม่] Helper สำหรับดึงค่า MoM% (ตัวเลข)
+        const getMoM_VerticalTotal = (month: number, region: string, field: keyof RegionMetrics): number | null => {
+            const priorMonth = month - 1;
+            if (month === 1 || !detailedTableData.value[priorMonth]) return null;
+            const currentValue = getMonthlyVerticalTotal(month, region, field);
+            const priorValue = getMonthlyVerticalTotal(priorMonth, region, field);
+            return calculateMoMPercent(currentValue, priorValue);
+        }
+
+        // --- 3. Data Rows (วนตาม Region) ---
+        regions.value.forEach((region) => {
+            // 3.1: แถวชื่อภูมิภาค
+            const regionTitleRow = worksheet.addRow([region]);
+            regionTitleRow.font = { name: fontName, bold: true, size: 12, color: { argb: 'FF725AF2' } };
+            regionTitleRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F5F5' } };
+            worksheet.mergeCells(regionTitleRow.number, 1, regionTitleRow.number, headerRowData.length);
+
+            // 3.2: แถวข้อมูลย่อย (unit, value, area, price_per_sqm)
+            dataTypes.forEach((field) => {
+                const metricLabel = dataTypeLabels[field];
+                const rowData: (string | number)[] = [`  ${metricLabel}`];
+                const numFmt = getNumFmt(field);
+                const fieldKey = field as keyof RegionMetrics;
+
+                // เพิ่มข้อมูลรายเดือน
+                displayedMonths.value.forEach(month => {
+                    rowData.push(getMonthlyVerticalTotal(month.value, region, fieldKey));
                 });
 
-                // Growth Columns (MoM, YTD)
-                if (hasGrowth) {
-                    const momRate = row.growth.mom;
-                    const ytdRate = row.growth.ytd;
+                // เพิ่มข้อมูล "ผลรวมแนวนอน" (คอลัมน์ รวม)
+                rowData.push(getRegionHorizontalTotal(region, fieldKey));
 
-                    // MoM Cell
-                    rowData.push(momRate !== null ? `${momRate.toFixed(2)}%` : '-');
+                const dataRow = worksheet.addRow(rowData);
+                dataRow.font = { name: fontName, size: 11 };
 
-                    // YTD Cell
-                    rowData.push(ytdRate !== null ? `${ytdRate.toFixed(2)}%` : '-');
+                // กำหนดสไตล์และ Format
+                dataRow.getCell(1).alignment = { horizontal: 'left' };
+                for (let i = 2; i <= rowData.length; i++) {
+                    const cell = dataRow.getCell(i);
+                    cell.numFmt = numFmt;
+                    cell.alignment = { horizontal: 'right' };
+                    if (i === rowData.length) {
+                        cell.font = { name: fontName, bold: true, size: 11 };
+                        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3E0' } };
+                    }
                 }
 
-                finalData.push(rowData);
-                currentRow++;
+                // 3.3: แถว MoM%
+                if (showMoM.value) {
+                    const momRowData: (string | number)[] = [`  (MoM%)`];
+                    displayedMonths.value.forEach(month => {
+                        const momValue = getMoM_VerticalTotal(month.value, region, fieldKey);
+                        // แปลง 10.5 -> 0.105 (สำหรับ Excel)
+                        momRowData.push(momValue !== null ? momValue / 100 : '-');
+                    });
+                    momRowData.push(''); // คอลัมน์ "รวม" ของ MoM ไม่มี
+
+                    const momRow = worksheet.addRow(momRowData);
+                    momRow.font = { name: fontName, italic: true, size: 10, color: { argb: 'FF555555' } };
+
+                    // สไตล์สำหรับแถว MoM
+                    momRow.getCell(1).alignment = { horizontal: 'left' };
+                    for (let i = 2; i <= momRowData.length; i++) {
+                        const cell = momRow.getCell(i);
+                        if (typeof cell.value === 'number') {
+                            cell.numFmt = '0.0"%"'; // Format เป็น %
+                            cell.alignment = { horizontal: 'right' };
+                        } else {
+                            cell.alignment = { horizontal: 'center' };
+                        }
+                    }
+                }
             });
         });
-    });
 
-    // --- 3. Final Assembly and Styling ---
+        // --- 4. Grand Total Rows ---
+        const totalTitleRow = worksheet.addRow(['รวม (แนวตั้ง)']); // ⭐️ เปลี่ยนข้อความ
+        totalTitleRow.font = { name: fontName, bold: true, size: 12, color: { argb: 'FFF8285A' } };
+        totalTitleRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F5F5' } };
+        worksheet.mergeCells(totalTitleRow.number, 1, totalTitleRow.number, headerRowData.length);
 
-    // Calculate final merge for MoM/YTD header if needed
-    if (hasGrowth) {
-        const momYtdStartCol = finalHeaders[0].length - 2;
-        merges.push({ s: { r: 1 + 3, c: momYtdStartCol }, e: { r: 1 + 3, c: momYtdStartCol + 1 } });
-    }
+        dataTypes.forEach((field) => {
+            const metricLabel = dataTypeLabels[field];
+            const rowData: (string | number)[] = [`${metricLabel} (รวม)`];
+            const numFmt = getNumFmt(field);
+            const fieldKey = field as keyof RegionMetrics;
 
-    // Styles for TH Sarabun PSK and Bold 
-    const customStyle = (ws: XLSX.WorkSheet, startRow: number) => {
-        const fontName = 'TH Sarabun PSK';
-        const defaultStyle = { font: { name: fontName, sz: 11, color: { rgb: "000000" } }, border: { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } }, alignment: { vertical: "center", horizontal: "right" } };
-        const headerStyle = { ...defaultStyle, font: { name: fontName, sz: 12, bold: true }, fill: { fgColor: { rgb: "E9ECEF" } }, alignment: { vertical: "center", horizontal: "center" } };
-        const groupStyle = { ...defaultStyle, font: { name: fontName, sz: 11, bold: true }, fill: { fgColor: { rgb: "FFFFFF" } }, alignment: { vertical: "center", horizontal: "left" } };
-        const totalStyle = { ...defaultStyle, font: { name: fontName, sz: 11, bold: true }, fill: { fgColor: { rgb: "F0F0F0" } } };
-        const primaryTotalStyle = { ...totalStyle, font: { name: fontName, sz: 11, bold: true, color: { rgb: "3F51B5" } } }; // text-primary
-        const successStyle = { ...defaultStyle, font: { name: fontName, sz: 11, color: { rgb: "28A745" } } }; // text-success
-        const errorStyle = { ...defaultStyle, font: { name: fontName, sz: 11, color: { rgb: "DC3545" } } }; // text-error
+            // ผลรวมแนวตั้ง (รายเดือน)
+            displayedMonths.value.forEach(month => {
+                rowData.push(getMonthlyGrandTotal(month.value, fieldKey));
+            });
 
-        // Apply header styles and borders
-        for (let r = 0; r < headerRowsCount; r++) {
-            for (let c = 0; c < finalHeaders[r].length; c++) {
-                const cellRef = XLSX.utils.encode_cell({ r: r + startRow, c: c });
-                if (ws[cellRef]) { ws[cellRef].s = headerStyle; }
-            }
-        }
+            // ผลรวมทั้งหมด (Grand Total)
+            rowData.push(getMonthlyTabGrandTotal(fieldKey));
 
-        // Apply data row styles and growth rate colors
-        finalData.forEach((row, rowIndex) => {
-            const excelRow = rowIndex + headerRowsCount + startRow;
-            const primaryGroup = row[0];
-            const secondaryGroup = isRegionAndCategory ? row[1] : '';
-            const metricName = isRegionAndCategory ? row[2] : row[1];
+            const totalRow = worksheet.addRow(rowData);
+            totalRow.font = { name: fontName, bold: true, size: 12, color: { argb: 'FFF8285A' } };
 
-            const isPrimaryTotal = primaryGroup === 'รวมทั่วประเทศ' || primaryGroup === 'รวม';
-            const isSecondaryTotal = secondaryGroup === 'รวม';
-            const isTotalMetric = metricName === 'มูลค่ารวม (บาท)';
-
-            const baseRowStyle = isPrimaryTotal || isSecondaryTotal ? totalStyle : defaultStyle;
-            let currentGroupIndex = 0;
-
-            // Col 0: Primary Group
-            const cellRef0 = XLSX.utils.encode_cell({ r: excelRow, c: 0 });
-            if (row[0] !== '') {
-                ws[cellRef0].s = isPrimaryTotal ? primaryTotalStyle : groupStyle;
-            } else if (ws[cellRef0]) {
-                ws[cellRef0].s = baseRowStyle; // Apply borders even if empty
-            }
-            currentGroupIndex++;
-
-            // Col 1: Secondary Group (if applicable)
-            if (isRegionAndCategory) {
-                const cellRef1 = XLSX.utils.encode_cell({ r: excelRow, c: 1 });
-                if (row[1] !== '') {
-                    ws[cellRef1].s = isSecondaryTotal ? primaryTotalStyle : groupStyle;
-                } else if (ws[cellRef1]) {
-                    ws[cellRef1].s = baseRowStyle; // Apply borders
-                }
-                currentGroupIndex++;
-            }
-
-            // Col (1 or 2): Metric Name
-            const cellRefMetric = XLSX.utils.encode_cell({ r: excelRow, c: currentGroupIndex });
-            ws[cellRefMetric].s = { ...groupStyle, horizontal: "left", font: { ...groupStyle.font, bold: false } };
-            currentGroupIndex++;
-
-            // Period Data Columns (Numbers)
-            for (let c = currentGroupIndex; c < row.length - (hasGrowth ? 2 : 0); c++) {
-                const cellRef = XLSX.utils.encode_cell({ r: excelRow, c: c });
-                if (ws[cellRef]) {
-                    let style = { ...baseRowStyle, numFmt: (metricName.includes('(บาท)')) ? '#,##0.00' : '#,##0' };
-                    if (isPrimaryTotal && isTotalMetric) {
-                        style = { ...style, font: { ...style.font, color: primaryTotalStyle.font.color, bold: true } };
-                    }
-                    ws[cellRef].s = style;
+            totalRow.getCell(1).alignment = { horizontal: 'left' };
+            for (let i = 2; i <= rowData.length; i++) {
+                const cell = totalRow.getCell(i);
+                cell.numFmt = numFmt;
+                cell.alignment = { horizontal: 'right' };
+                if (i === rowData.length) {
+                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3E0' } };
                 }
             }
 
-            // MoM/YTD Columns (Growth)
-            if (hasGrowth) {
-                const momCol = row.length - 2;
-                const ytdCol = row.length - 1;
-
-                const momValue = row[momCol];
-                const ytdValue = row[ytdCol];
-
-                // MoM Styling
-                const momRef = XLSX.utils.encode_cell({ r: excelRow, c: momCol });
-                if (momValue !== '-') {
-                    ws[momRef].s = momValue.includes('-') ? errorStyle : successStyle;
-                } else if (ws[momRef]) { ws[momRef].s = baseRowStyle; }
-
-                // YTD Styling
-                const ytdRef = XLSX.utils.encode_cell({ r: excelRow, c: ytdCol });
-                if (ytdValue !== '-') {
-                    ws[ytdRef].s = ytdValue.includes('-') ? errorStyle : successStyle;
-                } else if (ws[ytdRef]) { ws[ytdRef].s = baseRowStyle; }
-            }
-        });
-    };
-
-    // Calculate column widths
-    const cols = [{ wch: 25 }]; // Primary Group (Default)
-    if (isRegionAndCategory) {
-        cols.push({ wch: 18 }); // Secondary Group
-        cols.push({ wch: 20 }); // Metric Name
-    } else {
-        cols.push({ wch: 20 }); // Metric Name
-    }
-    periods.forEach(() => cols.push({ wch: 12 })); // Period columns
-    if (hasGrowth) {
-        cols.push({ wch: 10 }, { wch: 10 }); // MoM, YTD
-    }
-
-    return { data: finalHeaders.concat(finalData), merges: merges, cols: cols, customStyle: customStyle, headerRows: headerRowsCount };
-};
-
-// --------------------------------------------------------------------
-// 2. Vertical Table Wrappers (Sheet 4, 5, 6)
-// --------------------------------------------------------------------
-
-// Sheet 4
-const getMonthlyReportDataForExport = (): { [key: string]: ExportResult } => {
-    const table = createVerticalTableExport(monthlyReportTableData.value, tablePeriods.value, false, false);
-    return { 'สรุปตามมูลค่าบ้าน': table };
-};
-
-// Sheet 5
-const getRegionReportDataForExport = (): { [key: string]: ExportResult } => {
-    const table = createVerticalTableExport(regionReportTableData.value, tablePeriods.value, true, false);
-    return { 'สรุปตามภูมิภาค': table };
-};
-
-// Sheet 6
-const getRegionCategoryReportDataForExport = (): { [key: string]: ExportResult } => {
-    const table = createVerticalTableExport(regionAndCategoryReportTableData.value, tablePeriods.value, true, true);
-    return { 'สรุปตามภูมิภาคและมูลค่า': table };
-};
-
-// --------------------------------------------------------------------
-// 3. ตารางอัตราการเติบโต (Sheet 1) - Vertical Metrics (ปรับจาก Transposed)
-// --------------------------------------------------------------------
-const getGrowthRateReportDataForExport = (): { [key: string]: ExportResult } => {
-    const data = growthRateReportTableData.value;
-    const periods = tablePeriods.value.filter(p => p.key !== 'TOTAL_PERIODS');
-    const showQoQValue = showQoQ.value;
-
-    if (!data || periods.length === 0) return {};
-
-    const metricsToInclude: { key: MetricGrowthKey, name: string }[] = [
-        { key: 'total_units', name: 'จำนวนหลัง' },
-        { key: 'total_value', name: 'มูลค่ารวม (บาท)' },
-    ];
-
-    const metricGroups = [...valueCategories, 'รวม'];
-
-    const header = ['ช่วงมูลค่าบ้าน', 'ตัวชี้วัด', ...periods.map(p => p.label)];
-    const headersCount = 1;
-    const finalData: any[][] = [header];
-    const merges: any[] = [];
-    let currentRow = 1;
-
-    metricGroups.forEach(categoryName => {
-        const categoryData = growthRateReportTableData.value.find(c => c.categoryName === categoryName);
-        if (!categoryData) return;
-
-        const startRow = currentRow;
-        let rowCount = 0;
-
-        metricsToInclude.forEach((metric) => {
-            const metricKey = metric.key;
-            const formatFn = metricRows.find(r => r.key === metricKey)!.format;
-            const growthKeys: { key: keyof GrowthRateMetrics, label: string }[] = [
-                { key: 'Raw', label: metric.name + ' (ค่าดิบ)' },
-                { key: 'MoM', label: 'MoM%' },
-                { key: 'YoY', label: 'YoY%' },
-                ...(showQoQValue ? [{ key: 'QoQ' as keyof GrowthRateMetrics, label: 'QoQ%' }] : []),
-                { key: 'YTD', label: 'YTD%' },
-            ];
-
-            growthKeys.forEach((g) => {
-                const row: any[] = [];
-                const totalRowsPerGroup = metricsToInclude.length * growthKeys.length;
-
-                // Col 0: Category Name (Merged)
-                if (rowCount === 0) {
-                    merges.push({ s: { r: startRow, c: 0 }, e: { r: startRow + totalRowsPerGroup - 1, c: 0 } });
-                    row.push(categoryName);
-                } else {
-                    row.push('');
-                }
-
-                // Col 1: Indicator Name
-                row.push(g.label);
-
-                // Cols 2+: Period Values
-                periods.forEach(p => {
-                    if (g.key === 'Raw') {
-                        const value = categoryData[`${metricKey}_raw` as 'total_value_raw' | 'total_units_raw'][p.key] || 0;
-                        row.push(formatFn(value).replace(/,/g, ''));
-                    } else {
-                        const rate = categoryData[metricKey][p.key][g.key as keyof GrowthRateMetrics];
-                        row.push(rate !== null ? `${rate.toFixed(2)}%` : '-');
-                    }
+            // 4.1: แถว MoM% สำหรับ Total
+            if (showMoM.value) {
+                const momRowData: (string | number)[] = [`  (MoM%)`];
+                displayedMonths.value.forEach(month => {
+                    // ⭐️ ใช้ getMonthTotalMoM (Helper ที่มีอยู่แล้ว)
+                    const momValue = getMonthTotalMoM(month.value, fieldKey);
+                    momRowData.push(momValue !== null ? momValue / 100 : '-');
                 });
+                momRowData.push(''); // "รวม" ไม่มี MoM
 
-                finalData.push(row);
-                currentRow++;
-                rowCount++;
-            });
-        });
-    });
-
-    const customStyleGrowth = (ws: XLSX.WorkSheet, startRow: number) => {
-        const fontName = 'TH Sarabun PSK';
-        const defaultStyle = { font: { name: fontName, sz: 11 }, alignment: { horizontal: 'right', vertical: "center" }, border: { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } } };
-        const headerStyle = { ...defaultStyle, font: { name: fontName, sz: 12, bold: true }, fill: { fgColor: { rgb: "E9ECEF" } }, alignment: { vertical: "center", horizontal: "center" } };
-        const groupStyle = { ...defaultStyle, font: { name: fontName, sz: 11, bold: true }, fill: { fgColor: { rgb: "FFFFFF" } }, alignment: { vertical: "center", horizontal: "left" } };
-        const greenStyle = { ...defaultStyle, font: { name: fontName, sz: 11, color: { rgb: "28A745" } } };
-        const redStyle = { ...defaultStyle, font: { name: fontName, sz: 11, color: { rgb: "DC3545" } } };
-        const totalStyle = { ...defaultStyle, fill: { fgColor: { rgb: "F0F0F0" } }, font: { name: fontName, sz: 11, bold: true } };
-
-        // Apply header styles 
-        for (let c = 0; c < finalData[0].length; c++) {
-            const cellRef = XLSX.utils.encode_cell({ r: startRow, c: c });
-            if (ws[cellRef]) { ws[cellRef].s = headerStyle; }
-        }
-
-        // Apply data row styles and colors
-        finalData.slice(1).forEach((row, rowIndex) => {
-            const excelRow = rowIndex + headersCount + startRow;
-            const categoryName = row[0];
-            const indicatorName = row[1];
-
-            const isTotalCategory = categoryName === 'รวม';
-
-            // Col 0: Category Group
-            const cellRef0 = XLSX.utils.encode_cell({ r: excelRow, c: 0 });
-            if (row[0] !== '') {
-                ws[cellRef0].s = isTotalCategory ? totalStyle : groupStyle;
-            } else if (ws[cellRef0]) { ws[cellRef0].s = isTotalCategory ? totalStyle : defaultStyle; }
-
-            // Col 1: Indicator Name
-            const cellRef1 = XLSX.utils.encode_cell({ r: excelRow, c: 1 });
-            ws[cellRef1].s = isTotalCategory ? totalStyle : groupStyle;
-
-            // Cols 2+: Period Values (Growth Rates)
-            for (let c = 2; c < row.length; c++) {
-                const cellRef = XLSX.utils.encode_cell({ r: excelRow, c: c });
-                if (ws[cellRef]) {
-                    const value = row[c];
-                    let style = isTotalCategory ? totalStyle : defaultStyle;
-
-                    if (indicatorName.includes('ค่าดิบ')) {
-                        style = { ...style, numFmt: (indicatorName.includes('(บาท)')) ? '#,##0.00' : '#,##0' };
-                    } else if (indicatorName.includes('%')) { // Growth Rate columns
-                        if (value !== '-' && parseFloat(value) > 0) { style = greenStyle; }
-                        else if (value !== '-' && parseFloat(value) < 0) { style = redStyle; }
-                    }
-                    ws[cellRef].s = style;
-                }
-            }
-        });
-    };
-
-    const cols: { wch: number }[] = [{ wch: 20 }, { wch: 30 }];
-    periods.forEach(() => cols.push({ wch: 15 }));
-
-    // Return as a single sheet (Summary of growth rates)
-    return { 'อัตราเติบโต (สรุป)': { data: finalData, merges: merges, cols: cols, customStyle: customStyleGrowth, headerRows: 1 } };
-};
-
-// --------------------------------------------------------------------
-// 4. ตารางสถานะการกรอก (Sheet 2) - Member Summary (Non-Transposed/Vertical)
-// --------------------------------------------------------------------
-const getMemberSummaryReportDataForExport = (): { [key: string]: ExportResult } => {
-    const summary = memberSubmissionSummary.value;
-    const periods = summary.periodCounts;
-
-    const header = ['รายละเอียด', 'จำนวนสมาชิก (คน)'];
-    const data: any[][] = [
-        ['สมาชิกทั้งหมด (ประเภท User)', summary.totalUsers.toLocaleString('th-TH')],
-        ['', ''],
-        ['จำนวนสมาชิกที่กรอกในแต่ละช่วงเวลา:', ''],
-        ...periods.map(p => [`> ${p.label}`, p.count.toLocaleString('th-TH')]),
-        ['', ''],
-        [summary.submittedLabel, summary.submittedTotal.toLocaleString('th-TH')],
-        [summary.notSubmittedLabel, summary.notSubmittedTotal.toLocaleString('th-TH')]
-    ];
-
-    const cols = [{ wch: 40 }, { wch: 15 }];
-
-    const customStyleMemberSummary = (ws: XLSX.WorkSheet, startRow: number) => {
-        const fontName = 'TH Sarabun PSK';
-        const defaultStyle = { font: { name: fontName, sz: 11 }, border: { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } }, alignment: { vertical: "center", horizontal: "right" } };
-        const headerStyle = { ...defaultStyle, font: { name: fontName, sz: 12, bold: true }, fill: { fgColor: { rgb: "E9ECEF" } }, alignment: { vertical: "center", horizontal: "center" } };
-        const redStyle = { ...defaultStyle, font: { name: fontName, sz: 11, color: { rgb: "DC3545" }, bold: true }, fill: { fgColor: { rgb: "F8D7DA" } } }; // bg-red-lighten-5
-        const boldStyle = { ...defaultStyle, font: { name: fontName, sz: 11, bold: true }, alignment: { vertical: "center", horizontal: "left" } };
-
-        // Apply header styles
-        for (let c = 0; c < header.length; c++) {
-            const cellRef = XLSX.utils.encode_cell({ r: startRow, c: c });
-            if (ws[cellRef]) { ws[cellRef].s = headerStyle; }
-        }
-
-        // Apply red/bold style to the last row (not submitted) and bold to key rows
-        data.forEach((row, rowIndex) => {
-            const excelRow = rowIndex + 1 + startRow;
-            const isLastRow = rowIndex === data.length - 1;
-            const isBoldRow = rowIndex === 0 || rowIndex === 3 || rowIndex === 6;
-
-            for (let c = 0; c < header.length; c++) {
-                const cellRef = XLSX.utils.encode_cell({ r: excelRow, c: c });
-                if (ws[cellRef]) {
-                    if (isLastRow) {
-                        ws[cellRef].s = redStyle;
-                    } else if (isBoldRow) {
-                        ws[cellRef].s = c === 0 ? boldStyle : { ...defaultStyle, font: boldStyle.font };
-                    } else if (row[c] !== '') {
-                        ws[cellRef].s = defaultStyle;
+                const momRow = worksheet.addRow(momRowData);
+                momRow.font = { name: fontName, italic: true, size: 10, color: { argb: 'FF555555' } };
+                momRow.getCell(1).alignment = { horizontal: 'left' };
+                for (let i = 2; i <= momRowData.length; i++) {
+                    const cell = momRow.getCell(i);
+                    if (typeof cell.value === 'number') {
+                        cell.numFmt = '0.0"%"';
+                        cell.alignment = { horizontal: 'right' };
                     } else {
-                        ws[cellRef].s = { ...defaultStyle, border: { top: { style: "none" }, bottom: { style: "none" }, left: { style: "none" }, right: { style: "none" } } }; // Hide border for blank row
-                    }
-                    if (c === 0 && !isLastRow) {
-                        ws[cellRef].s = { ...(ws[cellRef].s || defaultStyle), horizontal: "left" };
+                        cell.alignment = { horizontal: 'center' };
                     }
                 }
             }
         });
-    };
 
+        // --- 5. Set Column Widths ---
+        worksheet.getColumn(1).width = 30; // คอลัมน์ (ภูมิภาค / Metric)
+        for (let i = 2; i <= headerRowData.length; i++) {
+            worksheet.getColumn(i).width = 18; // คอลัมน์เดือน และ รวม
+        }
 
-    return { 'สรุปสถานะสมาชิก': { data: [header, ...data], merges: [], cols: cols, customStyle: customStyleMemberSummary, headerRows: 1 } };
-};
+        // --- 6. Write file ---
+        const buffer = await workbook.xlsx.writeBuffer();
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheet.sheet' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${dynamicFilename.value}.xlsx`; // ⭐️ ใช้ dynamicFilename
+        a.click();
+        window.URL.revokeObjectURL(url);
 
+        snackbarText.value = 'สร้างไฟล์ Excel สำเร็จแล้ว';
+        snackbarColor.value = 'success';
+        showSnackbar.value = true;
 
-// --------------------------------------------------------------------
-// 5. ตารางสถานะการกรอกรายเดือน (Sheet 3) - Member Monthly Submission (Non-Transposed)
-// --------------------------------------------------------------------
-const getMemberMonthlySubmissionDataForExport = (): { [key: string]: ExportResult } => {
-    const data = memberMonthlySubmissionTableData.value;
-    const periods = tablePeriods.value.filter(p => p.key !== 'TOTAL_PERIODS');
-
-    const periodHeaders = periods.map(p => p.label);
-
-    // Header Row 1: Merge 'สถานะการกรอก' over periods
-    const headerRow1 = ['รายชื่อสมาชิก', 'ประเภท', 'ยอดรวม', ...periods.map(() => 'สถานะการกรอก')];
-    // Header Row 2: Period Labels
-    const headerRow2 = ['รายชื่อสมาชิก', 'ประเภท', 'ยอดรวม', ...periodHeaders];
-
-    const dataRows = data.map(m => {
-        return [
-            m.name,
-            m.member_type,
-            m.total_submitted_in_period.toLocaleString('th-TH'),
-            ...periods.map(p => m.submissions[p.key] || '-')
-        ];
-    });
-
-    const merges: any[] = [];
-    // Merge periods (Horizontal)
-    if (periods.length > 1) {
-        merges.push({ s: { r: 0, c: 3 }, e: { r: 0, c: 3 + periods.length - 1 } });
+    } catch (err: any) {
+        console.error('Error exporting to Excel:', err);
+        snackbarText.value = `ไม่สามารถสร้าง Excel ได้: ${err.message || 'เกิดข้อผิดพลาดไม่ทราบสาเหตุ'}`;
+        snackbarColor.value = 'error';
+        showSnackbar.value = true;
+    } finally {
+        exportLoading.value = false;
     }
-
-    // Merge first three columns (Vertical)
-    merges.push({ s: { r: 0, c: 0 }, e: { r: 1, c: 0 } });
-    merges.push({ s: { r: 0, c: 1 }, e: { r: 1, c: 1 } });
-    merges.push({ s: { r: 0, c: 2 }, e: { r: 1, c: 2 } });
-
-    const finalAOAData = [headerRow1, headerRow2.map((h, i) => i < 3 ? '' : h), ...dataRows];
-
-    const cols = [{ wch: 25 }, { wch: 15 }, { wch: 10 }];
-    periods.forEach(() => cols.push({ wch: 8 }));
-
-    const customStyleMemberMonthly = (ws: XLSX.WorkSheet, startRow: number) => {
-        const fontName = 'TH Sarabun PSK';
-        const defaultStyle = { font: { name: fontName, sz: 11 }, alignment: { horizontal: 'center', vertical: "center" }, border: { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } } };
-        const headerStyle = { ...defaultStyle, font: { name: fontName, sz: 12, bold: true }, fill: { fgColor: { rgb: "E9ECEF" } } };
-        const successStyle = { ...defaultStyle, font: { name: fontName, sz: 11, color: { rgb: "28A745" }, bold: true } }; // text-success
-        const errorStyle = { ...defaultStyle, font: { name: fontName, sz: 11, color: { rgb: "DC3545" } } }; // text-error
-        const boldStyle = { ...defaultStyle, font: { name: fontName, sz: 11, bold: true }, alignment: { horizontal: "left", vertical: "center" } };
-
-        // Apply header styles
-        for (let r = 0; r < 2; r++) {
-            for (let c = 0; c < finalAOAData[r].length; c++) {
-                const cellRef = XLSX.utils.encode_cell({ r: r + startRow, c: c });
-                if (ws[cellRef]) { ws[cellRef].s = headerStyle; }
-            }
-        }
-
-        // Apply data row styles (X/ - colors)
-        dataRows.forEach((row, rowIndex) => {
-            const excelRow = rowIndex + 2 + startRow; // +2 for 2 header rows
-
-            // Name/Type/Total columns
-            for (let c = 0; c < 3; c++) {
-                const cellRef = XLSX.utils.encode_cell({ r: excelRow, c: c });
-                if (ws[cellRef]) {
-                    ws[cellRef].s = (c === 0 || c === 2) ? boldStyle : defaultStyle;
-                    if (c === 2) { ws[cellRef].s = { ...(ws[cellRef].s || defaultStyle), horizontal: "right" }; } // align right for total
-                    if (c === 1) { ws[cellRef].s = { ...(ws[cellRef].s || defaultStyle), horizontal: "left" }; }
-                }
-            }
-
-            // Status columns (X / -)
-            for (let c = 3; c < row.length; c++) {
-                const cellRef = XLSX.utils.encode_cell({ r: excelRow, c: c });
-                if (ws[cellRef]) {
-                    if (row[c] === 'X') {
-                        ws[cellRef].s = successStyle;
-                    } else if (row[c] === '-') {
-                        ws[cellRef].s = errorStyle;
-                    } else {
-                        ws[cellRef].s = defaultStyle;
-                    }
-                }
-            }
-        });
-    };
-
-    return { 'สถานะการกรอกรายเดือน': { data: finalAOAData, merges: merges, cols: cols, customStyle: customStyleMemberMonthly, headerRows: 2 } };
 };
 
-// --------------------------------------------------------------------
-// 6. ฟังก์ชันหลักสำหรับรวมและ Export
-// --------------------------------------------------------------------
-const exportToExcel = () => {
-    // 1. เตรียมข้อมูลสำหรับแต่ละชีต
-    const sheet1 = getGrowthRateReportDataForExport();       // อัตราเติบโต (แยกตามมูลค่าบ้าน)
-    const sheet4 = getMonthlyReportDataForExport();          // ตารางสรุปยอดเซ็นสัญญา แยกตามมูลค่าบ้าน (Vertical)
-    const sheet5 = getRegionReportDataForExport();           // ตารางสรุปยอดเซ็นสัญญา แยกตามภูมิภาค (Vertical)
-    const sheet6 = getRegionCategoryReportDataForExport();   // ตารางสรุปยอดเซ็นสัญญา แยกตามภูมิภาคและมูลค่า (Vertical)
-    const sheet2 = getMemberSummaryReportDataForExport();    // รายงานสถานะการกรอกสัญญาของสมาชิก (Vertical)
-    const sheet3 = getMemberMonthlySubmissionDataForExport(); // ตารางสถานะการกรอกสัญญาต่อเดือน (Vertical)
 
 
-    // 2. จัดเรียงลำดับชีตตามที่ user ต้องการ: 1, 2, 3, 4, 5, 6
-    const allSheets: Record<string, ExportResult> = {
-        '1. อัตราเติบโต (มูลค่าบ้าน)': sheet1['อัตราเติบโต (สรุป)'],
-        '2. สรุปสถานะสมาชิก': sheet2['สรุปสถานะสมาชิก'],
-        '3. สถานะการกรอกรายเดือน': sheet3['สถานะการกรอกรายเดือน'],
-        '4. สรุปตามมูลค่าบ้าน': sheet4['สรุปตามมูลค่าบ้าน'],
-        '5. สรุปตามภูมิภาค': sheet5['สรุปตามภูมิภาค'],
-        '6. สรุปตามภูมิภาคและมูลค่า': sheet6['สรุปตามภูมิภาคและมูลค่า'],
-    };
+// ⭐️ [ใหม่] (8.D) `exportToPdf` (จาก house.vue, ปรับปรุง ID)
+const exportToPdf = async () => {
+    exportLoading.value = true;
+    showSnackbar.value = false;
 
-
-    if (Object.keys(allSheets).length === 0) {
-        console.warn('No data available for export.');
-        alert('ไม่พบข้อมูลสำหรับ Export กรุณาเลือกช่วงเวลาหรือตรวจสอบข้อมูล');
+    // ⭐️ [ปรับปรุง] เปลี่ยน ID เป้าหมาย
+    const tableElement = document.getElementById('region-table-to-export');
+    if (!tableElement) {
+        console.error('Table element not found! (ID: region-table-to-export)');
+        snackbarText.value = 'ไม่พบองค์ประกอบตาราง (Table element not found!)';
+        snackbarColor.value = 'error';
+        showSnackbar.value = true;
+        exportLoading.value = false;
         return;
     }
 
-    // 3. สร้าง Workbook และเพิ่มชีต
-    const workbook = XLSX.utils.book_new();
-    const chartSubtitleText = chartSubtitle.value;
-    const blankRowsBeforeData = 3; // Title + Subtitle + Blank row
+    try {
+        // === 1. โหลดทรัพยากร (ฟอนต์) ===
+        const fontUrl = '/fonts/THSarabunNew.ttf';
+        let fontBase64 = '';
+        try {
+            const fontResponse = await fetch(fontUrl);
+            if (!fontResponse.ok) throw new Error('Failed to fetch local font: /fonts/THSarabunNew.ttf');
+            const fontBlob = await fontResponse.blob();
+            const fontDataURL = await blobToDataURL(fontBlob);
+            fontBase64 = fontDataURL.split(',')[1];
+            if (!fontBase64) throw new Error('Failed to parse Base64 from font Data URL');
 
-    for (const [sheetName, { data, merges, cols, customStyle, headerRows }] of Object.entries(allSheets)) {
-        // เพิ่มแถวหัวข้อรายงาน (Title and Subtitle)
-        const reportTitle = `รายงานยอดเซ็นสัญญา: ${sheetName.replace(/^[0-9]\. /g, '').replace(/\(.+\)/g, '').trim()}`;
-        const subTitle = chartSubtitleText.startsWith('กรุณา') ? 'รายงานรวมตามปีปัจจุบัน' : chartSubtitleText;
-        const reportHeaders = [
-            [reportTitle], // Row 1: Title
-            [subTitle],    // Row 2: Subtitle
-            []             // Row 3: Blank row separator
+        } catch (fontErr: any) {
+            throw new Error(`Font loading failed: ${fontErr.message}`);
+        }
+
+        const logoUrl = '/assets/images/image-28-2.png';
+        let logoDataURL = '';
+        try {
+            const logoResponse = await fetch(logoUrl);
+            if (!logoResponse.ok) throw new Error('Logo file not found in /assets/images/image-28-2.png');
+            const logoBlob = await logoResponse.blob();
+            logoDataURL = await blobToDataURL(logoBlob);
+        } catch (imgErr) {
+            console.error(imgErr);
+        }
+
+        // === 2. สร้าง PDF และตั้งค่าฟอนต์ ===
+        const pdf = new jsPDF('p', 'mm', 'a4'); // ⭐️ ใช้ 'p' (แนวตั้ง)
+        const fontName = 'THSarabunNew';
+        const fontStyle = 'normal';
+
+        pdf.addFileToVFS('THSarabunNew.ttf', atob(fontBase64));
+        pdf.addFont('THSarabunNew.ttf', fontName, fontStyle);
+        pdf.setFont(fontName, fontStyle);
+
+        // === 3. สร้างหน้าปก (ข้อความ) ===
+        const pageWidth = pdf.internal.pageSize.getWidth();
+        const pageCenter = pageWidth / 2;
+
+        let currentY = 90;
+
+        if (logoDataURL) {
+            const logoWidth = 60;
+            const logoHeight = 70;
+            const logoX = pageCenter - (logoWidth / 2);
+            pdf.addImage(logoDataURL, 'PNG', logoX, currentY, logoWidth, logoHeight);
+            currentY += logoHeight + 15;
+        } else {
+            currentY = 100;
+        }
+
+        pdf.setFontSize(20);
+
+        // ⭐️ [ปรับปรุง] เปลี่ยน Title
+        const title = `ตารางสรุปยอดรายเดือน (ภูมิภาค x เดือน) ${filterSubtitle.value}`;
+
+        const splitTitle = pdf.splitTextToSize(title, pageWidth - 40);
+        pdf.text(splitTitle, pageCenter, currentY, { align: 'center' });
+        currentY += (splitTitle.length * 7);
+
+        const today = new Date();
+        const day = today.getDate();
+        const monthIndex = today.getMonth();
+        const year = today.getFullYear() + 543;
+        const thaiMonths = [
+            "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+            "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
         ];
+        const month = thaiMonths[monthIndex];
+        const dateString = `อัพเดตข้อมูลวันที่ ${day} ${month} ${year}`;
 
-        // ผสานเซลล์สำหรับ Title และ Subtitle
-        const maxCols = data[0].length;
-        const titleMerges = [
-            { s: { r: 0, c: 0 }, e: { r: 0, c: maxCols - 1 } },
-            { s: { r: 1, c: 0 }, e: { r: 1, c: maxCols - 1 } }
-        ];
+        currentY += 10;
+        pdf.setFontSize(15);
+        pdf.text(dateString, pageCenter, currentY, { align: 'center' });
+        // === จบหน้าปก ===
 
-        // สร้าง Worksheet โดยใช้ Title/Subtitle นำหน้า
-        const worksheet = XLSX.utils.aoa_to_sheet([...reportHeaders, ...data]);
+        // 7. ถ่ายรูปตาราง
+        const canvas = await html2canvas(tableElement, {
+            scale: 2,
+            useCORS: true,
+            logging: false,
+        });
 
-        // เลื่อน merges ที่คำนวณไว้เดิมลงมา 3 แถว (บวก Title, Subtitle, ช่องว่าง)
-        const shiftedMerges = merges.map(m => ({
-            s: { r: m.s.r + blankRowsBeforeData, c: m.s.c },
-            e: { r: m.e.r + blankRowsBeforeData, c: m.e.c }
-        }));
+        const imgData = canvas.toDataURL('image/png');
 
-        // รวม merges ทั้งหมดเข้าด้วยกัน
-        worksheet['!merges'] = [...titleMerges, ...shiftedMerges];
+        // 8. เพิ่มหน้าใหม่สำหรับตาราง
+        pdf.addPage();
 
-        // กำหนดความกว้างคอลัมน์
-        if (cols) {
-            worksheet['!cols'] = cols;
+        // 9. คำนวณสัดส่วน
+        const pageMargin = 10;
+        const pdfWidth = pdf.internal.pageSize.getWidth() - (pageMargin * 2);
+        const pdfHeight = pdf.internal.pageSize.getHeight() - (pageMargin * 2);
+
+        const imgWidth = pdfWidth;
+        const imgHeight = canvas.height * imgWidth / canvas.width;
+
+        let heightLeft = imgHeight;
+        let position = pageMargin;
+
+        pdf.addImage(imgData, 'PNG', pageMargin, position, imgWidth, imgHeight);
+        heightLeft -= pdfHeight;
+
+        // 10. วนลูปเพิ่มหน้า (เหมือนเดิม)
+        while (heightLeft > 0) {
+            position = heightLeft - imgHeight + pageMargin;
+            pdf.addPage();
+            pdf.addImage(imgData, 'PNG', pageMargin, position, imgWidth, imgHeight);
+            heightLeft -= pdfHeight;
         }
 
-        // *** [สำคัญ]: ใช้ Custom Style Function เพื่อกำหนดฟอนต์และสี ***
-        if (customStyle) {
-            customStyle(worksheet, blankRowsBeforeData);
-        }
+        // 11. บันทึกไฟล์
+        pdf.save(`${dynamicFilename.value}.pdf`);
 
-        // กำหนด style ให้กับ Title/Subtitle 
-        const fontName = 'TH Sarabun PSK';
-        const defaultTitleStyle = { font: { name: fontName, sz: 14, bold: true }, alignment: { horizontal: 'center' } };
-        const defaultSubtitleStyle = { font: { name: fontName, sz: 12 }, alignment: { horizontal: 'center' } };
-        if (worksheet[XLSX.utils.encode_cell({ r: 0, c: 0 })]) {
-            worksheet[XLSX.utils.encode_cell({ r: 0, c: 0 })].s = defaultTitleStyle;
-        }
-        if (worksheet[XLSX.utils.encode_cell({ r: 1, c: 0 })]) {
-            worksheet[XLSX.utils.encode_cell({ r: 1, c: 0 })].s = defaultSubtitleStyle;
-        }
+        snackbarText.value = 'สร้างไฟล์ PDF สำเร็จแล้ว';
+        snackbarColor.value = 'success';
+        showSnackbar.value = true;
+
+    } catch (err: any) {
+        console.error('Error exporting to PDF:', err);
+        snackbarText.value = `ไม่สามารถสร้าง PDF ได้: ${err.message || 'เกิดข้อผิดพลาดไม่ทราบสาเหตุ'}`;
+        snackbarColor.value = 'error';
+        showSnackbar.value = true;
+
+    } finally {
+        exportLoading.value = false;
+    }
+};
 
 
-        XLSX.utils.book_append_sheet(workbook, worksheet, sheetName.substring(0, 31));
+const filterSubtitle = computed(() => {
+    const yearText = `ประจำปี ${selectedYear.value}`;
+    const sortedMonthsKey = [...selectedMonths.value].sort((a, b) => a - b).join(',');
+
+    const validMonthValues = monthOptions.value.map(m => m.value);
+
+    const isQ1Full = [1, 2, 3].every(m => validMonthValues.includes(m));
+    const isQ2Full = [4, 5, 6].every(m => validMonthValues.includes(m));
+    const isQ3Full = [7, 8, 9].every(m => validMonthValues.includes(m));
+    const isQ4Full = [10, 11, 12].every(m => validMonthValues.includes(m));
+
+    const q1Months = [1, 2, 3].filter(m => validMonthValues.includes(m)).join(',');
+    const q2Months = [4, 5, 6].filter(m => validMonthValues.includes(m)).join(',');
+    const q3Months = [7, 8, 9].filter(m => validMonthValues.includes(m)).join(',');
+    const q4Months = [10, 11, 12].filter(m => validMonthValues.includes(m)).join(',');
+
+    if (sortedMonthsKey === q1Months && isQ1Full && q1Months.length > 0) return `(${yearText} - ไตรมาส 1 (มกราคม - มีนาคม))`;
+    if (sortedMonthsKey === q2Months && isQ2Full && q2Months.length > 0) return `(${yearText} - ไตรมาส 2 (เมษายน - มิถุนายน))`;
+    if (sortedMonthsKey === q3Months && isQ3Full && q3Months.length > 0) return `(${yearText} - ไตรมาส 3 (กรกฎาคม - กันยายน))`;
+    if (sortedMonthsKey === q4Months && isQ4Full && q4Months.length > 0) return `(${yearText} - ไตรมาส 4 (ตุลาคม - ธันวาคม))`;
+
+    const yearAD = selectedYear.value - 543;
+    const allMonthsCurrentYear = allMonthItems.map((m) => m.value).slice(0, currentJsMonth).join(',');
+    const allMonthsPastYear = allMonthItems.map((m) => m.value).join(',');
+
+    if (sortedMonthsKey === allMonthsCurrentYear || sortedMonthsKey === allMonthsPastYear) {
+        const allOption = quarterOptions.value.find((q) => q.value === 'all');
+        return `(${yearText} - ${allOption ? allOption.title : 'ทุกเดือน'})`;
     }
 
-    // 4. สร้างไฟล์และดาวน์โหลด
-    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const filename = `HBA_Report_${dateStr}.xlsx`;
-    XLSX.writeFile(workbook, filename);
-};</script>
+    if (selectedMonths.value.length > 0) {
+        const sortedMonthValues = [...selectedMonths.value].sort((a, b) => a - b);
+        const firstMonthValue = sortedMonthValues[0];
+        const lastMonthValue = sortedMonthValues[sortedMonthValues.length - 1];
+        const firstMonth = allMonthItems.find((m) => m.value === firstMonthValue);
+        const lastMonth = allMonthItems.find((m) => m.value === lastMonthValue);
+
+        if (!firstMonth || !lastMonth) {
+            return `(${yearText} - กำลังเลือกเดือน...)`;
+        }
+        if (firstMonthValue === lastMonthValue) {
+            return `(${yearText} - เดือน ${firstMonth.title})`;
+        } else {
+            return `(${yearText} - เดือน ${firstMonth.title} - ${lastMonth.title})`;
+        }
+    }
+    return `(${yearText} - ยังไม่ได้เลือกเดือน)`;
+});
+
+
+function getSummaryContributionPercent(region: string, field: keyof RegionMetrics): string {
+
+    if (field === 'price_per_sqm') {
+        return "";
+    }
+
+    const regionTotal = getSummaryVerticalTotal(region, field);
+    const grandTotal = getSummaryGrandTotal(field);
+
+    if (grandTotal === 0 || regionTotal === 0) {
+        return "";
+    }
+
+    const percent = (regionTotal / grandTotal) * 100;
+
+    return `<span class="contribution-percent" style="font-size: 10px; color: ##28a745; font-weight: 400; margin-left: 4px; white-space: nowrap;">(${percent.toFixed(1)}%)</span>`;
+}
+
+// ⭐️ [ใหม่] Helper (YoY) สำหรับ "ผลรวมแนวนอน" (คอลัมน์ รวม) ของ 1 Region
+// (ฟังก์ชันนี้จำเป็นสำหรับแถว "ภาค...")
+// ⭐️ [ใหม่] Helper (YoY) สำหรับ "ผลรวมแนวนอน" (คอลัมน์ รวม) ของ 1 Region
+function getRegionHorizontalTotalYoY(region: string, field: keyof RegionMetrics): number | null {
+    // 1. หาค่าปัจจุบัน (YTD) (จาก Helper ที่มีอยู่แล้ว)
+    const currentValue = getRegionHorizontalTotal(region, field);
+
+    // 2. หาค่าปีก่อน (YTD)
+    let previousValue = 0;
+    let previousTotalValue = 0;
+    let previousTotalArea = 0;
+
+    for (const month of displayedMonths.value) {
+        for (const range of priceRanges) {
+            if (field === 'price_per_sqm') {
+                previousTotalValue += getRawDataMonthly(previousYearDetailedTableData.value, month.value, region, range, 'value');
+                previousTotalArea += getRawDataMonthly(previousYearDetailedTableData.value, month.value, region, range, 'area');
+            }
+            // ⭐️ [แก้ไข] ⭐️
+            // เปลี่ยนจาก 'else if (field !== 'price_per_sqm')' เป็น 'else'
+            else {
+                // TS รู้ว่า 'field' ในที่นี้คือ 'unit' | 'value' | 'area'
+                // จึงไม่ต้องใช้ "as" อีกต่อไป
+                previousValue += getRawDataMonthly(previousYearDetailedTableData.value, month.value, region, range, field);
+            }
+        }
+    }
+
+    // 3. คำนวณ %
+    if (field === 'price_per_sqm') {
+        const previousAvg = previousTotalArea > 0 ? (previousTotalValue / previousTotalArea) : 0;
+        return calculateMoMPercent(currentValue, previousAvg);
+    }
+
+    return calculateMoMPercent(currentValue, previousValue);
+}
+
+// ⭐️ [ใหม่] Helper สำหรับจัดรูปแบบ % YoY/YTD เป็น HTML (สำหรับตาราง)
+function formatYoYSpan(percent: number | null): string {
+    if (percent === null) return "";
+
+    const percentStr = percent.toFixed(0); // YTD/YoY ไม่เอาทศนิยม
+
+    if (percent > 0) {
+        return `<span class="yoy-percent text-success">(+${percentStr}%)</span>`;
+    } else if (percent < 0) {
+        return `<span class="yoy-percent text-error">(${percentStr}%)</span>`;
+    } else {
+        return ''; // ไม่แสดง 0%
+    }
+}
+
+const dynamicUnitSubtitle = computed(() => {
+    const selectedKey = selectedHighlight.value;
+
+    if (selectedKey === 'unit') return '(หน่วย : หลัง)';
+    if (selectedKey === 'area') return '(หน่วย : ตร.ม.)';
+    if (selectedKey === 'price_per_sqm') return '(หน่วย : บาท / ตร.ม.)';
+
+    // ⭐️ [แก้ไข]
+    // ถ้า selectedKey คือ 'value' หรือ null (ค่าเริ่มต้น)
+    // ให้แสดง (หน่วย : บาท)
+    if (selectedKey === 'value' || selectedKey === null) {
+        return '(หน่วย : บาท)';
+    }
+
+    return ''; // (เผื่อไว้เฉยๆ)
+});
+
+</script>
 
 <template>
     <v-row>
