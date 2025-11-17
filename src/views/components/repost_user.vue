@@ -708,7 +708,8 @@ async function exportToExcel() {
                 base64: chartDataURI.split(',')[1], // ExcelJS needs raw Base64 data
                 extension: 'png',
             });
-            
+            // วางรูปภาพไว้ที่ A1 ถึง F25 (col 0 ถึง 5)
+            // *** FIX 2: Correct Anchor definition for TypeScript ***
           allWorksheet.addImage(imageId, {
                 tl: { col: 1, row: 1 }, // A1 (คอลัมน์ 1 แถว 1)
                 br: { col: 6, row: 25 }, // F25 (คอลัมน์ 6 แถว 25)

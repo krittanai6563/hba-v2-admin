@@ -981,11 +981,14 @@ const monthlyReportTableData = computed<TableCategory[]>(() => {
                     row.growth.mom = 100;
                 }
 
+                /*
+                // Missing definition of prevYTDValue and currentYTDValue
                 if (prevYTDValue !== 0) {
                     row.growth.ytd = ((currentYTDValue / prevYTDValue) - 1) * 100;
                 } else if (currentYTDValue > 0) {
                     row.growth.ytd = 100;
                 }
+                */
             }
 
 
@@ -3273,6 +3276,7 @@ const pdfAddSimpleTable = (doc: jsPDF, head: any[], body: any[], isMemberTable: 
             fillColor: [41, 128, 185], // สีน้ำเงิน
             textColor: 255,
             fontSize: 12,
+            fontStyle: 'bold',
         },
         bodyStyles: {
             // กำหนดสีตัวอักษรสำหรับตารางสมาชิก
@@ -3325,6 +3329,7 @@ const pdfAddMemberSummaryTable = (doc: jsPDF, summary: any) => {
             fillColor: [41, 128, 185],
             textColor: 255,
             fontSize: 12,
+            fontStyle: 'bold',
         },
         didDrawPage: (data) => {
             cursorY = data.cursor ? data.cursor.y + 10 : margin;
@@ -3388,7 +3393,8 @@ const pdfAddMemberSubmissionTable = (doc: jsPDF, data: any[]) => {
             fillColor: [41, 128, 185],
             textColor: 255,
             fontSize: 11,
-            halign: 'center'
+            halign: 'center',
+            fontStyle: 'bold',
         },
         didDrawPage: (data) => {
             cursorY = data.cursor ? data.cursor.y + 10 : margin;
@@ -3476,6 +3482,7 @@ const pdfAddComplexRegionTable = (doc: jsPDF, data: RegionCategoryGroup[]) => {
             fillColor: [41, 128, 185],
             textColor: 255,
             fontSize: 10,
+            fontStyle: 'bold',
         },
         didDrawCell: (data) => {
              // Highlight 'รวมทั่วประเทศ' rows and 'รวม' category
