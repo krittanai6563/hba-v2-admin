@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue';
+// --- เพิ่มบรรทัดนี้ ---
+import type { Ref } from 'vue';
 import { useDate } from 'vuetify/lib/framework.mjs';
+
 
 import ExcelJS from 'exceljs';
 import type {Cell, Worksheet, Column, Style, Font, Alignment, Fill, BorderStyle} from 'exceljs';
@@ -8,10 +11,25 @@ import type {Cell, Worksheet, Column, Style, Font, Alignment, Fill, BorderStyle}
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
+import Apexchart from 'vue3-apexcharts'; // (เพิ่มถ้ายังไม่มี)
+
 
 const date = useDate();
 
+interface ApexChartComponentRef {
+  chart: {
+    dataURI: () => Promise<{ imgURI: string }>;
+  };
+}
 
+// 3. Create the refs (เหมือนเดิม)
+const chart1Ref = ref<null | ApexChartComponentRef>(null);
+const polarChartPriceRef = ref<null | ApexChartComponentRef>(null);
+const polarChartRegionRef = ref<null | ApexChartComponentRef>(null);
+const donutChartMemberRef = ref<null | ApexChartComponentRef>(null);
+const monthlyBarChartMemberRef = ref<null | ApexChartComponentRef>(null);
+const memberTypeBarChartRef = ref<null | ApexChartComponentRef>(null); 
+// ---------------------
 
 const today = new Date();
 const currentGregorianYear = today.getFullYear(); // 1. ดึงปี ค.ศ. (เช่น 2025)
@@ -3153,6 +3171,8 @@ const exportToExcel = async () => {
 
 //PDF
 
+//PDF
+
 const blobToBase64 = (blob: Blob): Promise<string> => {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -3191,50 +3211,67 @@ const pdfDrawTitle = (doc: jsPDF, title: string) => {
     cursorY += 20; 
 };
 
-// [แก้ไข] Helper function สำหรับจับภาพ Chart (เพิ่มการรับ title และ options)
-const pdfAddChart = async (doc: jsPDF, elementId: string, title: string | null, options: { sideBySide?: 'left' | 'right' } = {}) => {
-    const chartEl = document.getElementById(elementId);
-    if (!chartEl) {
-        console.warn(`[PDF Export] Chart element not found: #${elementId}`);
-        return;
+// [!!! แก้ไขใหม่ทั้งหมด !!!] Helper function สำหรับจับภาพ Chart (ไม่ใช้ html2canvas)
+const pdfAddChart = async (
+    doc: jsPDF, 
+    chartRef: Ref<ApexChartComponentRef | null>, // 1. รับ Ref (รีโมท)
+    title: string | null, 
+    options: { sideBySide?: 'left' | 'right' } = {}
+) => {
+    
+    // 2. ตรวจสอบว่า "รีโมท" (ref) ถูกผูกหรือยัง
+    if (!chartRef.value || !chartRef.value.chart || !chartRef.value.chart.dataURI) {
+        console.warn(`[PDF Export] Chart ref is not available.`);
+        return; // <--- นี่คือสาเหตุที่ภาพ "หาย" (ถ้า ref ผิด)
     }
 
-    let canvas: HTMLCanvasElement;
+    let imgData: string;
     try {
-        canvas = await html2canvas(chartEl, { useCORS: true, scale: 2 });
+        // 3. สั่งให้กราฟสร้างภาพที่ "สมบูรณ์" (ไม่ขาด)
+        const dataUri = await chartRef.value.chart.dataURI();
+        imgData = dataUri.imgURI;
     } catch (e) {
-        console.error(`Error capturing chart #${elementId}:`, e);
+        console.error(`Error capturing chart via dataURI:`, e);
         return;
     }
     
-    const imgData = canvas.toDataURL('image/png');
+    // 4. โหลดภาพ (สำคัญมาก)
+    // เราต้องโหลดภาพ Base64 เพื่อ "อ่าน" ขนาด (กว้าง/สูง) จริงของมัน
+    const img = new Image();
+    img.src = imgData;
+    await new Promise((resolve) => { img.onload = resolve; });
 
-    // --- [START] FIX 1: ปรับขนาดกราฟให้เล็กลง ---
-    const safePadding = 20; // เพิ่ม padding (ข้างละ 10px)
-    const gutter = 10; // ช่องว่างระหว่างกราฟ side-by-side
+    // 5. [!!! นี่คือส่วนที่ตอบคำถามคุณ !!!]
+    //    เรา "ลดขนาด" ภาพให้พอดีกระดาษ โดยสร้าง "ช่องว่าง" (Padding)
+    const gutter = 10;
+    const maxContentWidth = pageWidth - (margin * 2); // 782px
     let imgWidth: number;
     let imgX: number;
 
     if (options.sideBySide) {
-        // กราฟแบบครึ่งหน้า (Side-by-Side)
-        imgWidth = ((pageWidth - (margin * 2)) - safePadding - gutter) / 2;
-        imgX = options.sideBySide === 'left' 
-            ? (margin + (safePadding / 2)) 
-            : (margin + (safePadding / 2) + imgWidth + gutter);
+        // กราฟครึ่งหน้า
+        imgWidth = (maxContentWidth - gutter) / 2; // (782 - 10) / 2 = 386
+        imgX = options.sideBySide === 'left' ? margin : margin + imgWidth + gutter;
     } else {
-        // กราฟแบบเต็มหน้า (Full-width)
-        imgWidth = (pageWidth - (margin * 2)) - safePadding;
-        imgX = margin + (safePadding / 2); // จัดกลาง
-    }
-    // --- [END] FIX 1 ---
+        // กราฟเต็มหน้า (นี่คือส่วนที่คุณถาม)
+        // เราสร้างช่องว่างสำรองแนวนอน 40px (ข้างละ 20px)
+        const horizontalPadding = 40; 
         
-    const imgHeight = (canvas.height * imgWidth) / canvas.width;
-    const titleHeight = title ? 30 : 0;
-    
-    if (!options.sideBySide || options.sideBySide === 'left') {
-        pdfCheckAddPage(doc, imgHeight + titleHeight + 20); // +20 padding
+        // ความกว้างภาพจะเหลือ 782 - 40 = 742px
+        imgWidth = maxContentWidth - horizontalPadding; 
+        
+        // เราขยับจุดเริ่มต้นไปทางขวา (30 + (40/2)) = 50px (เพื่อจัดกลาง)
+        imgX = margin + (horizontalPadding / 2);
     }
-    
+
+    // 6. คำนวณความสูงจากสัดส่วนจริง
+    const imgHeight = (img.height * imgWidth) / img.width; 
+    const titleHeight = title ? 30 : 0;
+
+    if (!options.sideBySide || options.sideBySide === 'left') {
+        pdfCheckAddPage(doc, imgHeight + titleHeight + 20); 
+    }
+
     const startY = cursorY; 
 
     if (title) {
@@ -3243,18 +3280,20 @@ const pdfAddChart = async (doc: jsPDF, elementId: string, title: string | null, 
 
     const imgY = options.sideBySide === 'right' ? startY : cursorY; 
 
+    // 7. วาดภาพลง PDF (ภาพนี้จะ "สมบูรณ์" และ "ถูกลดขนาด" แล้ว)
     doc.addImage(imgData, 'PNG', imgX, imgY, imgWidth, imgHeight);
-    
+
+    // ... (ส่วนอัปเดต cursorY เหมือนเดิม) ...
     if (options.sideBySide === 'left') {
         cursorY = startY; 
     } else if (options.sideBySide === 'right') {
         cursorY = startY + imgHeight + 20; 
     } else {
-        cursorY += imgHeight + 20;
+        cursorY += imgHeight + 20; 
     }
 };
 
-// [แก้ไข] Helper function สำหรับวาดตาราง (เพิ่ม title)
+// [แก้ไข] Helper function สำหรับวาดตาราง (เหมือนเดิม)
 const pdfAddSimpleTable = (doc: jsPDF, title: string, head: any[], body: any[], isMemberTable: boolean = false) => {
     const approxTableHeight = (body.length * 15) + 40; 
     pdfCheckAddPage(doc, approxTableHeight + 30); 
@@ -3300,7 +3339,7 @@ const pdfAddSimpleTable = (doc: jsPDF, title: string, head: any[], body: any[], 
     }
 };
 
-// [แก้ไข] Helper สำหรับวาดตารางสรุปสถานะสมาชิก (เพิ่ม title)
+// [แก้ไข] Helper สำหรับวาดตารางสรุปสถานะสมาชิก (เหมือนเดิม)
 const pdfAddMemberSummaryTable = (doc: jsPDF, title: string, summary: any) => {
     pdfCheckAddPage(doc, 150); 
     
@@ -3349,7 +3388,7 @@ const pdfAddMemberSummaryTable = (doc: jsPDF, title: string, summary: any) => {
     }
 };
 
-// [แก้ไข] Helper สำหรับวาดตารางสถานะการกรอกรายเดือน (เพิ่ม title)
+// [แก้ไข] Helper สำหรับวาดตารางสถานะการกรอกรายเดือน (เหมือนเดิม)
 const pdfAddMemberSubmissionTable = (doc: jsPDF, title: string, data: any[]) => {
     const approxTableHeight = (data.length * 15) + 60; 
     pdfCheckAddPage(doc, approxTableHeight + 30); 
@@ -3417,7 +3456,7 @@ const pdfAddMemberSubmissionTable = (doc: jsPDF, title: string, data: any[]) => 
     }
 };
 
-// [แก้ไข] Helper สำหรับวาดตารางสรุปตามภูมิภาคและมูลค่าบ้าน (เพิ่ม title)
+// [แก้ไข] Helper สำหรับวาดตารางสรุปตามภูมิภาคและมูลค่าบ้าน (เหมือนเดิม)
 const pdfAddComplexRegionTable = (doc: jsPDF, title: string, data: RegionCategoryGroup[]) => {
     const approxTableHeight = (data.length * 4 * 15) + 60; 
     pdfCheckAddPage(doc, approxTableHeight + 30); 
@@ -3490,13 +3529,17 @@ const pdfAddComplexRegionTable = (doc: jsPDF, title: string, data: RegionCategor
             fontSize: 10,
             fontStyle: 'bold',
         },
-        didParseCell: (data) => {
+       didParseCell: (data) => {
              if (data.cell.raw && (data.cell.raw as any).rowSpan > 1) {
                  data.cell.styles.fontStyle = 'bold';
              }
-             if (data.row.raw[0]?.content === 'รวมทั่วประเทศ' || data.row.raw[1]?.content === 'รวม') {
+
+             const rowData = data.row.raw as any[]; 
+
+             if (rowData && (rowData[0]?.content === 'รวมทั่วประเทศ' || rowData[1]?.content === 'รวม')) { 
                 data.cell.styles.fillColor = [220, 230, 240];
              }
+             // --- [END FIX] ---
         },
         didDrawPage: (data) => {
             cursorY = data.cursor ? data.cursor.y + 10 : margin;
@@ -3511,7 +3554,7 @@ const pdfAddComplexRegionTable = (doc: jsPDF, title: string, data: RegionCategor
     }
 };
 
-// [เพิ่ม] Helper function สำหรับวาดตารางอัตราการเติบโต (ตารางที่ 1)
+// [เพิ่ม] Helper function สำหรับวาดตารางอัตราการเติบโต (ตารางที่ 1) (เหมือนเดิม)
 const pdfAddGrowthRateTable = (doc: jsPDF, title: string, data: GrowthRateCategory[]) => {
     const periods = tablePeriods.value.filter(p => p.key !== 'TOTAL_PERIODS');
     const lp = lastPeriod.value;
@@ -3645,6 +3688,7 @@ const pdfAddGrowthRateTable = (doc: jsPDF, title: string, data: GrowthRateCatego
 }
 
 
+// [!!! แก้ไขฟังก์ชันหลัก !!!]
 const exportToPDF = async () => {
     isPdfLoading.value = true;
     try {
@@ -3710,9 +3754,8 @@ const exportToPDF = async () => {
         // --- 3. Add Sections (กราฟและตาราง) ---
 
         // === Section 1: กราฟเปรียบเทียบหลัก (เต็มความกว้าง) ===
-        await pdfAddChart(doc, 'chart1', "1. กราฟเปรียบเทียบยอดเซ็นสัญญา (แยกตามมูลค่าบ้าน)", {});
-        
-        // --- [START] FIX 2: สลับลำดับ ---
+        // [!!! แก้ไข !!!] เปลี่ยนจาก ID เป็น Ref
+        await pdfAddChart(doc, chart1Ref, "1. กราฟเปรียบเทียบยอดเซ็นสัญญา (แยกตามมูลค่าบ้าน)", {});
         
         pdfNewPage(doc); // เริ่มตารางในหน้าใหม่เสมอ (หน้า 2)
 
@@ -3727,12 +3770,9 @@ const exportToPDF = async () => {
         pdfDrawTitle(doc, "3. กราฟสัดส่วนมูลค่ารวม");
         const chartStartY = cursorY;
 
-        await pdfAddChart(doc, 'polarChartPrice', null, { sideBySide: 'left' }); 
-        cursorY = chartStartY; 
-
-        await pdfAddChart(doc, 'polarChartRegion', null, { sideBySide: 'right' });
-
-        // --- [END] FIX 2 ---
+       await pdfAddChart(doc, polarChartPriceRef, null, { sideBySide: 'left' }); 
+cursorY = chartStartY; 
+await pdfAddChart(doc, polarChartRegionRef, null, { sideBySide: 'right' });
 
         // === Section 4: ตารางสรุปตามมูลค่าบ้าน ===
         if (monthlyReportTableData.value.length > 0) {
@@ -3800,16 +3840,17 @@ const exportToPDF = async () => {
         }
 
         // 7.2 กราฟสถานะการกรอกสัญญารวม
-        await pdfAddChart(doc, 'donutChartMember', "7.2 กราฟสถานะการกรอกสัญญารวม", {}); 
+        // [!!! แก้ไข !!!] เปลี่ยนจาก ID เป็น Ref
+        await pdfAddChart(doc, donutChartMemberRef, "7.2 กราฟสถานะการกรอกสัญญารวม", {}); 
 
         // 7.3 กราฟสถานะการกรอก (จำแนกตามช่วงเวลา)
-        await pdfAddChart(doc, 'monthlyBarChartMember', "7.3 กราฟสถานะการกรอกสัญญา (จำแนกตามช่วงเวลาที่เลือก)", {}); 
+        // [!!! แก้ไข !!!] เปลี่ยนจาก ID เป็น Ref
+        await pdfAddChart(doc, monthlyBarChartMemberRef, "7.3 กราฟสถานะการกรอกสัญญา (จำแนกตามช่วงเวลาที่เลือก)", {}); 
         
         // === Section 8: ตารางสถานะการกรอกสัญญาต่อเดือน (แยกตามรายสมาชิก) ===
         if (memberMonthlySubmissionTableData.value.length > 0) {
             pdfAddMemberSubmissionTable(doc, "8. ตารางสถานะการกรอกสัญญาต่อเดือน (แยกตามรายสมาชิก)", memberMonthlySubmissionTableData.value);
         }
-
 
         // --- 4. Save Document ---
         const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
@@ -4062,7 +4103,7 @@ const exportToPDF = async () => {
                         <v-card-text>
                             <h3 class="card-title mb-1">กราฟเปรียบเทียบยอดเซ็นสัญญา แยกตามมูลค่าบ้าน (รายเดือน)</h3>
                             <h5 class="card-subtitle">{{ chartSubtitle }}</h5>
-                            <apexchart id="chart1" type="line" :options="chartOptions" :series="chartSeries"
+                            <apexchart ref="chart1Ref" id="chart1" type="line" :options="chartOptions" :series="chartSeries"
                                 height="350" v-if="chartSeries.length > 0" />
                             <v-alert v-else type="info" variant="tonal" density="compact" class="mt-4">
                                 ไม่พบข้อมูลสำหรับกราฟ (กรุณาเลือกปีที่ต้องการแสดงผล)
@@ -4076,7 +4117,7 @@ const exportToPDF = async () => {
                         <v-card-text>
                             <h3 class="card-title mb-1">กราฟสัดส่วนมูลค่ารวม แยกตามมูลค่าบ้าน</h3>
                             <h5 class="card-subtitle">{{ chartSubtitle }}</h5>
-                            <apexchart id="polarChartPrice" type="polarArea"
+                            <apexchart ref="polarChartPriceRef" id="polarChartPrice" type="polarArea"
                                 :options="{ ...polarChartOptions, labels: polarChartPriceData.labels }"
                                 :series="polarChartPriceData.series" height="400"
                                 v-if="polarChartPriceData.series.length > 0" />
@@ -4114,7 +4155,7 @@ const exportToPDF = async () => {
                                         สถานะการกรอกสัญญา (จำแนกตามช่วงเวลาที่เลือก)
                                     </v-card-title>
                                     <v-card-text class="pa-2">
-                                        <apexchart id="monthlyBarChartMember" type="bar" :key="monthlyBarChartKey"
+                                        <apexchart ref="monthlyBarChartMemberRef" id="monthlyBarChartMember" type="bar" :key="monthlyBarChartKey"
                                             :options="monthlyBarChartOptions"
                                             :series="monthlySubmissionBarChartData.series" height="350"
                                             v-if="monthlySubmissionBarChartData.series.length > 0 && monthlySubmissionBarChartData.series[0].data.length > 0" />
@@ -4129,7 +4170,7 @@ const exportToPDF = async () => {
                                         <v-card-title
                                             class="text-center text-subtitle-1 pt-4 pb-0">สถานะการกรอกสัญญารวม</v-card-title>
                                         <v-card-text class="pa-2">
-                                            <apexchart id="donutChartMember" type="donut" :options="donutChartOptions"
+                                            <apexchart ref="donutChartMemberRef" id="donutChartMember" type="donut" :options="donutChartOptions"
                                                 :series="memberSubmissionSummary.donutData" height="350"
                                                 v-if="memberSubmissionSummary.donutData.length > 0 && memberSubmissionSummary.donutData.some(d => d > 0)" />
                                             <v-alert v-else type="info" variant="tonal" density="compact" class="mt-4">
@@ -4217,7 +4258,7 @@ const exportToPDF = async () => {
                                     สถานะการกรอกสัญญา (จำแนกตามประเภทสมาชิก)
                                 </v-card-title>
                                 <v-card-text class="pa-2">
-                                    <apexchart id="memberTypeBarChart" type="bar" :key="memberTypeBarChartKey"
+                                    <apexchart ref="memberTypeBarChartRef"  id="memberTypeBarChart" type="bar" :key="memberTypeBarChartKey"
                                         :options="memberTypeBarChartOptions"
                                         :series="memberTypeSubmissionChartData.series" height="350" class="mt-4"
                                         v-if="memberTypeSubmissionChartData.series.length > 0" />
