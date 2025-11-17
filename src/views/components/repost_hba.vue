@@ -493,7 +493,7 @@ const chartSubtitle = computed(() => {
 
             if (Q) {
 
-                return `${yearText} - ${Q.name} (${Q.names.join(' - ')})`;
+                return `${yearText} - ${Q.name} (${Q.names.join(' - ')}`;
             }
         }
 
@@ -973,23 +973,6 @@ const monthlyReportTableData = computed<TableCategory[]>(() => {
                 const prevMonthYear = (currentMonth === 1) ? prevYear : currentYear;
                 const prevMonthMetrics = getMetricsForPeriod(prevMonthYear, prevMonth, categoryName);
                 const prevMonthValue = prevMonthMetrics[metric.key as keyof Metrics] || 0;
-
-
-                let currentYTDValue: number;
-                let prevYTDValue: number;
-
-                if (metric.key === 'average_price_per_sqm') {
-                    const currentYTD_Value = getAggregatedValueForMetric(currentYear, 1, currentMonth, categoryName, 'total_value');
-                    const currentYTD_Area = getAggregatedValueForMetric(currentYear, 1, currentMonth, categoryName, 'total_area');
-                    currentYTDValue = (currentYTD_Area > 0) ? (currentYTD_Value / currentYTD_Area) : 0;
-
-                    const prevYTD_Value = getAggregatedValueForMetric(prevYear, 1, currentMonth, categoryName, 'total_value');
-                    const prevYTD_Area = getAggregatedValueForMetric(prevYear, 1, currentMonth, categoryName, 'total_area');
-                    prevYTDValue = (prevYTD_Area > 0) ? (prevYTD_Value / prevYTD_Area) : 0;
-                } else {
-                    currentYTDValue = getAggregatedValueForMetric(currentYear, 1, currentMonth, categoryName, metric.key as keyof Metrics);
-                    prevYTDValue = getAggregatedValueForMetric(prevYear, 1, currentMonth, categoryName, metric.key as keyof Metrics);
-                }
 
 
                 if (prevMonthValue !== 0) {
@@ -2653,7 +2636,7 @@ const populateMemberSummaryReportExport = (
         }
 
         cellB.style = styleB as Style;
-        cellC.style = styleC as Style;
+        cellC.style = cellC.value !== '' ? styleC as Style : { ...STYLE_DEFAULT, border: {} }; // กันไม่ให้ cell ว่างมี border
         
         currentRow++;
     });
@@ -3210,7 +3193,8 @@ const addThaiFont = async (doc: jsPDF) => {
 
         // 3. Add to jsPDF
         doc.addFileToVFS("THSarabunNew.ttf", thSarabunBase64);
-        doc.addFont("THSarabunNew.ttf", "THSarabunNew", "normal");
+        // ใช้ชื่อฟอนต์ที่ลงทะเบียนเป็น "THSarabunNew"
+        doc.addFont("THSarabunNew.ttf", "THSarabunNew", "normal"); 
         doc.setFont("THSarabunNew");
         console.log("Thai font loaded successfully from URL.");
         return true;
@@ -3271,7 +3255,7 @@ const pdfAddChart = async (doc: jsPDF, elementId: string) => {
 };
 
 // Helper function สำหรับวาดตาราง (ตัวอย่างแบบง่าย)
-const pdfAddSimpleTable = (doc: jsPDF, head: any[], body: any[]) => {
+const pdfAddSimpleTable = (doc: jsPDF, head: any[], body: any[], isMemberTable: boolean = false) => {
     pdfCheckAddPage(doc, 40); // Space for header
 
     autoTable(doc, {
@@ -3280,24 +3264,237 @@ const pdfAddSimpleTable = (doc: jsPDF, head: any[], body: any[]) => {
         startY: cursorY,
         theme: 'grid',
         styles: {
-            font: "THSarabunNew", // *** สำคัญมาก ***
+            font: "THSarabunNew", // *** [FIX] FONT BODY ***
             fontSize: 10,
             cellPadding: 2,
         },
         headStyles: {
+            font: "THSarabunNew", // *** [FIX] FONT HEADER ***
             fillColor: [41, 128, 185], // สีน้ำเงิน
             textColor: 255,
             fontSize: 12,
+        },
+        bodyStyles: {
+            // กำหนดสีตัวอักษรสำหรับตารางสมาชิก
+            textColor: isMemberTable ? [41, 128, 185] : 0, // สีน้ำเงิน
         },
         didDrawPage: (data) => {
             // อัปเดต cursorY หลังจาก autoTable วาดเสร็จ (รวมถึงการขึ้นหน้าใหม่)
             cursorY = data.cursor ? data.cursor.y + 10 : margin;
         }
     });
-    // @ts-ignore
-    cursorY = doc.autoTable.previous.finalY + 20; // อัปเดต Y หลังจากตารางจบ
+    
+    // [FIX] แก้ไข TypeError: Cannot read properties of undefined (reading 'previous')
+    const prevTable = (doc as any).autoTable?.previous;
+
+    if (prevTable) {
+        cursorY = prevTable.finalY + 20; // อัปเดต Y โดยใช้ค่า finalY ที่แน่นอนของตารางล่าสุด + 20px padding
+    } else {
+        cursorY += 20;
+    }
 };
 
+// [NEW HELPER] Helper สำหรับวาดตารางสรุปสถานะสมาชิก (ตารางด้านข้าง)
+const pdfAddMemberSummaryTable = (doc: jsPDF, summary: any) => {
+    pdfCheckAddPage(doc, 60);
+
+    const body: any[] = [
+        ['สมาชิกทั้งหมด (ประเภท User)', { content: summary.totalUsers.toLocaleString('th-TH') + ' คน', styles: { fontStyle: 'bold' } }],
+        [{ content: 'จำนวนสมาชิกที่กรอกในแต่ละช่วงเวลา:', colSpan: 2, styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } }],
+        ...summary.periodCounts.map((p: any) => [
+            p.label, 
+            p.count.toLocaleString('th-TH') + ' คน'
+        ]),
+        [{ content: summary.submittedLabel, styles: { fontStyle: 'bold', fillColor: [220, 240, 220] } }, {content: summary.submittedTotal.toLocaleString('th-TH') + ' คน', styles: { fillColor: [220, 240, 220] }}],
+        [{ content: summary.notSubmittedLabel, styles: { fontStyle: 'bold', textColor: [180, 0, 0], fillColor: [255, 230, 230] } }, { content: summary.notSubmittedTotal.toLocaleString('th-TH') + ' คน', styles: { fontStyle: 'bold', textColor: [180, 0, 0], fillColor: [255, 230, 230] } }]
+    ];
+
+    autoTable(doc, {
+        head: [['รายละเอียด', 'จำนวนสมาชิก (คน)']],
+        body: body,
+        startY: cursorY,
+        theme: 'grid',
+        styles: {
+            font: "THSarabunNew", // *** [FIX] FONT BODY ***
+            fontSize: 10,
+            cellPadding: 2,
+            halign: 'left'
+        },
+        headStyles: {
+            font: "THSarabunNew", // *** [FIX] FONT HEADER ***
+            fillColor: [41, 128, 185],
+            textColor: 255,
+            fontSize: 12,
+        },
+        didDrawPage: (data) => {
+            cursorY = data.cursor ? data.cursor.y + 10 : margin;
+        }
+    });
+
+    const prevTable = (doc as any).autoTable?.previous;
+    if (prevTable) {
+        cursorY = prevTable.finalY + 20;
+    } else {
+        cursorY += 20;
+    }
+};
+
+// [NEW HELPER] Helper สำหรับวาดตารางสถานะการกรอกรายเดือน (แยกตามรายสมาชิก)
+const pdfAddMemberSubmissionTable = (doc: jsPDF, data: any[]) => {
+    pdfCheckAddPage(doc, 40);
+
+    const periods = tablePeriods.value.filter(p => p.key !== 'TOTAL_PERIODS');
+    const periodsToDisplay = periods.map(p => p.label);
+    
+    // Headers (RowSpan 2)
+    const head = [
+        [{ content: 'รายชื่อสมาชิก', rowSpan: 2 }, { content: 'ประเภท', rowSpan: 2 }, { content: 'ยอดรวม', rowSpan: 2 }, { content: 'สถานะการกรอก', colSpan: periodsToDisplay.length }],
+        periodsToDisplay
+    ];
+
+    const body: any[] = data.map(member => {
+        const rowData: any[] = [
+            member.name,
+            member.member_type,
+            { content: member.total_submitted_in_period.toLocaleString('th-TH'), styles: { halign: 'center', fontStyle: 'bold' } }
+        ];
+        periods.forEach(p => {
+            const status = member.submissions[p.key] || '-';
+            rowData.push({
+                content: status,
+                styles: { 
+                    textColor: status === 'X' ? [0, 100, 0] : [180, 0, 0], // Green for X, Red for -
+                    fontStyle: status === 'X' ? 'bold' : 'normal',
+                    halign: 'center'
+                }
+            });
+        });
+        return rowData;
+    });
+
+    autoTable(doc, {
+        head: head,
+        body: body,
+        startY: cursorY,
+        theme: 'grid',
+        styles: {
+            font: "THSarabunNew", // *** [FIX] FONT BODY ***
+            fontSize: 9,
+            cellPadding: 2,
+            halign: 'left'
+        },
+        headStyles: {
+            font: "THSarabunNew", // *** [FIX] FONT HEADER ***
+            fillColor: [41, 128, 185],
+            textColor: 255,
+            fontSize: 11,
+            halign: 'center'
+        },
+        didDrawPage: (data) => {
+            cursorY = data.cursor ? data.cursor.y + 10 : margin;
+        }
+    });
+
+    const prevTable = (doc as any).autoTable?.previous;
+    if (prevTable) {
+        cursorY = prevTable.finalY + 20;
+    } else {
+        cursorY += 20;
+    }
+};
+
+// [NEW HELPER] Helper สำหรับวาดตารางสรุปตามภูมิภาคและมูลค่าบ้าน (Complex Table)
+const pdfAddComplexRegionTable = (doc: jsPDF, data: RegionCategoryGroup[]) => {
+    pdfCheckAddPage(doc, 40);
+
+    const periods = tablePeriods.value;
+    const periodsToDisplay = periods.map(p => p.label);
+    
+    // Headers
+    const head = [
+        ['ภูมิภาค', 'ช่วงมูลค่าบ้าน', 'รายละเอียด', ...periodsToDisplay, 'MoM%', 'YTD%']
+    ];
+
+    const body: any[] = [];
+    const getNumFmt = (metricKey: string, v: number) => {
+        if (metricKey === 'total_units') return v.toLocaleString('th-TH', { maximumFractionDigits: 0 });
+        return v.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    };
+
+    data.forEach(regionGroup => {
+        let isFirstRegionRow = true;
+        const totalRegionRows = regionGroup.categories.reduce((sum, cat) => sum + cat.rows.length, 0);
+
+        regionGroup.categories.forEach(category => {
+            let isFirstCategoryRow = true;
+            const totalCategoryRows = category.rows.length;
+
+            category.rows.forEach(row => {
+                const rowData: any[] = [];
+
+                // Col 1: Region (RowSpan)
+                if (isFirstRegionRow) {
+                    rowData.push({ content: regionGroup.regionName, rowSpan: totalRegionRows, styles: { fillColor: [240, 240, 255], fontStyle: 'bold' } });
+                    isFirstRegionRow = false;
+                }
+
+                // Col 2: Category (RowSpan)
+                if (isFirstCategoryRow) {
+                    rowData.push({ content: category.categoryName, rowSpan: totalCategoryRows, styles: { fontStyle: 'bold' } });
+                    isFirstCategoryRow = false;
+                }
+
+                // Col 3: Metric Name
+                rowData.push(row.metricName);
+
+                // Col 4+: Period Data
+                periods.forEach(p => {
+                    rowData.push({content: getNumFmt(row.metricKey, row.data[p.key] || 0), styles: {halign: 'right'}});
+                });
+
+                // Col ...: Growth
+                rowData.push({ content: row.growth.mom != null ? `${row.growth.mom.toFixed(2)}%` : '-', styles: { halign: 'right', textColor: row.growth.mom ? (row.growth.mom > 0 ? [0, 100, 0] : [180, 0, 0]) : [0, 0, 0] } });
+                rowData.push({ content: row.growth.ytd != null ? `${row.growth.ytd.toFixed(2)}%` : '-', styles: { halign: 'right', textColor: row.growth.ytd ? (row.growth.ytd > 0 ? [0, 100, 0] : [180, 0, 0]) : [0, 0, 0] } });
+
+                body.push(rowData);
+            });
+        });
+    });
+
+    autoTable(doc, {
+        head: head,
+        body: body,
+        startY: cursorY,
+        theme: 'grid',
+        styles: {
+            font: "THSarabunNew", // *** [FIX] FONT BODY ***
+            fontSize: 9, 
+            cellPadding: 2,
+        },
+        headStyles: {
+            font: "THSarabunNew", // *** [FIX] FONT HEADER ***
+            fillColor: [41, 128, 185],
+            textColor: 255,
+            fontSize: 10,
+        },
+        didDrawCell: (data) => {
+             // Highlight 'รวมทั่วประเทศ' rows and 'รวม' category
+             if (data.row.raw[0]?.content === 'รวมทั่วประเทศ' || data.row.raw[1]?.content === 'รวม') {
+                data.cell.styles.fillColor = [220, 230, 240];
+             }
+        },
+        didDrawPage: (data) => {
+            cursorY = data.cursor ? data.cursor.y + 10 : margin;
+        }
+    });
+
+    const prevTable = (doc as any).autoTable?.previous;
+    if (prevTable) {
+        cursorY = prevTable.finalY + 20;
+    } else {
+        cursorY += 20;
+    }
+};
 
 // ... (โค้ดทั้งหมดของคุณก่อนหน้านี้ เช่น blobToBase64, addThaiFont, pdfNewPage, pdfAddChart ฯลฯ) ...
 
@@ -3322,10 +3519,6 @@ const exportToPDF = async () => {
 
         cursorY = margin; // Reset cursor
 
-        // ==========================================================
-        // === นี่คือส่วนที่ขาดไป (ขั้นตอนที่ 2, 3, 4) ===
-        // ==========================================================
-
         // --- 2. Add Title ---
         doc.setFontSize(20);
         doc.text("รายงานเปรียบเทียบยอดเซ็นสัญญา", pageWidth / 2, cursorY, { align: 'center' });
@@ -3342,7 +3535,6 @@ const exportToPDF = async () => {
 
         // === Section 2: กราฟสัดส่วน ===
         pdfAddTitle(doc, "2. กราฟสัดส่วนมูลค่ารวม");
-        // (ตัวอย่างนี้จะวางกราฟต่อกัน)
         await pdfAddChart(doc, 'polarChartPrice');
         await pdfAddChart(doc, 'polarChartRegion');
         
@@ -3364,18 +3556,18 @@ const exportToPDF = async () => {
                     const rowData: any[] = [];
                     // จัดการ RowSpan
                     if (index === 0) {
-                        rowData.push({ content: category.categoryName, rowSpan: category.rows.length });
+                        rowData.push({ content: category.categoryName, rowSpan: category.rows.length, styles: { halign: 'center', valign: 'middle' } });
                     }
                     rowData.push(row.metricName);
                     
                     // เพิ่มข้อมูลตาม Period
                     tablePeriods.value.forEach(p => {
-                        rowData.push(row.format(row.data[p.key] || 0));
+                        rowData.push({content: row.format(row.data[p.key] || 0), styles: { halign: 'right' }});
                     });
                     
                     // เพิ่ม Growth
-                    rowData.push(row.growth.mom != null ? `${row.growth.mom.toFixed(2)}%` : '-');
-                    rowData.push(row.growth.ytd != null ? `${row.growth.ytd.toFixed(2)}%` : '-');
+                    rowData.push({content: row.growth.mom != null ? `${row.growth.mom.toFixed(2)}%` : '-', styles: { halign: 'right', textColor: row.growth.mom ? (row.growth.mom > 0 ? [0, 100, 0] : [180, 0, 0]) : [0, 0, 0] } });
+                    rowData.push({content: row.growth.ytd != null ? `${row.growth.ytd.toFixed(2)}%` : '-', styles: { halign: 'right', textColor: row.growth.ytd ? (row.growth.ytd > 0 ? [0, 100, 0] : [180, 0, 0]) : [0, 0, 0] } });
                     
                     body.push(rowData);
                 });
@@ -3384,7 +3576,7 @@ const exportToPDF = async () => {
             pdfAddSimpleTable(doc, head, body);
         }
 
-        // === Section 4: ตารางสรุปตามภูมิภาค ===
+        // === Section 4: ตารางสรุปตามภูมิภาค (Region Summary Table) ===
         pdfAddTitle(doc, "4. ตารางสรุปยอดเซ็นสัญญา (แยกตามภูมิภาค)");
         if (regionReportTableData.value.length > 0) {
              const periods = tablePeriods.value.map(p => p.label);
@@ -3396,31 +3588,53 @@ const exportToPDF = async () => {
                 category.rows.forEach((row, index) => {
                     const rowData: any[] = [];
                     if (index === 0) {
-                        rowData.push({ content: category.categoryName, rowSpan: category.rows.length });
+                        rowData.push({ content: category.categoryName, rowSpan: category.rows.length, styles: { halign: 'center', valign: 'middle' } });
                     }
                     rowData.push(row.metricName);
                     tablePeriods.value.forEach(p => {
-                        rowData.push(row.format(row.data[p.key] || 0));
+                        rowData.push({content: row.format(row.data[p.key] || 0), styles: { halign: 'right' }});
                     });
-                    rowData.push(row.growth.mom != null ? `${row.growth.mom.toFixed(2)}%` : '-');
-                    rowData.push(row.growth.ytd != null ? `${row.growth.ytd.toFixed(2)}%` : '-');
+                    rowData.push({content: row.growth.mom != null ? `${row.growth.mom.toFixed(2)}%` : '-', styles: { halign: 'right', textColor: row.growth.mom ? (row.growth.mom > 0 ? [0, 100, 0] : [180, 0, 0]) : [0, 0, 0] } });
+                    rowData.push({content: row.growth.ytd != null ? `${row.growth.ytd.toFixed(2)}%` : '-', styles: { halign: 'right', textColor: row.growth.ytd ? (row.growth.ytd > 0 ? [0, 100, 0] : [180, 0, 0]) : [0, 0, 0] } });
                     body.push(rowData);
                 });
             });
              pdfAddSimpleTable(doc, head, body);
         }
         
-        // ... คุณสามารถเพิ่มตารางอื่นๆ ที่นี่โดยใช้ pdfAddTitle และ pdfAddSimpleTable ...
-        // เช่น ตาราง "สรุปสถานะสมาชิก" หรือ "สถานะการกรอกรายเดือน"
+        // === [NEW] Section 5: ตารางสรุปยอดเซ็นสัญญา แยกตามภูมิภาค และมูลค่าบ้าน (Complex Table) ===
+        pdfAddTitle(doc, "5. ตารางสรุปยอดเซ็นสัญญา (แยกตามภูมิภาค และมูลค่าบ้าน)");
+        if (regionAndCategoryReportTableData.value.length > 0) {
+            pdfAddComplexRegionTable(doc, regionAndCategoryReportTableData.value);
+        }
+
+        pdfNewPage(doc); // ขึ้นหน้าใหม่สำหรับรายงานสมาชิก
+
+        // === [NEW] Section 6: รายงานสถานะการกรอกสัญญาของสมาชิก (Summary Table & Graph) ===
+        pdfAddTitle(doc, "6. รายงานสถานะการกรอกสัญญาของสมาชิก");
+
+        // 6.1 ตารางสรุปสถานะการกรอก
+        pdfAddTitle(doc, "6.1 ตารางสรุปจำนวนสมาชิกที่กรอก");
+        if (memberSubmissionSummary.value.donutData.length > 0) {
+            pdfAddMemberSummaryTable(doc, memberSubmissionSummary.value);
+        }
+
+        // 6.2 กราฟสถานะการกรอก
+        pdfAddTitle(doc, "6.2 กราฟสถานะการกรอกสัญญา (จำแนกตามช่วงเวลาที่เลือก)");
+        await pdfAddChart(doc, 'monthlyBarChartMember');
+        
+        pdfNewPage(doc);
+
+        // === [NEW] Section 7: ตารางสถานะการกรอกสัญญาต่อเดือน (แยกตามรายสมาชิก) ===
+        pdfAddTitle(doc, "7. ตารางสถานะการกรอกสัญญาต่อเดือน (แยกตามรายสมาชิก)");
+        if (memberMonthlySubmissionTableData.value.length > 0) {
+            pdfAddMemberSubmissionTable(doc, memberMonthlySubmissionTableData.value);
+        }
 
 
-        // --- 4. Save Document (ส่วนที่สำคัญที่สุดที่ทำให้ไฟล์ดาวน์โหลด) ---
+        // --- 4. Save Document ---
         const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
         doc.save(`HBA_Report_PDF_${dateStr}.pdf`);
-
-        // ==========================================================
-        // === สิ้นสุดส่วนที่ขาดไป ===
-        // ==========================================================
 
     } catch (error) {
         console.error("[PDF Export] Error generating PDF:", error);

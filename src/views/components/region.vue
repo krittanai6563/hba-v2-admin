@@ -898,15 +898,7 @@ const chartTitle = computed(() => {
 
 // (7.2) ข้อมูลการ์ดสรุป
 const summaryCardData = computed(() => {
-    // ⭐️ [หมายเหตุ] ส่วนนี้ถูกแก้ไขใน v3.2 ให้คำนวณตาม tab ที่เลือก
-    // แต่ใน v3.1 (โค้ดนี้) มันจะแสดง "ยอดรวมของทุกเดือนที่เลือก" เสมอ
-    // ซึ่งอาจจะดีกว่าสำหรับ UI นี้ (เดี๋ยวรอดู v3.2)
 
-    // (ตรรกะเดิมจาก v3.1)
-    // if (activeTab.value !== 'summary' && typeof activeTab.value === 'number') {
-    //     const currentMonth = activeTab.value;
-    //     return { ... };
-    // }
     return {
         unit: getSummaryGrandTotal('unit'),
         value: getSummaryGrandTotal('value'),
@@ -917,10 +909,6 @@ const summaryCardData = computed(() => {
 
 // (7.3) Computed สำหรับ MoM% ของ Summary Cards
 const summaryCardMoMData = computed(() => {
-    // ⭐️ [หมายเหตุ] โค้ดนี้จะคำนวณ MoM% ของการ์ด
-    // โดยอิงจาก "เดือนสุดท้ายที่เลือก" เทียบกับ "เดือนก่อนหน้า"
-    // (นี่คือการคาดเดา Requirement ที่ดีที่สุด)
-    // (ถ้า activeTab ถูกนำกลับมาใช้, logic นี้ต้องเปลี่ยน)
 
     if (selectedMonths.value.length === 0) {
         return { unit: null, value: null, area: null, price_per_sqm: null };
@@ -1731,7 +1719,17 @@ const dynamicUnitSubtitle = computed(() => {
                         <h5 class="card-subtitle" style="text-align: left">{{ dynamicUnitSubtitle }}</h5>
                     </div>
                     <div class="d-flex justify-end ga-2 mt-2">
-                        <v-btn color="primary" variant="outlined" @click="exportToExcel" class="v-btn--size-small"
+                     <v-btn-group color="#b2d7ef" density="comfortable" rounded="pill" divided>
+            <v-btn color="success" @click="exportToExcel">
+                <v-icon start>mdi-file-excel</v-icon>
+                <div class="text-none font-weight-regular">รายงาน Excel</div>
+            </v-btn>
+            <v-btn color="error" @click="exportToPdf" :loading="exportLoading">
+                    <v-icon start>mdi-file-pdf-box</v-icon>
+                <div class="text-none font-weight-regular">รายงาน PDF</div>
+            </v-btn>
+        </v-btn-group>
+                        <!-- <v-btn color="primary" variant="outlined" @click="exportToExcel" class="v-btn--size-small"
                             :loading="exportLoading">
                             <v-icon start>mdi-file-excel</v-icon>
                             Export Excel
@@ -1741,7 +1739,7 @@ const dynamicUnitSubtitle = computed(() => {
                             :loading="exportLoading">
                             <v-icon start>mdi-file-pdf-box</v-icon>
                             Export PDF
-                        </v-btn>
+                        </v-btn> -->
                     </div>
                 </v-card-title>
 

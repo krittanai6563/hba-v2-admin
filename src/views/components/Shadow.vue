@@ -1447,13 +1447,24 @@ const tableUnitSubtitle = computed(() => {
             <div class="v-col-md-4 v-col-12 text-right">
               <div class="d-flex  justify-end v-col-md-12 v-col-lg-12 v-col-12 ">
 
-                <v-btn class="text-primary v-btn--size-large" @click="exportToExcel" prepend-icon="mdi-file-excel" color="success">
+                <!-- <v-btn class="text-primary v-btn--size-large" @click="exportToExcel" prepend-icon="mdi-file-excel" color="success">
                   <div class="text-none font-weight-regular">Export to Excel</div>
                 </v-btn>
                 
                 <v-btn class="ml-2 v-btn--size-large" @click="exportToPDF" prepend-icon="mdi-file-pdf-box" color="error">
                   <div class="text-none font-weight-regular">Export to PDF</div>
-                </v-btn>
+                </v-btn> -->
+
+                <v-btn-group color="#b2d7ef" density="comfortable" rounded="pill" divided>
+            <v-btn color="success" @click="exportToExcel">
+                <v-icon start>mdi-file-excel</v-icon>
+                <div class="text-none font-weight-regular">รายงาน Excel</div>
+            </v-btn>
+            <v-btn color="error" @click="exportToPDF" :loading="exportLoading">
+                    <v-icon start>mdi-file-pdf-box</v-icon>
+                <div class="text-none font-weight-regular">รายงาน PDF</div>
+            </v-btn>
+        </v-btn-group>
                 
               </div>
             </div>

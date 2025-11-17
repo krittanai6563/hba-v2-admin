@@ -1,12 +1,3 @@
-ตามคำขอของคุณ ผมได้ปรับปรุงโค้ด `repost_user.vue` ให้ครอบคลุมทั้ง 3 ส่วนหลักที่ร้องขอ ดังนี้:
-
-1.  **ช่องเดือนแสดงชื่อเดือน:** แก้ไขการกำหนดค่าเริ่มต้นของ `selectedMonthFilter` ให้ตรงกับ `value` ในรายการ `months` (ซึ่งคือปี ค.ศ. และเดือน) เพื่อให้ `v-select` สามารถแสดงผลเป็น **ชื่อเดือน** ได้อย่างถูกต้อง
-2.  **ความสวยงามของกราฟ:** เปลี่ยนสีเป็น **น้ำเงิน-เหลือง** และปรับขนาดฟอนต์ให้ใหญ่ขึ้น พร้อมทั้งใช้เส้นกริดแบบเส้นปะ
-3.  **รายงาน Excel/PDF พร้อมกราฟ:** ปรับการฝังกราฟในรายงานให้มี **สัดส่วนที่พอดี** และแก้ไขข้อผิดพลาดที่เกิดขึ้น
-
-### โค้ดที่ปรับปรุง: `repost_user.vue` (ฉบับสมบูรณ์)
-
-```vue
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
@@ -19,13 +10,19 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import Apexchart from 'vue3-apexcharts'; 
 
-// ********** 2. State สำหรับ Report **********
+
+interface ApexChartComponentRef {
+    chart: {
+        dataURI: () => Promise<{ imgURI: string }>;
+    };
+}
+
 const snackbar = ref(false);
 const snackbarText = ref('');
 const snackbarColor = ref('success');
 const exportLoading = ref(false);
 
-// ********** State สำหรับ Chart **********
+
 interface MonthlyChartData {
     label: string;
     submitted: number;
@@ -41,7 +38,7 @@ const chartData = ref<MonthlyChartData[]>([]);
 const totalMembersInDatabase = ref(0);
 const chartOptions = ref({});
 const chartSeries = ref<ChartSeriesItem[]>([]);
-const chartRef = ref(null); // Ref to access the chart instance for image export
+const chartRef = ref<null | ApexChartComponentRef>(null); // Ref to access the chart instance for image export
 // **********************************************
 
 // *** กำหนดประเภทสมาชิกที่ต้องการนับในกราฟเท่านั้น ***
@@ -711,11 +708,11 @@ async function exportToExcel() {
                 base64: chartDataURI.split(',')[1], // ExcelJS needs raw Base64 data
                 extension: 'png',
             });
-            // วางรูปภาพไว้ที่ A1 ถึง F25 (col 0 ถึง 5)
-            allWorksheet.addImage(imageId, {
-                tl: { col: 0, row: 0 },
-                br: { col: 5, row: 25 }, // *** FIX: Adjusted boundary for better aspect ratio ***
-            });
+            
+          allWorksheet.addImage(imageId, {
+                tl: { col: 1, row: 1 }, // A1 (คอลัมน์ 1 แถว 1)
+                br: { col: 6, row: 25 }, // F25 (คอลัมน์ 6 แถว 25)
+            } as any);
 
             // ปรับความสูงแถวเพื่อรองรับกราฟ (row 1-25)
             for (let i = 1; i <= 25; i++) {

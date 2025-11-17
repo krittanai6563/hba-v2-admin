@@ -1545,7 +1545,9 @@ const exportToPdf = async () => {
                         <div class="v-col-md-4 v-col-12 text-right">
                             <div class="d-flex justify-end ga-2 v-col-md-12 v-col-lg-12 v-col-12">
 
-                                <v-btn color="primary" variant="outlined" @click="exportToExcel"
+                                
+
+                                <!-- <v-btn color="primary" variant="outlined" @click="exportToExcel"
                                     class="v-btn--size-small" :loading="exportLoading">
                                     <v-icon start>mdi-file-excel</v-icon>
                                     Export Excel
@@ -1555,7 +1557,18 @@ const exportToPdf = async () => {
                                     :loading="exportLoading">
                                     <v-icon start>mdi-file-pdf-box</v-icon>
                                     Export PDF
-                                </v-btn>
+                                </v-btn> -->
+
+                                <v-btn-group color="#b2d7ef" density="comfortable" rounded="pill" divided>
+            <v-btn color="success" @click="exportToExcel">
+                <v-icon start>mdi-file-excel</v-icon>
+                <div class="text-none font-weight-regular">รายงาน Excel</div>
+            </v-btn>
+            <v-btn color="error" @click="exportToPdf" :loading="exportLoading">
+                    <v-icon start>mdi-file-pdf-box</v-icon>
+                <div class="text-none font-weight-regular">รายงาน PDF</div>
+            </v-btn>
+        </v-btn-group>
 
                             </div>
                         </div>

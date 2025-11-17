@@ -76,12 +76,13 @@ const MainRoutes = {
             name:'post_repost_user',
             path:'/ui/post_repost_user',
             component: () => import('@/views/components/MemberDetails.vue')
-        }, {
-            name:'repost_admin',
-            path:'/ui/repost_admin',
-            component: () => import('@/views/components/repost_admin.vue')
-        }
-        , {
+        }, 
+        // {
+        //     name:'repost_admin',
+        //     path:'/ui/repost_admin',
+        //     component: () => import('@/views/components/repost_admin.vue')
+        // }
+         {
             name:'repost_hba',
             path:'/ui/repost_hba',
             component: () => import('@/views/components/repost_hba.vue')
