@@ -40,12 +40,20 @@ const remainingDays = computed(() => {
 });
 // --- (!!! สิ้นสุดส่วนที่เพิ่ม: วันที่ !!!) ---
 
+type VuetifyAlertType = "success" | "warning" | "error" | "info" | undefined;
 
-// --- (!!! เพิ่ม: Computed Property สำหรับ Notification ข้อมูล !!!) ---
-const userNotification = computed(() => {
+interface UserNotification {
+    message: string;
+    type: VuetifyAlertType;
+    title: string;
+}
+
+
+const userNotification = computed((): UserNotification => { // <--- [แก้ไขจุดที่ 1]
+    
     // แสดงเฉพาะสำหรับบทบาท 'user'
     if (userRole.value !== 'user') {
-        return { message: '', type: '', title: '' };
+        return { message: '', type: undefined, title: '' }; // <--- [แก้ไขจุดที่ 2]
     }
 
     // 1. Submitted
@@ -61,7 +69,9 @@ const userNotification = computed(() => {
     if (currentDay <= deadlineDay) {
         const days = remainingDays.value;
         let message = '';
-        let type = 'warning';
+        // [แก้ไขจุดที่ 3] กำหนด Type ของตัวแปร type ให้แคบลง
+        let type: 'warning' | 'error' = 'warning'; 
+        
         if (days > 0) {
             message = `เหลืออีก ${days} วัน ในการกรอกข้อมูล ก่อนวันที่ ${deadlineDay} ${currentMonthName} ${currentYear}`;
             if (days <= 2) {
@@ -71,7 +81,9 @@ const userNotification = computed(() => {
             message = `ถึงกำหนดส่งข้อมูลวันนี้! กรุณากรอกข้อมูลก่อนสิ้นสุดวันที่ ${deadlineDay} ${currentMonthName} ${currentYear}`;
             type = 'error';
         }
-        return { message: message, type: type as 'warning' | 'error', title: 'กรุณากรอกข้อมูล' };
+        
+        // [แก้ไขจุดที่ 4] ไม่จำเป็นต้องใช้ 'as' แล้ว เพราะ Type ถูกต้องแล้ว
+        return { message: message, type: type, title: 'กรุณากรอกข้อมูล' };
     }
 
     // 3. Not Submitted (หลังวันที่ 10)
@@ -84,7 +96,8 @@ const userNotification = computed(() => {
     if (fetchErrorUserStatus.value) {
         return { message: `ไม่สามารถตรวจสอบสถานะได้: ${fetchErrorUserStatus.value}`, type: 'error', title: 'ข้อผิดพลาด' };
     }
-    return { message: '', type: '', title: '' }; // Default
+    
+    return { message: '', type: undefined, title: '' }; // <--- [แก้ไขจุดที่ 5]
 });
 
 // --- (!!! เพิ่ม: Computed Property สำหรับ Notification สัญญา !!!) ---
