@@ -1486,6 +1486,7 @@ async function exportToPdf() {
                                         <tr>
                                             <th class="text-subtitle-1 font-weight-medium ps-2">สมาชิก</th>
                                             <th class="text-subtitle-1 font-weight-medium">สถานะ</th>
+                                            <th class="text-subtitle-1 font-weight-medium">รหัสผ่าน</th> 
                                             <th class="text-subtitle-1 font-weight-medium text-end">มูลค่า</th>
                                             <th class="text-subtitle-1 font-weight-medium"></th>
                                         </tr>
@@ -1525,10 +1526,14 @@ async function exportToPdf() {
                                                     {{ member.status }}
                                                 </v-chip>
                                             </td>
+                                            <td>
+    <span class="text-subtitle-1">{{ member.password }}</span>
+</td>
                                             <td class="text-end">
                                                 <h4 class="text-no-wrap text-subtitle-1 textSecondary">{{
                                                     formatCurrency(member.contractValue) }}</h4>
                                             </td>
+
 
                                             <td>
                                                 <div class="d-flex align-center">
@@ -1623,6 +1628,8 @@ async function exportToPdf() {
                                                     </v-card>
                                                 </v-dialog>
                                             </td>
+                                        
+
                                         </tr>
                                     </tbody>
                                 </table>

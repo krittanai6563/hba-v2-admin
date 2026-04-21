@@ -125,7 +125,6 @@ const chartCategories = computed(() => {
 const padSeries = (data: (number | null)[]) => [null, ...data, null];
 
 
-// (!!!) Computed สำหรับคำนวณ % QOQ (เทียบ 'มูลค่ารวม')
 const qoqValuePercentChangeData = computed(() => {
     const quarters = ['Q1', 'Q2', 'Q3', 'Q4'];
     const changes: (number | null)[] = [];
@@ -160,8 +159,6 @@ const qoqValuePercentChangeData = computed(() => {
     return changes.slice(0, visibleQuarters.value.length);
 });
 
-
-// (!!!) Helpers สำหรับตาราง (QOQ)
 function getSpecificMetric(quarter: string, priceRange: string, metric: 'unit' | 'value' | 'area' | 'price_per_sqm'): number {
     if (!summaryData.value[quarter] || !summaryData.value[quarter][priceRange]) return 0;
 

@@ -156,14 +156,52 @@ const monthNames = [
     'ธันวาคม'
 ];
 
-const months = ref<MonthItem[]>([]);
-for (let m = 1; m <= currentMonth; m++) {
-    const monthString = m < 10 ? `0${m}` : `${m}`;
-    months.value.push({
-        value: `${currentYear}-${monthString}`,
-        label: monthNames[m - 1]
-    });
-}
+// const months = ref<MonthItem[]>([]);
+// for (let m = 1; m <= currentMonth; m++) {
+//     const monthString = m < 10 ? `0${m}` : `${m}`;
+//     months.value.push({
+//         value: `${currentYear}-${monthString}`,
+//         label: monthNames[m - 1]
+//     });
+// }
+
+
+const months = computed(() => {
+    // ดึงค่าปีที่ผู้ใช้เลือก (ถ้ายังไม่เลือก ให้คืนค่าว่าง)
+    if (!selectedYearFilter.value) return [];
+
+    const today = new Date();
+    const realCurrentYearAD = today.getFullYear(); // ปีปัจจุบัน ค.ศ. (เช่น 2026)
+    const realCurrentMonth = today.getMonth() + 1; // เดือนปัจจุบัน (เช่น 1)
+
+    // แปลงปีที่เลือกจาก พ.ศ. เป็น ค.ศ. เพื่อเทียบ
+    const selectedYearBE = parseInt(selectedYearFilter.value);
+    const selectedYearAD = selectedYearBE - 543;
+
+    // ตั้งค่า Default คือแสดงครบ 12 เดือน
+    let maxMonth = 12;
+
+    // เงื่อนไข: ถ้าปีที่เลือก == ปีปัจจุบันจริงๆ ให้แสดงถึงแค่เดือนปัจจุบัน
+    // (แต่ถ้าเป็นปี 2568 ซึ่งเป็นอดีต หรือปีอื่นๆ จะไม่เข้าเงื่อนไขนี้ ก็จะแสดง 12 เดือน)
+    if (selectedYearAD === realCurrentYearAD) {
+        maxMonth = realCurrentMonth;
+    }
+    
+    // (Optional) ถ้าเลือกปีอนาคต อาจจะไม่แสดงเดือนเลย หรือแสดงครบก็ได้ แล้วแต่ Logic (ในที่นี้ปล่อยเป็น 12)
+
+    // สร้าง Array เดือน
+    const monthList: MonthItem[] = [];
+    for (let m = 1; m <= maxMonth; m++) {
+        const monthString = m < 10 ? `0${m}` : `${m}`;
+        monthList.push({
+            // value ส่งเป็น 'ค.ศ.-เดือน' (เพื่อให้ backend เอาไปใช้ง่าย)
+            value: `${selectedYearAD}-${monthString}`, 
+            label: monthNames[m - 1]
+        });
+    }
+
+    return monthList;
+});
 
 const selectedMonthFilter = ref(`${currentYear}-${monthString}`);
 const selectedYearFilter = ref<string>((currentYear + 543).toString());
@@ -232,8 +270,38 @@ const fetchMembers = async () => {
     }
 };
 
-watch([selectedYearFilter, selectedMonthFilter], () => {
+// watch([selectedYearFilter, selectedMonthFilter], () => {
+//     fetchMembers();
+// });
+
+// --- ของใหม่ (ใส่แทนที่เดิม) ---
+
+// 1. ดักจับเมื่อมีการเปลี่ยน "ปี" (selectedYearFilter)
+watch(selectedYearFilter, (newYear) => {
+    // ถ้ามีค่าปีใหม่ และมีค่าเดือนเดิมค้างอยู่
+    if (newYear && selectedMonthFilter.value) {
+        const parts = selectedMonthFilter.value.split('-');
+        if (parts.length === 2) {
+            const monthPart = parts[1]; // เก็บเลขเดือนไว้ (เช่น 01)
+            
+            // คำนวณปี ค.ศ. ใหม่ จากปี พ.ศ. ที่เลือก
+            const newYearAD = parseInt(newYear) - 543;
+            
+            // อัปเดต selectedMonthFilter ให้เป็น "ปีใหม่-เดือนเดิม"
+            // (เช่นเปลี่ยนจาก 2026-01 เป็น 2025-01 เพื่อให้ตรงกับตัวเลือกใน dropdown)
+            selectedMonthFilter.value = `${newYearAD}-${monthPart}`;
+        }
+    }
+    // เรียกดึงข้อมูลใหม่
     fetchMembers();
+});
+
+// 2. ดักจับเมื่อมีการเปลี่ยน "เดือน" (selectedMonthFilter)
+watch(selectedMonthFilter, (newMonth, oldMonth) => {
+    // ถ้าค่าเปลี่ยนจริงๆ ค่อยโหลดข้อมูล (ป้องกันการโหลดซ้ำซ้อนจากการเปลี่ยนปีด้านบน)
+    if (newMonth !== oldMonth) {
+        fetchMembers();
+    }
 });
 
 onMounted(() => {

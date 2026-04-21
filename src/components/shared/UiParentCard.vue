@@ -22,11 +22,15 @@ const dialogOpen = ref(false);
 const step = ref(0);
 
 const currentYear = new Date().getFullYear() + 543;
-const selectedBuddhistYear = ref(currentYear);
+const selectedBuddhistYear = ref(2569);
 const yearOptions = Array.from({ length: 2 }, (_, i) => currentYear - i);
 
 const today = new Date();
 const currentMonthNumber = today.getMonth() + 1;
+
+const currentDay = today.getDate();          
+const currentGregorianYear = today.getFullYear();
+
 
 interface MonthItem {
   label: string;
@@ -216,17 +220,53 @@ function validateRowValue(row: any) {
   return messages;
 }
 
+// function setActiveMonthPanel(year: number) {
+//   if (year !== currentYear) return;
+
+//   const currentQuarter = Math.floor((currentMonthNumber - 1) / 3) + 1;
+//   const quarterMonths = monthsList.value.filter((m) => m.quarter === currentQuarter);
+//   const indexInQuarter = quarterMonths.findIndex((m) => m.monthNumber === currentMonthNumber);
+
+//   if (indexInQuarter !== -1) {
+//     panelModels[currentQuarter].value = [indexInQuarter];
+//   }
+// }
+
 function setActiveMonthPanel(year: number) {
-  if (year !== currentYear) return;
+  const isCurrent = year === currentYear;
 
-  const currentQuarter = Math.floor((currentMonthNumber - 1) / 3) + 1;
-  const quarterMonths = monthsList.value.filter((m) => m.quarter === currentQuarter);
-  const indexInQuarter = quarterMonths.findIndex((m) => m.monthNumber === currentMonthNumber);
+  // 1. หาเดือนเป้าหมาย
+  let targetMonthNumber: number;
 
+  if (isCurrent) {
+    // ปีปัจจุบัน → เดือนที่ผ่านมา
+    targetMonthNumber =
+      currentMonthNumber > 1
+        ? currentMonthNumber - 1
+        : 12;
+  } else {
+    // ปีเก่า → เปิดเดือนสุดท้ายของปีนั้น
+    targetMonthNumber = 12;
+  }
+
+  // 2. หา quarter ของเดือนเป้าหมาย
+  const targetQuarter = Math.floor((targetMonthNumber - 1) / 3) + 1;
+
+  // 3. หาเดือนใน quarter นั้น
+  const quarterMonths = monthsList.value.filter(
+    (m) => m.quarter === targetQuarter
+  );
+
+  const indexInQuarter = quarterMonths.findIndex(
+    (m) => m.monthNumber === targetMonthNumber
+  );
+
+  // 4. เปิด panel
   if (indexInQuarter !== -1) {
-    panelModels[currentQuarter].value = [indexInQuarter];
+    panelModels[targetQuarter].value = [indexInQuarter];
   }
 }
+
 
 function validateUnit(row: any) {
   const messages: string[] = [];
@@ -242,30 +282,60 @@ function validateArea(row: any) {
   // (!!!) Validation ยังคงใช้ row.area (ตัวเลขจริง)
   if (row.touched && row.area !== null && row.area !== undefined && row.area !== 0) {
     if (row.label.includes('ไม่เกิน 2.50 ล้านบาท')) {
-      if (row.area < 50 || row.area > 3000) {
-        messages.push('พื้นที่ใช้สอยต้องอยู่ระหว่าง 50 - 3,000 ตร.ม.');
+      if (row.area < 120 || row.area > 1200) {
+        messages.push('พื้นที่ใช้สอยต้องอยู่ระหว่าง 120 - 1,200 ตร.ม.');
       }
     } else if (row.label.includes('2.51 - 5 ล้านบาท')) {
-      if (row.area < 100 || row.area > 6000) {
-        messages.push('พื้นที่ใช้สอยต้องอยู่ระหว่าง 100 - 6,000 ตร.ม.');
+      if (row.area < 280 || row.area > 2800) {
+        messages.push('พื้นที่ใช้สอยต้องอยู่ระหว่าง 280 - 2,800 ตร.ม.');
       }
     } else if (row.label.includes('5.01 - 10 ล้านบาท')) {
-      if (row.area < 150 || row.area > 12000) {
-        messages.push('พื้นที่ใช้สอยต้องอยู่ระหว่าง 150 - 12,000 ตร.ม.');
+      if (row.area < 415 || row.area > 4150) {
+        messages.push('พื้นที่ใช้สอยต้องอยู่ระหว่าง 415 - 4,150 ตร.ม.');
       }
     } else if (row.label.includes('10.01 - 20 ล้านบาท')) {
-      if (row.area < 200 || row.area > 24000) {
-        messages.push('พื้นที่ใช้สอยต้องอยู่ระหว่าง 200 - 24,000 ตร.ม.');
+      if (row.area < 750 || row.area > 7500) {
+        messages.push('พื้นที่ใช้สอยต้องอยู่ระหว่าง 750 - 7,500 ตร.ม.');
       }
     } else if (row.label.includes('20.01 ล้านขึ้นไป')) {
-      if (row.area < 40 || row.area > 8000) {
-        messages.push('พื้นที่ใช้สอยต้องอยู่ระหว่าง 40 - 8,000 ตร.ม.');
+      if (row.area < 1000 || row.area > 10000) {
+        messages.push('พื้นที่ใช้สอยต้องอยู่ระหว่าง 1000 - 10,000 ตร.ม.');
       }
     }
   }
+   return messages;
+ }
 
-  return messages;
-}
+// function validateArea(row: any) {
+//   const messages: string[] = [];
+
+//   // (!!!) Validation ยังคงใช้ row.area (ตัวเลขจริง)
+//   if (row.touched && row.area !== null && row.area !== undefined && row.area !== 0) {
+//     if (row.label.includes('ไม่เกิน 2.50 ล้านบาท')) {
+//       if (row.area < 50 || row.area > 3000) {
+//         messages.push('พื้นที่ใช้สอยต้องอยู่ระหว่าง 50 - 3,000 ตร.ม.');
+//       }
+//     } else if (row.label.includes('2.51 - 5 ล้านบาท')) {
+//       if (row.area < 100 || row.area > 6000) {
+//         messages.push('พื้นที่ใช้สอยต้องอยู่ระหว่าง 100 - 6,000 ตร.ม.');
+//       }
+//     } else if (row.label.includes('5.01 - 10 ล้านบาท')) {
+//       if (row.area < 150 || row.area > 12000) {
+//         messages.push('พื้นที่ใช้สอยต้องอยู่ระหว่าง 150 - 12,000 ตร.ม.');
+//       }
+//     } else if (row.label.includes('10.01 - 20 ล้านบาท')) {
+//       if (row.area < 200 || row.area > 24000) {
+//         messages.push('พื้นที่ใช้สอยต้องอยู่ระหว่าง 200 - 24,000 ตร.ม.');
+//       }
+//     } else if (row.label.includes('20.01 ล้านขึ้นไป')) {
+//       if (row.area < 40 || row.area > 8000) {
+//         messages.push('พื้นที่ใช้สอยต้องอยู่ระหว่าง 40 - 8,000 ตร.ม.');
+//       }
+//     }
+//   }
+
+//   return messages;
+// }
 
 // (!!!) เพิ่มฟังก์ชันใหม่นี้เข้าไป
 function isDataValid() {
@@ -606,6 +676,33 @@ async function handleInput(event: Event, row: any, field: string) {
     input.setSelectionRange(newCursorPosition, newCursorPosition);
 }
 
+
+// ฟังก์ชันเช็คเงื่อนไขการแสดงปุ่ม "เพิ่มข้อมูล"
+const shouldShowAddButton = (month: MonthItem) => {
+  // 1. admin / master ไม่เห็นปุ่ม
+  if (userRole === 'admin' || userRole === 'master') {
+    return false;
+  }
+
+  // 2. วันที่ 11 เป็นต้นไป → ซ่อนทุกกรณี
+  if (currentDay > 10) {
+    return false;
+  }
+
+  // 3. ต้องเป็นปีปัจจุบันเท่านั้น
+  const selectedGregorianYear = selectedBuddhistYear.value - 543;
+  if (selectedGregorianYear !== currentGregorianYear) {
+    return false;
+  }
+
+  // 4. หา "เดือนก่อนหน้า" ของเดือนปัจจุบัน
+  const previousMonth =
+    currentMonthNumber > 1 ? currentMonthNumber - 1 : 12;
+
+  // 5. แสดงปุ่มเฉพาะเดือนก่อนหน้า
+  return month.monthNumber === previousMonth;
+};
+
 </script>
 
 <template>
@@ -649,15 +746,22 @@ async function handleInput(event: Event, row: any, field: string) {
               <v-expansion-panel-title>
                 <div class="d-flex justify-space-between align-center w-100">
                   <span>ยอดเซ็นสัญญาประจำเดือน {{ month.label }}</span>
-                  <template v-if="
+                  <!-- <template v-if="
                     month.monthNumber === currentMonthNumber &&
                     selectedBuddhistYear === currentYear &&
                     userRole !== 'admin' && userRole !== 'master'
-                  ">
+                  "> -->
+                  <template v-if="shouldShowAddButton(month)">
                     <v-dialog v-model="dialogOpen" width="80%">
                       <template #activator="{ props }">
-                        <v-btn v-bind="props" color="primary" text="เพิ่มข้อมูลยอดเซ็นสัญญา" variant="flat" size="small"
-                          @click="handleOpenDialog(month)" />
+                      <v-btn
+        v-bind="props"
+        color="primary"
+        text="เพิ่มข้อมูลยอดเซ็นสัญญา"
+        variant="flat"
+        size="small"
+        @click="handleOpenDialog(month)"
+      />
                       </template>
                       <template #default="{ isActive }">
                         <v-card>
